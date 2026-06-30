@@ -30,7 +30,9 @@ def main() -> None:
         "dense",
         "topic",
         "topic_cache",
+        "additive",
         "learned",
+        "add_state",
         "score_rd",
         "score_wr",
     ]
@@ -46,7 +48,9 @@ def main() -> None:
             fmt_pct(result.dense_hit_rate),
             fmt_pct(result.topic_hit_rate),
             fmt_pct(result.topic_cache_hit_rate),
+            fmt_pct(result.additive_hit_rate),
             fmt_pct(result.learned_hit_rate),
+            format_bytes(result.additive_state_bytes),
             f"{result.learned_score_cells_per_event:0.1f}",
             f"{result.topic_score_update_cells_per_event:0.1f}",
         ]
@@ -54,7 +58,7 @@ def main() -> None:
 
     print()
     print("Interpretation:")
-    print("- The learned rule is tiny, but it does not beat the best hand formula yet.")
+    print("- The learned rules are tiny, but they do not beat the best hand formula yet.")
     print("- Topic/cache/source features are useful; the learner and objective need work.")
     print("- The current strongest synthetic path remains admission-gated dense scoring.")
 

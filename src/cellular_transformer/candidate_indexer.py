@@ -1,8 +1,8 @@
 """Trainable multi-feature candidate indexer experiments.
 
 The earlier candidate scorers tested either a 2D LUT or hand-written formulas.
-This module tests the next hardware-shaped step: a tiny signed low-bit linear
-rule over local candidate features.
+This module tests the next hardware-shaped step: tiny signed low-bit learned
+rules over local candidate features.
 """
 
 from __future__ import annotations
@@ -48,6 +48,44 @@ class LowBitLinearCandidateIndexer:
 
 
 @dataclass(frozen=True)
+class LowBitAdditiveCandidateIndexer:
+    """Signed low-bit additive LUT ranker over per-feature bins."""
+
+    tables: Tuple[Tuple[int, ...], ...]
+    bias: int = 0
+    score_bits: int = 4
+    feature_names: Tuple[str, ...] = FEATURE_NAMES
+
+    def __post_init__(self) -> None:
+        if len(self.tables) != len(self.feature_names):
+            raise ValueError("tables length must match feature_names")
+        if self.score_bits not in (2, 4, 8):
+            raise ValueError("score_bits must be one of 2, 4, 8")
+        min_score = -(1 << (self.score_bits - 1))
+        max_score = (1 << (self.score_bits - 1)) - 1
+        for table in self.tables:
+            if len(table) != 16:
+                raise ValueError("each additive table must have 16 bins")
+            for value in table:
+                if not min_score <= int(value) <= max_score:
+                    raise ValueError("table value outside signed score_bits range")
+        if not min_score <= int(self.bias) <= max_score:
+            raise ValueError("bias outside signed score_bits range")
+
+    @property
+    def state_bytes(self) -> float:
+        values = sum(len(table) for table in self.tables) + 1
+        return values * self.score_bits / 8
+
+    def scores(self, features: np.ndarray) -> np.ndarray:
+        total = np.full(len(features), int(self.bias), dtype=np.int32)
+        for index, table in enumerate(self.tables):
+            lookup = np.asarray(table, dtype=np.int32)
+            total += lookup[np.clip(features[:, index], 0, 15)]
+        return total
+
+
+@dataclass(frozen=True)
 class CandidateIndexerTrialResult:
     """Aggregate metrics for the trainable local indexer."""
 
@@ -57,11 +95,13 @@ class CandidateIndexerTrialResult:
     epochs: int
     feature_names: Tuple[str, ...]
     weights: Tuple[int, ...]
+    additive_state_bytes: float
     state_bytes: float
     resident_hit_rate: float
     dense_hit_rate: float
     topic_hit_rate: float
     topic_cache_hit_rate: float
+    additive_hit_rate: float
     learned_hit_rate: float
     learned_score_cells_per_event: float
     topic_score_update_cells_per_event: float
@@ -100,6 +140,34 @@ def train_linear_candidate_indexer(
     )
 
 
+def train_additive_candidate_indexer(
+    train_seed: int = 100,
+    admission_threshold: int = 0,
+    score_bits: int = 4,
+) -> LowBitAdditiveCandidateIndexer:
+    """Train per-feature LUTs from smoothed log-odds labels."""
+
+    positive, observed = _collect_additive_statistics(
+        seed=train_seed,
+        admission_threshold=admission_threshold,
+    )
+    negative = observed - positive
+    raw = np.log2((positive + 1) / (negative + 1))
+    max_abs = float(np.max(np.abs(raw)))
+    max_score = (1 << (score_bits - 1)) - 1
+    min_score = -(1 << (score_bits - 1))
+    if max_abs == 0.0:
+        tables = np.zeros_like(raw, dtype=np.int32)
+    else:
+        tables = np.rint(raw / max_abs * max_score).astype(np.int32)
+    tables = np.clip(tables, min_score, max_score)
+    return LowBitAdditiveCandidateIndexer(
+        tables=tuple(tuple(int(value) for value in table) for table in tables),
+        bias=0,
+        score_bits=score_bits,
+    )
+
+
 def run_candidate_indexer_trial(
     train_seed: int = 100,
     eval_seed: int = 31,
@@ -113,10 +181,15 @@ def run_candidate_indexer_trial(
         admission_threshold=admission_threshold,
         epochs=epochs,
     )
+    additive = train_additive_candidate_indexer(
+        train_seed=train_seed,
+        admission_threshold=admission_threshold,
+    )
     metrics = _replay_candidate_stream(
         seed=eval_seed,
         admission_threshold=admission_threshold,
         indexer=indexer,
+        additive_indexer=additive,
     )
     return CandidateIndexerTrialResult(
         train_seed=train_seed,
@@ -125,11 +198,13 @@ def run_candidate_indexer_trial(
         epochs=epochs,
         feature_names=indexer.feature_names,
         weights=indexer.weights,
+        additive_state_bytes=additive.state_bytes,
         state_bytes=indexer.state_bytes,
         resident_hit_rate=metrics["resident"],
         dense_hit_rate=metrics["dense"],
         topic_hit_rate=metrics["topic"],
         topic_cache_hit_rate=metrics["topic_cache"],
+        additive_hit_rate=metrics["additive"],
         learned_hit_rate=metrics["learned"],
         learned_score_cells_per_event=metrics["score_cells"],
         topic_score_update_cells_per_event=metrics["score_updates"],
@@ -140,6 +215,7 @@ def _replay_candidate_stream(
     seed: int,
     admission_threshold: int,
     indexer: LowBitLinearCandidateIndexer | None = None,
+    additive_indexer: LowBitAdditiveCandidateIndexer | None = None,
     update_accumulator: np.ndarray | None = None,
 ) -> dict[str, float]:
     if admission_threshold < 0:
@@ -164,7 +240,10 @@ def _replay_candidate_stream(
     )
     lm.rng.shuffle(event_types)
 
-    hits = {name: 0 for name in ("resident", "dense", "topic", "topic_cache", "learned")}
+    hits = {
+        name: 0
+        for name in ("resident", "dense", "topic", "topic_cache", "additive", "learned")
+    }
     score_cells = 0
     score_updates = 0
     topic_events = 0
@@ -192,6 +271,13 @@ def _replay_candidate_stream(
 
                 if indexer is not None:
                     hits["learned"] += _topk_hit(indexer.scores(features), candidates, token, top_k)
+                if additive_indexer is not None:
+                    hits["additive"] += _topk_hit(
+                        additive_indexer.scores(features),
+                        candidates,
+                        token,
+                        top_k,
+                    )
                 if update_accumulator is not None and bool(token_matches.any()):
                     _perceptron_update(update_accumulator, features, token_matches, top_k)
                 score_cells += len(candidates) * lm.config.dense_banks * 2
@@ -219,10 +305,75 @@ def _replay_candidate_stream(
         "dense": hits["dense"] / denominator,
         "topic": hits["topic"] / denominator,
         "topic_cache": hits["topic_cache"] / denominator,
+        "additive": hits["additive"] / denominator,
         "learned": hits["learned"] / denominator,
         "score_cells": score_cells / (lm.config.topic_events + lm.config.query_events),
         "score_updates": score_updates / (lm.config.topic_events + lm.config.query_events),
     }
+
+
+def _collect_additive_statistics(
+    seed: int,
+    admission_threshold: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if admission_threshold < 0:
+        raise ValueError("admission_threshold must be non-negative")
+
+    positive = np.zeros((len(FEATURE_NAMES), 16), dtype=np.int64)
+    observed = np.zeros((len(FEATURE_NAMES), 16), dtype=np.int64)
+    config = SyntheticLMConfig(
+        dense_width=2048,
+        candidate_strategy="online_cache",
+        candidate_admission_threshold=admission_threshold,
+        candidate_score_source="topic_phase",
+    )
+    lm = DualPathSyntheticLM(config, seed=seed)
+    lm.prefill()
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=lm.config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * lm.config.topic_events + ["query"] * lm.config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    query_cursor = 0
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(lm.config, lm.rng)
+            entries = lm.candidate_cache.resident_entries()
+            entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
+                : lm.config.candidate_pool_size
+            ]
+            if entries:
+                candidates = np.array([candidate for candidate, _ in entries], dtype=np.int32)
+                cache_scores = np.array([score for _, score in entries], dtype=np.int32)
+                features = np.clip(_candidate_features(lm, candidates, cache_scores), 0, 15)
+                labels = (candidates == int(token)).astype(np.int64)
+                for feature_index in range(len(FEATURE_NAMES)):
+                    np.add.at(observed[feature_index], features[:, feature_index], 1)
+                    np.add.at(positive[feature_index], features[:, feature_index], labels)
+
+            admit = True
+            if admission_threshold > 0:
+                admit = lm.dense.estimate(token) >= admission_threshold
+            lm.dense.update(token)
+            if lm.candidate_score_dense is None:
+                raise RuntimeError("topic-phase score state is not initialized")
+            lm.candidate_score_dense.update(token)
+            if admit:
+                lm.candidate_cache.observe(token)
+            continue
+
+        key, expected = lm.facts[int(query_indices[query_cursor])]
+        query_cursor += 1
+        lm.exact.lookup(key)
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    return positive, observed
 
 
 def _candidate_features(

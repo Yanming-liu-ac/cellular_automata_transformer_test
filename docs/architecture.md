@@ -441,16 +441,18 @@ default: gated dense scoring is about 67.1%, gated topic-phase scoring is about
 therefore remains gated dense scoring, but source/phase/cache signals are now
 measured local features for the next learned indexer.
 
-The first trainable multi-feature indexer is a signed 4-bit linear rule over
-`dense`, `topic`, `cache`, and `contamination=max(dense-topic, 0)`. It has only
-2.5 bytes of state including bias. In the current deterministic trial it learns
-weights `(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)` for the gated
-path. This is close to the best hand formula but not better: online learned
-topic@64 is about 65.4% versus about 65.8% for `topic_cache`, and gated learned
-topic@64 is about 66.6% versus about 67.1% for the current gated dense baseline.
-This is still useful because it confirms that a tiny local rule can absorb
-source/cache features, but the learner needs a better objective or more state
-before it can replace the hand-written gate/scorer.
+The first trainable multi-feature indexers use signed 4-bit rules over `dense`,
+`topic`, `cache`, and `contamination=max(dense-topic, 0)`. The linear rule has
+only 2.5 bytes of state including bias. In the current deterministic trial it
+learns weights `(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)` for the
+gated path. A factorized additive LUT uses 32.5 bytes across four 16-bin feature
+tables. These rules are close to the best hand formula but not better: online
+linear topic@64 is about 65.4% and additive is about 65.2%, versus about 65.8%
+for `topic_cache`; gated linear and additive are both about 66.6%, versus about
+67.1% for the current gated dense baseline. This is still useful because it
+confirms that tiny local rules can absorb source/cache features, but the learner
+needs a better objective or a less factorized state before it can replace the
+hand-written gate/scorer.
 
 ## Event-Level Efficiency Profile
 

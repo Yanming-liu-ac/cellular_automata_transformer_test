@@ -10,8 +10,10 @@ from .candidate_cache import (
 )
 from .candidate_indexer import (
     CandidateIndexerTrialResult,
+    LowBitAdditiveCandidateIndexer,
     LowBitLinearCandidateIndexer,
     run_candidate_indexer_trial,
+    train_additive_candidate_indexer,
     train_linear_candidate_indexer,
 )
 from .candidate_scorer import (
@@ -85,6 +87,7 @@ __all__ = [
     "LearnedAdmissionResult",
     "LookupResult",
     "LowBitAdmissionLUT",
+    "LowBitAdditiveCandidateIndexer",
     "LowBitLinearCandidateIndexer",
     "LowBitCandidateScorerLUT",
     "LowBitDenseContext",
@@ -123,6 +126,7 @@ __all__ = [
     "sweep_memory_tasks",
     "train_repeat_admission_lut",
     "train_future_window_candidate_scorer_lut",
+    "train_additive_candidate_indexer",
     "train_linear_candidate_indexer",
     "train_repeat_candidate_scorer_lut",
 ]

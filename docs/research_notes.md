@@ -307,16 +307,18 @@ gated topic-phase is about 67.0%, and gated topic-cache is about 66.7%. This
 suggests source/phase/cache signals should feed a learned local indexer, but
 they are not yet a better hand-written replacement for the current gate.
 
-The fifteenth sweep trained the first multi-feature local indexer. The rule is
-a signed 4-bit linear scorer over `(dense, topic, cache, contamination)` and has
-only 2.5 bytes of parameter state including bias. A top-k perceptron-style
-training pass learns `(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)`
-for the gated path. It nearly matches the hand-written topic-cache rule but does
-not beat it: online learned topic@64 is about 65.4% versus about 65.8% for
-topic-cache, while gated learned topic@64 is about 66.6% versus about 67.1% for
-gated dense scoring. This is a useful boundary result. The feature interface is
-reasonable, but the current linear learner is too weak or trained against the
-wrong objective.
+The fifteenth sweep trained the first multi-feature local indexers. The first
+rule is a signed 4-bit linear scorer over `(dense, topic, cache, contamination)`
+and has only 2.5 bytes of parameter state including bias. A top-k
+perceptron-style training pass learns `(2, 7, 7, 0)` for online always-admit and
+`(-1, 6, 7, 0)` for the gated path. The second rule is a factorized additive LUT
+with four 16-bin feature tables and 32.5 bytes of state. Both nearly match the
+hand-written topic-cache rule but do not beat it: online topic@64 is about 65.4%
+for linear and 65.2% for additive, versus about 65.8% for topic-cache. Gated
+topic@64 is about 66.6% for both learned rules, versus about 67.1% for gated
+dense scoring. This is a useful boundary result. The feature interface is
+reasonable, but the current learners are too weak, too factorized, or trained
+against the wrong objective.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
