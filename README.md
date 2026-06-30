@@ -1,0 +1,54 @@
+# Cellular Transformer Research
+
+This repository is a research workspace for a CA-first language-model and AI-chip
+architecture. The target is not to emulate a Transformer instruction by
+instruction, but to discover a trainable cellular automaton architecture that is:
+
+- stable under long recurrent rollout;
+- fast at propagating information across long contexts;
+- naturally quantizable to low-bit state and low-bit rules;
+- directly mappable to a local-memory, local-wire AI accelerator.
+
+## Current Candidate
+
+The first concrete candidate is **HARC-CA**:
+
+> Hierarchical Associative Recurrent Cellular Automaton.
+
+HARC-CA represents text context as a persistent field of low-bit cells. Each cell
+updates from local neighbors, but cells are arranged in a multiscale lattice so a
+new token can affect local context, block summaries, and long-range associative
+routes without reading the entire KV cache.
+
+The near-term goal is to turn this into a sequence-model testbed:
+
+1. prove fast information propagation on the proposed lattice;
+2. train a continuous neural CA version on toy language and algorithm tasks;
+3. quantize the learned rule to bit-sliced / LUT-style updates;
+4. estimate memory movement, local wire cost, and cell throughput against a tiny
+   Transformer baseline.
+
+## Repository Layout
+
+- `docs/architecture.md` - HARC-CA architecture proposal.
+- `docs/research_notes.md` - evidence, hypotheses, and research risks.
+- `docs/hardware_metrics.md` - chip-oriented metrics to track from day one.
+- `docs/roadmap.md` - staged experiments and kill criteria.
+- `src/cellular_transformer/` - NumPy prototypes and measurement utilities.
+- `experiments/` - runnable experiments.
+
+## Quick Check
+
+```powershell
+python experiments/propagation_demo.py
+python experiments/retrieval_demo.py
+python experiments/hardware_estimate_demo.py
+python experiments/lowbit_demo.py
+```
+
+The first experiments compare:
+
+- propagation depth for local CA versus HARC-CA;
+- exact key/value recall through a hash-routed associative CA lane;
+- rough local-message traffic versus Transformer KV-cache traffic;
+- integer-only low-bit state rollout.
