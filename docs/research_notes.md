@@ -507,6 +507,16 @@ small learned or metadata-driven fanout predictor: compact rare tokens should
 read one or two block ids, while repeated names and code symbols spread across
 many blocks should read more.
 
+The thirty-first sweep implemented the first metadata-driven fanout proxy. The
+rule is deliberately hardware-shaped: each rare-directory row carries a tiny
+spread class, the read path starts at fanout two, and a small LUT expands the
+read only when stored block ids span at least 128 blocks. On repeated-name
+stress, the guarded threshold-8 `span2to4` point reaches about 93.0% coverage at
+13.0B/query of directory reads; `span2to5` reaches about 98.4% at
+16.25B/query; and `span2to6` reaches 100.0% at 19.5B/query. On split rare
+tokens, the same rule reads three blocks per hit and keeps 100.0% coverage. This
+turns fanout into a low-bit control problem instead of a fixed `dir_k` choice.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

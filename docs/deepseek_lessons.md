@@ -444,6 +444,12 @@ ids is not the same as reading them every time. Metadata should control fanout
 so compact rare tokens stay cheap and spread-out repeated names spend more
 local reads. This is the same style of design discipline as CSA/HCA/FP4 systems
 work: the metadata is part of the model architecture.
+The first span-class fanout LUT makes that concrete. With guarded threshold-8
+routing, a 2->4 expansion reaches about 93.0% repeated-name coverage at
+13.0B/query, 2->5 reaches about 98.4% at 16.25B/query, and 2->6 reaches full
+coverage at 19.5B/query. The lesson for the CA chip is that exact sparse recall
+needs a learned control plane, but that control plane can be a few low-bit
+metadata classes rather than a dense attention module.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
+    run_csa_hca_rare_directory_adaptive_policy_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
@@ -389,7 +390,7 @@ def main() -> None:
     print(" | ".join(f"{header:>14}" for header in headers))
     print("-" * 154)
     for point in policy.points:
-        if point.scenario not in ("zipf_reference", "repeated_name"):
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
             continue
         row = [
             point.policy,
@@ -410,6 +411,50 @@ def main() -> None:
     print("- Storing 6 directory blocks but reading only 2 saves reads and loses repeated-name coverage.")
     print("- Metadata-driven fanout should read more blocks only for spread-out rare tokens.")
     print("- The next trainable policy should choose threshold, guard, and fanout per token.")
+    print()
+
+    adaptive = run_csa_hca_rare_directory_adaptive_policy_sweep()
+    print("Metadata-driven rare-directory fanout sweep")
+    headers = [
+        "policy",
+        "scenario",
+        "thr",
+        "guard",
+        "base",
+        "expand",
+        "span",
+        "avg_rd",
+        "exp_r",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 188)
+    for point in adaptive.points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.policy,
+            point.scenario,
+            f"{point.hca_threshold}",
+            "yes" if point.directory_guard else "no",
+            f"{point.base_read_blocks_per_token}",
+            f"{point.expanded_read_blocks_per_token}",
+            f"{point.spread_threshold_blocks}",
+            f"{point.avg_directory_read_blocks_per_hit:0.2f}",
+            fmt_pct(point.expanded_read_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Adaptive fanout interpretation:")
+    print("- The span2toN rules are hardware-style metadata proxies, not oracles.")
+    print("- It keeps base fanout at 2 and expands only when stored rare blocks are widely spread.")
+    print("- This is the first concrete target for replacing the hand fanout with a trained LUT.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

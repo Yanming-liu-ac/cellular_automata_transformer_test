@@ -384,6 +384,45 @@ class CsaHcaRareDirectoryPolicyResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaRareDirectoryAdaptivePolicyPoint:
+    """One metadata-driven rare-directory fanout policy on a stress scenario."""
+
+    policy: str
+    scenario: str
+    hca_threshold: int
+    directory_guard: bool
+    directory_blocks_per_token: int
+    base_read_blocks_per_token: int
+    expanded_read_blocks_per_token: int
+    spread_threshold_blocks: int
+    fanout_metadata_state_bytes: float
+    directory_state_bytes: float
+    avg_directory_entries_per_hit: float
+    avg_directory_read_blocks_per_hit: float
+    expanded_read_rate: float
+    rare_false_hca_rate: float
+    repaired_relevant_hit_rate: float
+    repaired_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryAdaptivePolicyResult:
+    """Metadata-driven rare-directory fanout policy comparison."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    queries: int
+    points: Tuple[CsaHcaRareDirectoryAdaptivePolicyPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -1505,6 +1544,135 @@ def run_csa_hca_rare_directory_policy_sweep(
     )
 
 
+def run_csa_hca_rare_directory_adaptive_policy_sweep(
+    scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    policies: Tuple[Tuple[str, int, bool, int, int, int, int], ...] = (
+        ("cheap_t15_span2to6", 15, False, 6, 2, 6, 128),
+        ("guard_t8_span2to6", 8, True, 6, 2, 6, 128),
+        ("guard_t8_span2to5", 8, True, 6, 2, 5, 128),
+        ("guard_t8_span2to4", 8, True, 6, 2, 4, 128),
+    ),
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    seed: int = 37,
+) -> CsaHcaRareDirectoryAdaptivePolicyResult:
+    """Compare metadata-driven directory read fanout policies.
+
+    Each policy stores up to ``directory_blocks_per_token`` exact rare-token
+    block IDs, but starts from a small read budget and expands only when the
+    stored IDs are spread across enough blocks. The spread class is a compact
+    directory-header metadata proxy for a future trained fanout LUT.
+    """
+
+    if len(scenarios) == 0:
+        raise ValueError("scenarios must not be empty")
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(scenarios):
+        max_threshold = max(int(policy[1]) for policy in policies)
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=max_threshold,
+            seed=seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        for (
+            policy,
+            threshold,
+            guard,
+            stored_blocks,
+            base_read_blocks,
+            expanded_read_blocks,
+            spread_threshold_blocks,
+        ) in policies:
+            if int(threshold) <= 0:
+                raise ValueError("policy thresholds must be positive")
+            if int(stored_blocks) < 0:
+                raise ValueError("stored directory blocks must be non-negative")
+            if int(base_read_blocks) < 0 or int(expanded_read_blocks) < 0:
+                raise ValueError("directory read blocks must be non-negative")
+            if int(spread_threshold_blocks) < 0:
+                raise ValueError("spread thresholds must be non-negative")
+
+            directory = _build_rare_block_directory(
+                exact_counts=exact_counts,
+                hca_threshold=int(threshold),
+                max_blocks_per_token=int(stored_blocks),
+            )
+            directory_entries = sum(len(blocks) for blocks in directory.values())
+            directory_state_bytes = directory_entries * directory_entry_bytes
+            points.append(
+                _evaluate_rare_directory_adaptive_policy_point(
+                    policy=policy,
+                    scenario=scenario,
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=int(stored_blocks),
+                    directory_entry_bytes=directory_entry_bytes,
+                    directory_state_bytes=directory_state_bytes,
+                    hca_threshold=int(threshold),
+                    directory_guard=bool(guard),
+                    base_read_blocks_per_token=int(base_read_blocks),
+                    expanded_read_blocks_per_token=int(expanded_read_blocks),
+                    spread_threshold_blocks=int(spread_threshold_blocks),
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                )
+            )
+
+    return CsaHcaRareDirectoryAdaptivePolicyResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        queries=config.queries,
+        points=tuple(points),
+    )
+
+
 def run_hca_summary_quality_sweep(
     global_widths: Tuple[int, ...] = (512, 1024, 2048, 4096),
     threshold: int = 8,
@@ -2052,6 +2220,156 @@ def _evaluate_rare_directory_stress_point(
         token_reads_per_query=token_reads_per_query,
         token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
     )
+
+
+def _evaluate_rare_directory_adaptive_policy_point(
+    policy: str,
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    directory_guard: bool,
+    base_read_blocks_per_token: int,
+    expanded_read_blocks_per_token: int,
+    spread_threshold_blocks: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+) -> CsaHcaRareDirectoryAdaptivePolicyPoint:
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    repaired_hits = 0
+    repaired_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+    directory_hit_queries = 0
+    directory_entries_seen = 0
+    directory_blocks_read = 0
+    expanded_read_queries = 0
+
+    max_read_blocks = min(
+        max(base_read_blocks_per_token, expanded_read_blocks_per_token),
+        directory_blocks_per_token,
+    )
+    fanout_lut_state_bytes = 4 * 2 / 8
+    spread_metadata_state_bytes = len(directory) * 2 / 8
+
+    for token in query_tokens:
+        token = int(token)
+        global_estimate = global_summary.estimate(token)
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
+        route_hca = global_estimate >= hca_threshold
+        if directory_guard and directory_blocks_per_token > 0:
+            directory_read_bytes += directory_entry_bytes
+            if directory_hit:
+                route_hca = False
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            selected = recent_blocks
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            read_limit = _adaptive_directory_read_limit(
+                directory_blocks=directory_blocks,
+                directory_blocks_per_token=directory_blocks_per_token,
+                base_read_blocks_per_token=base_read_blocks_per_token,
+                expanded_read_blocks_per_token=expanded_read_blocks_per_token,
+                spread_threshold_blocks=spread_threshold_blocks,
+            )
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
+            if directory_blocks_per_token > 0 and (directory_guard or max_read_blocks > 0):
+                if directory_guard:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        0,
+                        len(readable_directory_blocks) - 1,
+                    )
+                else:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        1,
+                        len(readable_directory_blocks),
+                    )
+            if directory_hit:
+                directory_hit_queries += 1
+                directory_entries_seen += len(directory_blocks)
+                directory_blocks_read += len(readable_directory_blocks)
+                expanded_read_queries += int(
+                    len(readable_directory_blocks)
+                    > min(base_read_blocks_per_token, directory_blocks_per_token)
+                )
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+        repaired_hits += _block_hit(selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    directory_hit_denominator = directory_hit_queries if directory_hit_queries else 1
+    token_reads_per_query = token_reads / query_denominator
+
+    return CsaHcaRareDirectoryAdaptivePolicyPoint(
+        policy=policy,
+        scenario=scenario,
+        hca_threshold=hca_threshold,
+        directory_guard=directory_guard,
+        directory_blocks_per_token=directory_blocks_per_token,
+        base_read_blocks_per_token=min(base_read_blocks_per_token, directory_blocks_per_token),
+        expanded_read_blocks_per_token=max_read_blocks,
+        spread_threshold_blocks=spread_threshold_blocks,
+        fanout_metadata_state_bytes=fanout_lut_state_bytes + spread_metadata_state_bytes,
+        directory_state_bytes=directory_state_bytes,
+        avg_directory_entries_per_hit=directory_entries_seen / directory_hit_denominator,
+        avg_directory_read_blocks_per_hit=directory_blocks_read / directory_hit_denominator,
+        expanded_read_rate=expanded_read_queries / directory_hit_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
+
+
+def _adaptive_directory_read_limit(
+    directory_blocks: np.ndarray,
+    directory_blocks_per_token: int,
+    base_read_blocks_per_token: int,
+    expanded_read_blocks_per_token: int,
+    spread_threshold_blocks: int,
+) -> int:
+    entry_count = min(len(directory_blocks), max(0, int(directory_blocks_per_token)))
+    if entry_count == 0:
+        return 0
+
+    base_read = min(max(0, int(base_read_blocks_per_token)), entry_count)
+    expanded_read = min(max(base_read, int(expanded_read_blocks_per_token)), entry_count)
+    if entry_count <= base_read:
+        return entry_count
+    if spread_threshold_blocks <= 0:
+        return expanded_read
+
+    block_span = int(np.max(directory_blocks[:entry_count])) - int(np.min(directory_blocks[:entry_count]))
+    if block_span >= spread_threshold_blocks:
+        return expanded_read
+    return base_read
 
 
 def _build_exact_block_counts(

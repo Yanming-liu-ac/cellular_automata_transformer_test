@@ -395,6 +395,22 @@ The directory should therefore store enough block ids for repeated rare names,
 but read fanout should be chosen from metadata. A learned policy can spend
 `read6` only when the rare token is spread across many blocks.
 
+The first metadata fanout proxy uses a small spread class: base fanout is two,
+and the directory expands only when the stored rare-token block ids span at
+least 128 blocks. On the guarded threshold-8 policy:
+
+```text
+guard_t8_span2to4  split_rare     coverage=100.0%  dir read=9.75B/query   avg read=3.0 blocks/hit
+guard_t8_span2to4  repeated_name  coverage=93.0%   dir read=13.0B/query   avg read=4.0 blocks/hit
+guard_t8_span2to5  repeated_name  coverage=98.4%   dir read=16.25B/query  avg read=5.0 blocks/hit
+guard_t8_span2to6  repeated_name  coverage=100.0%  dir read=19.5B/query   avg read=6.0 blocks/hit
+```
+
+This is a usable Pareto knob for hardware: about 2.2KB of 2-bit spread metadata
+in the current 64K-token context is enough to steer the read fanout table. The
+next version should learn the thresholds instead of hand-setting the 128-block
+span.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

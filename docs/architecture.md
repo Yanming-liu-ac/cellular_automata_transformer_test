@@ -307,6 +307,15 @@ recovers about 99-100% coverage. So the real policy should not be a fixed
 `dir_k`: it should choose HCA threshold, guard, and directory read fanout from
 small per-token metadata.
 
+The first metadata-driven fanout proxy uses a two-level rule: start with a
+base read fanout of two, then expand when the stored rare-token block ids span a
+large part of the context. On repeated-name stress, `guard_t8_span2to4` lifts
+coverage to about 93.0% at 13.0B/query of directory reads, while
+`guard_t8_span2to5` reaches about 98.4% at 16.25B/query. Full
+`guard_t8_span2to6` still reaches 100.0% at 19.5B/query. This is not yet a
+trained router, but it proves the control signal can be compact directory
+metadata rather than a transformer-like dense attention pass.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA
