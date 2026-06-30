@@ -360,6 +360,16 @@ replacement. Occurrence coverage is only about 8.4%, close to the oracle
 top-block coverage for the same block budget, so selected blocks must feed
 within-block scoring, exact associative recall, or repeated sparse reads.
 
+The nineteenth sweep measured the repeated-read budget curve for that same
+512KB block index. The result is useful because it separates two possible
+failure modes. With 4, 8, 16, 32, 64, and 128 selected blocks plus a 2-block
+tail, occurrence coverage rises from about 5.6% to 46.1%, while token-read
+reduction falls from about 170.7x to 7.9x. The gap to an exact top-block oracle
+stays tiny, about 0.04 to 0.26 percentage points. The current compressed
+block-index rule is therefore already close to the exact block ranking on this
+task; the hard problem is deciding when to spend more sparse reads versus when
+to trust a compressed dense summary.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

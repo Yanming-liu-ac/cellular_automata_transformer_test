@@ -10,7 +10,7 @@ Transformer implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -137,6 +137,43 @@ class CompressedBlockIndexResult:
         if self.combined_token_reads_per_query == 0.0:
             return 0.0
         return self.dense_token_reads_per_query / self.combined_token_reads_per_query
+
+
+@dataclass(frozen=True)
+class CompressedBlockBudgetPoint:
+    """One point on the sparse block-read budget curve."""
+
+    selected_blocks: int
+    tail_blocks: int
+    avg_blocks_read: float
+    block_hit_rate: float
+    hot_block_hit_rate: float
+    cold_block_hit_rate: float
+    occurrence_coverage: float
+    oracle_occurrence_coverage: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+    @property
+    def oracle_coverage_gap(self) -> float:
+        return self.oracle_occurrence_coverage - self.occurrence_coverage
+
+
+@dataclass(frozen=True)
+class CompressedBlockBudgetSweepResult:
+    """Coverage/read-budget curve for a fixed compressed block index."""
+
+    context_length: int
+    block_size: int
+    blocks: int
+    banks: int
+    summary_width: int
+    bits: int
+    queries: int
+    relevant_query_rate: float
+    summary_state_bytes: float
+    score_bytes_per_query: float
+    points: Tuple[CompressedBlockBudgetPoint, ...]
 
 
 class LowBitCompressedBlockIndex:
@@ -308,6 +345,118 @@ def run_compressed_block_index_trial(
         dense_token_reads_per_query=float(config.context_length),
         index_token_reads_per_query=float(config.selected_blocks * config.block_size),
         combined_token_reads_per_query=float(avg_combined_blocks * config.block_size),
+    )
+
+
+def run_compressed_block_budget_sweep(
+    summary_width: int = 256,
+    block_budgets: Tuple[int, ...] = (4, 8, 16, 32, 64, 128),
+    tail_blocks: int = 2,
+    block_size: int = 64,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> CompressedBlockBudgetSweepResult:
+    """Measure coverage and read traffic as more compressed blocks are read."""
+
+    if len(block_budgets) == 0:
+        raise ValueError("block_budgets must not be empty")
+    if any(int(budget) <= 0 for budget in block_budgets):
+        raise ValueError("all block budgets must be positive")
+    max_budget = max(int(budget) for budget in block_budgets)
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=max_budget,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    index = LowBitCompressedBlockIndex(config)
+    for position, token in enumerate(stream):
+        index.update(int(token), position)
+
+    exact_counts = _build_exact_block_counts(stream, config.block_size)
+    query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
+    recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+    budgets = tuple(sorted({int(budget) for budget in block_budgets}))
+    metrics = {
+        budget: {
+            "hits": 0,
+            "hot_hits": 0,
+            "cold_hits": 0,
+            "coverage": 0.0,
+            "oracle": 0.0,
+            "blocks": 0,
+        }
+        for budget in budgets
+    }
+
+    relevant_queries = 0
+    hot_relevant_queries = 0
+    cold_relevant_queries = 0
+    for token in query_tokens:
+        block_counts = exact_counts.get(int(token))
+        if not block_counts:
+            continue
+        relevant_queries += 1
+        is_hot = int(token) < config.hot_tokens
+        hot_relevant_queries += int(is_hot)
+        cold_relevant_queries += int(not is_hot)
+        scores = index.estimate_blocks(int(token))
+        block_order = _top_blocks(scores, max_budget)
+        oracle_order = _top_blocks(_exact_score_vector(block_counts, config.blocks), max_budget)
+        for budget in budgets:
+            selected = block_order[:budget]
+            combined = np.union1d(selected, recent_blocks)
+            oracle = np.union1d(oracle_order[:budget], recent_blocks)
+            hit = _block_hit(combined, block_counts)
+            metrics[budget]["hits"] += hit
+            metrics[budget]["hot_hits"] += hit if is_hot else 0
+            metrics[budget]["cold_hits"] += hit if not is_hot else 0
+            metrics[budget]["coverage"] += _occurrence_coverage(combined, block_counts)
+            metrics[budget]["oracle"] += _occurrence_coverage(oracle, block_counts)
+            metrics[budget]["blocks"] += len(combined)
+
+    denominator = relevant_queries if relevant_queries else 1
+    points = []
+    for budget in budgets:
+        token_reads = metrics[budget]["blocks"] / denominator * config.block_size
+        points.append(
+            CompressedBlockBudgetPoint(
+                selected_blocks=budget,
+                tail_blocks=config.tail_blocks,
+                avg_blocks_read=metrics[budget]["blocks"] / denominator,
+                block_hit_rate=metrics[budget]["hits"] / denominator,
+                hot_block_hit_rate=_safe_divide(
+                    metrics[budget]["hot_hits"],
+                    hot_relevant_queries,
+                ),
+                cold_block_hit_rate=_safe_divide(
+                    metrics[budget]["cold_hits"],
+                    cold_relevant_queries,
+                ),
+                occurrence_coverage=metrics[budget]["coverage"] / denominator,
+                oracle_occurrence_coverage=metrics[budget]["oracle"] / denominator,
+                token_reads_per_query=token_reads,
+                token_read_reduction=_safe_divide(config.context_length, token_reads),
+            )
+        )
+
+    return CompressedBlockBudgetSweepResult(
+        context_length=config.context_length,
+        block_size=config.block_size,
+        blocks=config.blocks,
+        banks=config.banks,
+        summary_width=config.summary_width,
+        bits=config.bits,
+        queries=config.queries,
+        relevant_query_rate=relevant_queries / config.queries,
+        summary_state_bytes=index.state_bytes,
+        score_bytes_per_query=config.score_bytes_per_query,
+        points=tuple(points),
     )
 
 

@@ -394,6 +394,12 @@ block-hit rate in the deterministic topic/noise trial while reducing token reads
 from 65,536 to about 640 positions. The caution is equally important:
 occurrence coverage is only about 8.4%, so CSA-like block routing is a front-end
 for later scoring and exact memory, not a complete substitute for attention.
+The repeated-read sweep sharpens the HCA side of the lesson: the compressed
+block score is already within about 0.3 percentage points of exact block ranking
+across the measured read budgets. More indexer cleverness is not the immediate
+answer. High-frequency evidence should move through an HCA-like recurrent
+summary, while extra CSA-style block reads should be spent selectively on
+queries that need exact local detail.
 
 ## Revised HARC-CA Design Principle
 

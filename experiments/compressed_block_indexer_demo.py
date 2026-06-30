@@ -10,7 +10,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from cellular_transformer.compressed_block_indexer import run_compressed_block_index_trial
+from cellular_transformer.compressed_block_indexer import (
+    run_compressed_block_budget_sweep,
+    run_compressed_block_index_trial,
+)
 from cellular_transformer.hardware import format_bytes
 
 
@@ -77,6 +80,50 @@ def main() -> None:
     print("- hot/cold columns expose the rare-token weakness that exact memory must cover.")
     print("- combo adds a short exact tail window, matching a CSA plus local-context path.")
     print("- score_rd is summary traffic; kv_read is selected token blocks, not full context.")
+    print()
+
+    sweep = run_compressed_block_budget_sweep(summary_width=256, tail_blocks=2)
+    print("Repeated sparse block-read budget")
+    print(
+        "fixed index: "
+        f"state={format_bytes(sweep.summary_state_bytes)}, "
+        f"score_rd={format_bytes(sweep.score_bytes_per_query)}/query, "
+        f"relevant={fmt_pct(sweep.relevant_query_rate)}"
+    )
+    headers = [
+        "select",
+        "avg_blk",
+        "hit",
+        "hot_hit",
+        "cold_hit",
+        "coverage",
+        "oracle",
+        "gap",
+        "kv_read",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 120)
+    for point in sweep.points:
+        row = [
+            f"{point.selected_blocks}",
+            f"{point.avg_blocks_read:0.1f}",
+            fmt_pct(point.block_hit_rate),
+            fmt_pct(point.hot_block_hit_rate),
+            fmt_pct(point.cold_block_hit_rate),
+            fmt_pct(point.occurrence_coverage),
+            fmt_pct(point.oracle_occurrence_coverage),
+            fmt_pct(point.oracle_coverage_gap),
+            f"{point.token_reads_per_query:0.0f}",
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("Budget interpretation:")
+    print("- Coverage rises slowly because hot tokens are spread across many blocks.")
+    print("- The tiny oracle gap says the compressed score nearly matches exact top-block choice.")
+    print("- This supports repeated sparse reads or a separate dense summary for high-frequency tokens.")
 
 
 if __name__ == "__main__":

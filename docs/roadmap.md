@@ -81,6 +81,11 @@ Compressed block-index result:
 - Occurrence coverage is only about 8.4%, close to the oracle top-block coverage
   at the same block budget. This validates sparse block routing, not full
   attention replacement.
+- A repeated-read sweep shows that the compressed index is already close to
+  exact block ranking: from 4 to 128 selected blocks, oracle coverage gap stays
+  below about 0.3 percentage points. Coverage grows from about 5.6% to 46.1%,
+  while read reduction falls from about 170.7x to 7.9x. The next issue is read
+  policy and memory-path split, not simply a better block score.
 
 Dual-path result:
 
@@ -171,6 +176,8 @@ Next retrieval work:
 - within-block and repeated-read scoring after compressed block routing, because
   the first block-index result finds relevant blocks but covers only a small
   fraction of repeated occurrences.
+- a learned read-budget policy that decides when to spend additional sparse
+  block reads versus when to use the compressed dense/HCA-like state.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

@@ -276,6 +276,25 @@ block coverage of about 8.3%. This means the block index is a strong routing
 primitive but not a full replacement for attention quality; it must feed a
 within-block scorer, exact associative lane, or repeated sparse reads.
 
+The repeated-read budget curve keeps the same 512KB index and varies selected
+block count while retaining the 2-block exact tail:
+
+```text
+selected=4    reads about 384 token positions   coverage about 5.6%   reduction about 170.7x
+selected=8    reads about 640 token positions   coverage about 8.4%   reduction about 102.4x
+selected=16   reads about 1152 token positions  coverage about 13.5%  reduction about 56.9x
+selected=32   reads about 2176 token positions  coverage about 22.1%  reduction about 30.1x
+selected=64   reads about 4222 token positions  coverage about 32.9%  reduction about 15.5x
+selected=128  reads about 8310 token positions  coverage about 46.1%  reduction about 7.9x
+```
+
+The measured gap to an exact oracle top-block selector remains small, about
+0.04 to 0.26 percentage points across this curve. This shifts the next hardware
+question away from better block ranking and toward a policy decision: use sparse
+block reads for rare/exact details, compressed recurrent summaries for
+high-frequency distributed evidence, and repeated reads only when the query
+requires more attention mass.
+
 ## Output-Head Metrics
 
 For output scoring, track:

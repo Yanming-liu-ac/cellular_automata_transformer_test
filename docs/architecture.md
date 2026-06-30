@@ -240,6 +240,15 @@ route to plausible context blocks. The occurrence coverage is only about 8.4%,
 so downstream attention, exact associative recall, or repeated query waves still
 need to decide which details matter inside and across the selected blocks.
 
+A follow-up budget sweep keeps the same 512KB compressed block index and varies
+the number of selected blocks. At 32 selected blocks plus the 2-block tail, the
+path reads about 2176 token positions and covers about 22.1% of exact
+occurrences, still a 30x token-read reduction. At 128 selected blocks, coverage
+rises to about 46.1% while reduction falls to about 7.9x. The gap to exact
+top-block selection stays below about 0.3 percentage points. That means the
+current bottleneck is not block ranking; it is the amount of high-frequency
+history one can afford to reread.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software
