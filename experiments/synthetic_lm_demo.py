@@ -53,8 +53,10 @@ def main() -> None:
         "dense_upd",
         "cand_upd",
         "gate_upd",
+        "score_upd",
         "admit_r",
         "cand_hit",
+        "scorer",
         "avg_cells",
         "memory",
     ]
@@ -74,8 +76,10 @@ def main() -> None:
             f"{result.dense_update_cells_per_event:0.1f}",
             f"{result.candidate_update_cells_per_event:0.1f}",
             f"{result.candidate_gate_cells_per_event:0.1f}",
+            f"{result.candidate_score_cells_per_event:0.1f}",
             fmt_pct(result.candidate_admission_rate) if label != "static" else "-",
             fmt_pct(result.candidate_cache_hit_rate) if label != "static" else "-",
+            result.candidate_scorer_mode,
             f"{result.avg_cells_per_event:0.1f}",
             fmt_bytes(result.total_memory_bytes),
         ]
@@ -86,6 +90,7 @@ def main() -> None:
     print("- Induction uses the exact sparse associative lane.")
     print("- Static Topic@k uses an oracle-built candidate pool.")
     print("- Online/gated variants generate candidates from the low-bit cache.")
+    print("- Score_upd counts local dense-sketch reads for ranking the candidate shortlist.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
 
 

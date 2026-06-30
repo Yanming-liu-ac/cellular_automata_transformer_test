@@ -126,6 +126,7 @@ For the dual-path next-token interface, track:
 - dense update cells per event;
 - candidate-cache update cells per event;
 - candidate admission-gate cells per event;
+- candidate scoring cells per event;
 - candidate admission rate;
 - candidate-cache update hit rate;
 - candidate-cache replacement count;
@@ -154,6 +155,8 @@ For online candidate shortlists, track:
 - admission precision and recall;
 - admission rate;
 - gate read cells;
+- scoring read cells;
+- learned scorer LUT bytes;
 - resident token count;
 - local cells touched per observed token;
 - full-vocabulary scan count.
@@ -179,6 +182,13 @@ admission precision / recall against repeat label: about 91% / 92%
 synthetic-LM topic@64: about 67.1%
 full-vocabulary scans: 0
 ```
+
+The first learned candidate scorer tests a 16x16 signed 4-bit LUT over dense
+estimate and cache score. It uses 128 bytes. This is a negative result in the
+mixed synthetic LM: dense-min scoring reaches about 67.1% topic@64, while the
+learned LUT reaches about 64.6%. Dense-min remains the active baseline. The
+benchmark now counts candidate ranking reads explicitly; the gated synthetic LM
+uses about 179.6 dense-sketch score reads per mixed event.
 
 ## Output-Head Metrics
 
@@ -238,7 +248,8 @@ The project now includes a unified per-event proxy that combines:
 
 - exact sparse-memory local reads;
 - compressed dense-context counter updates;
-- online candidate-cache updates and admission-gate reads;
+- online candidate-cache updates, admission-gate reads, and shortlist scoring
+  reads;
 - Cellular-MoE sparse rule-bank local reads/writes;
 - on-chip state bytes;
 - Transformer KV-cache read volume as a reference.
@@ -256,7 +267,7 @@ The current deterministic profile uses:
 Current proxy result:
 
 ```text
-HARC-CA local bytes/event: about 51.38 KB
+HARC-CA local bytes/event: about 51.46 KB
 Transformer KV read/token: about 384 MB
 On-chip HARC-CA state: about 183.8 KB
 ```
@@ -293,7 +304,7 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the current 183.8KB HARC-CA state and 51.38KB local
+bytes/cycle/tile. With the current 183.8KB HARC-CA state and 51.46KB local
 bytes/event, a 32-tile configuration has:
 
 ```text

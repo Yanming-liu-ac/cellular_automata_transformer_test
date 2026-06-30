@@ -93,6 +93,7 @@ def main() -> None:
     print(f"  dense_update_cells_per_event={harc.dense_update_cells_per_event:0.1f}")
     print(f"  candidate_update_cells_per_event={harc.candidate_update_cells_per_event:0.1f}")
     print(f"  candidate_gate_cells_per_event={harc.candidate_gate_cells_per_event:0.1f}")
+    print(f"  candidate_score_cells_per_event={harc.candidate_score_cells_per_event:0.1f}")
     print(f"  moe_sparse_rule_updates/event={harc.moe_sparse_rule_updates_per_event:0.1f}")
     print(f"  moe_dense_equiv_rule_updates/event={harc.moe_dense_equivalent_rule_updates_per_event:0.1f}")
     print(f"  moe_update_reduction={harc.moe_update_reduction:0.1f}x")

@@ -329,8 +329,9 @@ Current deterministic trial:
 - online-cache topic candidate top-k hit rate: about 61%;
 - gated online-cache topic candidate top-k hit rate: about 67%;
 - online candidate-cache update hit rate: about 79%;
-- average local cells touched per mixed event: about 27 with static candidates
-  and about 34 with online or gated candidates;
+- average local cells touched per mixed event after counting candidate ranking
+  reads: about 1393 with static candidates and about 214 with gated online
+  candidates;
 - combined memory: about 166KB with the static shortlist and about 168KB with
   the online candidate cache.
 
@@ -406,6 +407,14 @@ This is not yet a full language-model router, but it shows the candidate policy
 can be represented as a tiny trainable low-bit rule instead of a hand-written
 constant.
 
+The first learned candidate scorer is a negative result. A 16x16 signed 4-bit
+LUT over `(dense estimate, cache score)` uses 128 bytes and matches the dense-min
+baseline on the standalone topic stream, but drops synthetic-LM topic@64 from
+about 67.1% to about 64.6%. The current baseline therefore keeps dense-min
+candidate scoring. The important accounting correction is that shortlist ranking
+now explicitly counts dense-sketch reads: the gated synthetic run needs about
+179.6 candidate score cells/event.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:
@@ -415,12 +424,12 @@ event traffic =
     exact sparse-memory reads
   + dense sketch counter updates
   + sparse Cellular-MoE rule-bank local reads/writes
-  + online candidate-cache updates and admission-gate reads
+  + online candidate-cache updates, admission-gate reads, and shortlist scoring reads
   + candidate output-head scoring
 ```
 
 With gated online candidate generation and 4 Cellular-MoE ticks per synthetic
-decode event, the current deterministic profile estimates about 51.38KB of local
+decode event, the current deterministic profile estimates about 51.46KB of local
 on-chip byte movement per event. The paired tiny Transformer KV-cache reference
 reads about 384MB per token at 16k context.
 
@@ -439,7 +448,7 @@ tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
 At 4 Cellular-MoE ticks per synthetic event, the current event profile needs
-about 51.38KB of local traffic and about 183.8KB of on-chip state. With a
+about 51.46KB of local traffic and about 183.8KB of on-chip state. With a
 32-tile fabric under the proxy assumptions, this state occupies about 35.9% of
 local SRAM and a 1M events/s target consumes about 5.1% of aggregate local byte
 bandwidth.

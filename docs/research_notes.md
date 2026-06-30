@@ -207,7 +207,7 @@ The seventh sweep added a unified event-level efficiency proxy. It combines the
 synthetic dual-path next-token benchmark with Cellular-MoE execution and compares
 the resulting local byte movement with a tiny Transformer KV-cache read volume.
 With 4 Cellular-MoE ticks per event and gated online candidate generation, the
-current HARC-CA profile moves about 51.38KB of local on-chip bytes per event and
+current HARC-CA profile moves about 51.46KB of local on-chip bytes per event and
 keeps about 183.8KB of on-chip state. The tiny Transformer KV reference reads
 about 384MB per token at 16k context.
 
@@ -267,6 +267,21 @@ not prove real language-model routing quality.
 This is an important correction to the research accounting: candidate
 generation is no longer assumed to be free. The first learned version is only a
 tiny LUT and is not sufficient for real LLM quality.
+
+The eleventh sweep tested learned candidate scoring. The scorer is a 16x16
+signed 4-bit LUT over dense estimate and candidate-cache score, trained from the
+same future-repeat signal. It uses 128 bytes and matches dense-min scoring on
+the standalone topic stream, but it does not generalize to the mixed synthetic
+LM: topic@64 drops from about 67.1% with dense-min scoring to about 64.6% with
+the learned LUT. This is a useful negative result. Admission can be learned with
+the current feature, but candidate scoring needs a richer state, a better
+training target, or a teacher/distillation signal.
+
+The same sweep also fixed an accounting gap: candidate shortlist ranking reads
+dense-sketch counters. In the gated synthetic LM this adds about 179.6 score
+cells per mixed event. Because these are 4-bit local reads, the unified
+event-level profile rises only from about 51.38KB/event to about 51.46KB/event,
+but the cells/event metric is now honest.
 
 Current interpretation:
 

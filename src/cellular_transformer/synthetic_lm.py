@@ -38,6 +38,9 @@ class SyntheticLMConfig:
     candidate_cache_decay_shift: int = 1
     candidate_admission_threshold: int = 0
     candidate_admission_lut: Tuple[int, ...] | None = None
+    candidate_scorer_lut: Tuple[int, ...] | None = None
+    candidate_scorer_dense_bins: int = 16
+    candidate_scorer_cache_bins: int = 16
     fact_count: int = 16384
     topic_events: int = 8192
     query_events: int = 4096
@@ -77,6 +80,10 @@ class SyntheticLMConfig:
                 raise ValueError("candidate_admission_threshold must be non-negative")
             if self.candidate_admission_lut is not None and len(self.candidate_admission_lut) == 0:
                 raise ValueError("candidate_admission_lut must not be empty")
+            if self.candidate_scorer_lut is not None:
+                expected = self.candidate_scorer_dense_bins * self.candidate_scorer_cache_bins
+                if len(self.candidate_scorer_lut) != expected:
+                    raise ValueError("candidate_scorer_lut length must equal dense_bins * cache_bins")
         if self.fact_count <= 0:
             raise ValueError("fact_count must be positive")
         if self.topic_events <= 0:
@@ -99,6 +106,7 @@ class SyntheticLMResult:
     candidate_pool_size: int
     candidate_strategy: str
     candidate_admission_mode: str
+    candidate_scorer_mode: str
     induction_accuracy: float
     topic_topk_hit_rate: float
     exact_avg_visited_cells: float
@@ -106,6 +114,7 @@ class SyntheticLMResult:
     dense_update_cells_per_event: float
     candidate_update_cells_per_event: float
     candidate_gate_cells_per_event: float
+    candidate_score_cells_per_event: float
     candidate_admission_rate: float
     candidate_admission_skips: int
     candidate_cache_hit_rate: float
@@ -233,31 +242,44 @@ class DualPathSyntheticLM:
             touched += self.dense.update(value)
         return touched
 
-    def predict_topic_topk(self) -> set[int]:
+    def predict_topic_topk(self) -> tuple[set[int], int]:
         """Rank dense candidates by compressed-context estimate."""
 
         if self.config.candidate_strategy == "online_cache":
             if self.candidate_cache is None:
                 raise RuntimeError("candidate cache is not initialized")
-            candidates = np.array(
-                self.candidate_cache.topk(self.config.candidate_pool_size),
-                dtype=np.int32,
-            )
+            entries = self.candidate_cache.resident_entries()
+            entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
+                : self.config.candidate_pool_size
+            ]
+            candidates = np.array([token for token, _ in entries], dtype=np.int32)
+            cache_scores = np.array([score for _, score in entries], dtype=np.int32)
             if len(candidates) == 0:
-                return set()
+                return set(), 0
             candidate_slots = self._candidate_slots(candidates)
             top_k = min(self.config.topic_top_k, len(candidates))
         else:
             if self.candidates is None or self.candidate_slots is None:
                 raise RuntimeError("static candidates are not initialized")
             candidates = self.candidates
+            cache_scores = np.zeros(len(candidates), dtype=np.int32)
             candidate_slots = self.candidate_slots
             top_k = self.config.topic_top_k
 
         bank_indices = np.arange(self.config.dense_banks)[:, None]
         scores = self.dense.counters[bank_indices, candidate_slots].min(axis=0)
-        top_indices = np.argsort(scores)[-top_k:]
-        return {int(candidates[index]) for index in top_indices}
+        score_cells = len(candidates) * self.config.dense_banks
+        if self.config.candidate_scorer_lut is not None:
+            learned_scores = np.empty(len(candidates), dtype=np.int32)
+            for index, (dense_score, cache_score) in enumerate(zip(scores, cache_scores)):
+                dense_index = min(int(dense_score), self.config.candidate_scorer_dense_bins - 1)
+                cache_index = min(int(cache_score), self.config.candidate_scorer_cache_bins - 1)
+                lut_index = dense_index * self.config.candidate_scorer_cache_bins + cache_index
+                learned_scores[index] = int(self.config.candidate_scorer_lut[lut_index])
+            top_indices = np.lexsort((scores, learned_scores))[-top_k:]
+        else:
+            top_indices = np.argsort(scores)[-top_k:]
+        return {int(candidates[index]) for index in top_indices}, score_cells
 
     def run(self) -> SyntheticLMResult:
         """Run a mixed topic/induction next-token benchmark."""
@@ -269,6 +291,7 @@ class DualPathSyntheticLM:
         topic_hits = 0
         candidate_touched = 0
         candidate_gate_touched = 0
+        candidate_score_touched = 0
         candidate_admitted = 0
         candidate_skipped = 0
 
@@ -286,7 +309,9 @@ class DualPathSyntheticLM:
         for event_type in event_types:
             if event_type == "topic":
                 token = sample_topic_token(self.config, self.rng)
-                topic_hits += int(token in self.predict_topic_topk())
+                prediction, score_cells = self.predict_topic_topk()
+                candidate_score_touched += score_cells
+                topic_hits += int(token in prediction)
                 admit_candidate = True
                 needs_admission_gate = self.candidate_cache is not None and (
                     self.config.candidate_admission_lut is not None
@@ -346,6 +371,7 @@ class DualPathSyntheticLM:
             candidate_pool_size=self.config.candidate_pool_size,
             candidate_strategy=self.config.candidate_strategy,
             candidate_admission_mode=self._candidate_admission_mode(),
+            candidate_scorer_mode=self._candidate_scorer_mode(),
             induction_accuracy=correct_queries / self.config.query_events,
             topic_topk_hit_rate=topic_hits / self.config.topic_events,
             exact_avg_visited_cells=exact_visited / self.config.query_events,
@@ -353,13 +379,18 @@ class DualPathSyntheticLM:
             dense_update_cells_per_event=dense_touched / (total_events + 2 * self.config.fact_count),
             candidate_update_cells_per_event=candidate_touched / total_events,
             candidate_gate_cells_per_event=candidate_gate_touched / total_events,
+            candidate_score_cells_per_event=candidate_score_touched / total_events,
             candidate_admission_rate=candidate_admission_rate,
             candidate_admission_skips=candidate_skipped,
             candidate_cache_hit_rate=candidate_cache_hit_rate,
             candidate_cache_replacements=candidate_cache_replacements,
             candidate_cache_resident_tokens=candidate_cache_resident,
             avg_cells_per_event=(
-                dense_touched + exact_visited + candidate_touched + candidate_gate_touched
+                dense_touched
+                + exact_visited
+                + candidate_touched
+                + candidate_gate_touched
+                + candidate_score_touched
             )
             / total_events,
             exact_memory_bytes=exact_memory,
@@ -376,6 +407,11 @@ class DualPathSyntheticLM:
         if self.config.candidate_admission_threshold > 0:
             return f"threshold_{self.config.candidate_admission_threshold}"
         return "always"
+
+    def _candidate_scorer_mode(self) -> str:
+        if self.config.candidate_scorer_lut is not None:
+            return "learned_lut"
+        return "dense_min"
 
 
 def run_synthetic_lm_trial(seed: int = 0, config: SyntheticLMConfig | None = None) -> SyntheticLMResult:

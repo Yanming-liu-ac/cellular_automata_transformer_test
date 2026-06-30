@@ -8,6 +8,12 @@ from .candidate_cache import (
     LowBitCandidateCache,
     run_candidate_cache_trial,
 )
+from .candidate_scorer import (
+    CandidateScorerTrialResult,
+    LowBitCandidateScorerLUT,
+    run_candidate_scorer_trial,
+    train_repeat_candidate_scorer_lut,
+)
 from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
 from .chip_model import ChipConfig, ChipProfile, TileConfig, profile_chip
 from .dense_context import (
@@ -57,6 +63,7 @@ __all__ = [
     "CandidateCacheConfig",
     "CandidateCacheTrialResult",
     "CandidateCacheUpdate",
+    "CandidateScorerTrialResult",
     "ChipConfig",
     "ChipProfile",
     "DualPathSyntheticLM",
@@ -70,6 +77,7 @@ __all__ = [
     "LearnedAdmissionResult",
     "LookupResult",
     "LowBitAdmissionLUT",
+    "LowBitCandidateScorerLUT",
     "LowBitDenseContext",
     "LowBitCandidateCache",
     "MoERolloutResult",
@@ -96,6 +104,7 @@ __all__ = [
     "future_repeat_labels",
     "run_dense_context_trial",
     "run_candidate_cache_trial",
+    "run_candidate_scorer_trial",
     "run_learned_admission_trial",
     "run_memory_task",
     "run_recall_trial",
@@ -103,4 +112,5 @@ __all__ = [
     "shortest_propagation_steps",
     "sweep_memory_tasks",
     "train_repeat_admission_lut",
+    "train_repeat_candidate_scorer_lut",
 ]

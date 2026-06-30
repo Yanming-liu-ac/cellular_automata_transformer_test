@@ -101,6 +101,12 @@ Online candidate-cache result:
   future-repeat label. The LUT has 16 signed 4-bit entries, uses 8 bytes, reaches
   about 70.8% standalone top-64 hit rate, and keeps synthetic-LM topic@64 at
   about 67.1%.
+- A learned 16x16 candidate-scorer LUT over dense estimate and cache score is a
+  negative result: it uses 128 bytes but reduces mixed synthetic topic@64 from
+  about 67.1% to about 64.6%. Dense-min scoring remains the baseline.
+- Candidate scoring reads are now counted explicitly. The gated synthetic run
+  uses about 179.6 score cells/event, raising the unified local profile to about
+  51.46KB/event.
 
 Cellular-MoE execution result:
 
@@ -116,7 +122,8 @@ Unified efficiency profile:
 - The current event-level proxy combines exact memory, dense sketch updates, and
   Cellular-MoE rule execution.
 - With 4 rule ticks per event, estimated local on-chip traffic is about
-  51.38KB per synthetic event including gated online candidate-cache updates.
+  51.46KB per synthetic event including gated online candidate-cache updates
+  and candidate scoring reads.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -179,6 +186,10 @@ full-vocabulary scoring for most events.
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
+
+The first learned candidate scorer did not beat the dense-min baseline. The next
+version should use richer local features, multi-tick state, or distillation from
+a stronger scorer rather than only future-repeat labels.
 
 Second trainable target:
 

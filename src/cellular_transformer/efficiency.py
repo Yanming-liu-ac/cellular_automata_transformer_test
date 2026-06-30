@@ -37,6 +37,7 @@ class HarcEventEfficiency:
     dense_update_cells_per_event: float
     candidate_update_cells_per_event: float
     candidate_gate_cells_per_event: float
+    candidate_score_cells_per_event: float
     moe_sparse_rule_updates_per_event: float
     moe_dense_equivalent_rule_updates_per_event: float
     moe_update_reduction: float
@@ -78,12 +79,14 @@ def estimate_harc_event_efficiency(
     exact_cells_per_event = synthetic.exact_avg_visited_cells * query_fraction
     candidate_cells_per_event = synthetic.candidate_update_cells_per_event
     candidate_gate_cells_per_event = synthetic.candidate_gate_cells_per_event
+    candidate_score_cells_per_event = synthetic.candidate_score_cells_per_event
     dense_cells_per_event = max(
         0.0,
         synthetic.avg_cells_per_event
         - exact_cells_per_event
         - candidate_cells_per_event
-        - candidate_gate_cells_per_event,
+        - candidate_gate_cells_per_event
+        - candidate_score_cells_per_event,
     )
     dense_counter_bytes = synthetic_config.dense_bits / 8
     dense_local_bytes = dense_cells_per_event * dense_counter_bytes * 2
@@ -94,6 +97,7 @@ def estimate_harc_event_efficiency(
     candidate_local_bytes = (
         candidate_cells_per_event * candidate_entry_bytes * 2
         + candidate_gate_cells_per_event * dense_counter_bytes
+        + candidate_score_cells_per_event * dense_counter_bytes
     )
 
     sparse_rule_updates_per_tick = moe_config.length * moe.avg_active_fraction * moe_config.top_k
@@ -126,6 +130,7 @@ def estimate_harc_event_efficiency(
         dense_update_cells_per_event=dense_cells_per_event,
         candidate_update_cells_per_event=candidate_cells_per_event,
         candidate_gate_cells_per_event=candidate_gate_cells_per_event,
+        candidate_score_cells_per_event=candidate_score_cells_per_event,
         moe_sparse_rule_updates_per_event=sparse_rule_updates_per_event,
         moe_dense_equivalent_rule_updates_per_event=dense_equiv_updates_per_event,
         moe_update_reduction=moe.avg_update_reduction,

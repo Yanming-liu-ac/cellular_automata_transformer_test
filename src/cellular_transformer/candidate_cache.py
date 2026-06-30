@@ -9,7 +9,7 @@ periodic integer decay.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 
 import numpy as np
 
@@ -246,6 +246,14 @@ class LowBitCandidateCache:
 
     def topk_set(self, k: int) -> set[int]:
         return set(self.topk(k))
+
+    def resident_entries(self) -> List[Tuple[int, int]]:
+        """Return resident ``(token, score)`` pairs for local candidate scoring."""
+
+        entries: List[Tuple[int, int]] = []
+        for bucket, way in np.argwhere(self.valid):
+            entries.append((int(self.tokens[bucket, way]), int(self.scores[bucket, way])))
+        return entries
 
     def resident_count(self) -> int:
         return int(self.valid.sum())
