@@ -307,9 +307,20 @@ gated topic-phase is about 67.0%, and gated topic-cache is about 66.7%. This
 suggests source/phase/cache signals should feed a learned local indexer, but
 they are not yet a better hand-written replacement for the current gate.
 
-The same sweep also fixed an accounting gap: candidate shortlist ranking reads
-dense-sketch counters. In the gated synthetic LM this adds about 179.6 score
-cells per mixed event. Because these are 4-bit local reads, the unified
+The fifteenth sweep trained the first multi-feature local indexer. The rule is
+a signed 4-bit linear scorer over `(dense, topic, cache, contamination)` and has
+only 2.5 bytes of parameter state including bias. A top-k perceptron-style
+training pass learns `(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)`
+for the gated path. It nearly matches the hand-written topic-cache rule but does
+not beat it: online learned topic@64 is about 65.4% versus about 65.8% for
+topic-cache, while gated learned topic@64 is about 66.6% versus about 67.1% for
+gated dense scoring. This is a useful boundary result. The feature interface is
+reasonable, but the current linear learner is too weak or trained against the
+wrong objective.
+
+A related accounting correction remains important: candidate shortlist ranking
+reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
+score cells per mixed event. Because these are 4-bit local reads, the unified
 event-level profile rises only from about 51.38KB/event to about 51.46KB/event,
 but the cells/event metric is now honest.
 

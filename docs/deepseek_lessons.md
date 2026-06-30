@@ -372,6 +372,10 @@ the first positive sign for a multi-feature local indexer. It still does not
 beat the gated dense baseline, so the DeepSeek-style takeaway remains
 systems-level: compression, cache state, routing gate, and scorer state must be
 trained and evaluated together.
+The first learned linear version is small enough for hardware, but it only
+matches the hand-written direction and does not beat it. That mirrors the
+DeepSeek lesson again: the win comes from the full training/inference system,
+not from replacing a formula with any learned low-bit rule.
 
 ## Revised HARC-CA Design Principle
 

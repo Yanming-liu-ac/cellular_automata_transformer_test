@@ -51,6 +51,7 @@ python experiments/dual_path_demo.py
 python experiments/candidate_cache_demo.py
 python experiments/learned_admission_demo.py
 python experiments/candidate_scorer_demo.py
+python experiments/candidate_indexer_demo.py
 python experiments/synthetic_lm_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
@@ -75,6 +76,7 @@ The first experiments compare:
   residual indexer, plus explicit scoring-read budget;
 - source/phase/cache candidate scoring sketches for testing dense-state
   contamination and local indexer features;
+- trainable low-bit multi-feature candidate indexer benchmark;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;

@@ -207,6 +207,12 @@ target more specific: learn a local indexer over `(dense score, topic score,
 cache score, gate estimate, recency/contamination counters)` instead of
 hand-selecting one score formula.
 
+The first learned version of that target is now a 2.5-byte signed 4-bit linear
+indexer over `(dense, topic, cache, contamination)`. It nearly matches the fixed
+topic-cache formula but does not beat it. The next version should use a richer
+objective, pairwise distillation from an oracle scorer, or a tiny factorized LUT
+rather than only a linear perceptron update.
+
 Second trainable target:
 
 ```text

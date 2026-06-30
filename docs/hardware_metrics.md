@@ -210,6 +210,14 @@ path. `dense_topic_sum` reaches about 67.0% on the static candidate pool, but
 doubles candidate score reads from about 1365 to about 2731 cells/event. In the
 current gated path, neither combination beats gated dense scoring.
 
+The first trainable multi-feature indexer is a signed 4-bit linear rule over
+four local features: dense score, topic-phase score, candidate-cache score, and
+contamination. Its parameter state is only 2.5 bytes including bias. It learns
+`(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)` for the gated path.
+This is a compact rule, but not yet a win: learned online topic@64 is about
+65.4% versus about 65.8% for the fixed topic-cache formula, and learned gated
+topic@64 is about 66.6% versus about 67.1% for gated dense scoring.
+
 ## Output-Head Metrics
 
 For output scoring, track:

@@ -8,6 +8,12 @@ from .candidate_cache import (
     LowBitCandidateCache,
     run_candidate_cache_trial,
 )
+from .candidate_indexer import (
+    CandidateIndexerTrialResult,
+    LowBitLinearCandidateIndexer,
+    run_candidate_indexer_trial,
+    train_linear_candidate_indexer,
+)
 from .candidate_scorer import (
     CandidateScorerTrialResult,
     LowBitCandidateScorerLUT,
@@ -62,6 +68,7 @@ __all__ = [
     "CellularMoE",
     "CellularMoEConfig",
     "CandidateCacheConfig",
+    "CandidateIndexerTrialResult",
     "CandidateCacheTrialResult",
     "CandidateCacheUpdate",
     "CandidateScorerTrialResult",
@@ -78,6 +85,7 @@ __all__ = [
     "LearnedAdmissionResult",
     "LookupResult",
     "LowBitAdmissionLUT",
+    "LowBitLinearCandidateIndexer",
     "LowBitCandidateScorerLUT",
     "LowBitDenseContext",
     "LowBitCandidateCache",
@@ -105,6 +113,7 @@ __all__ = [
     "future_repeat_labels",
     "run_dense_context_trial",
     "run_candidate_cache_trial",
+    "run_candidate_indexer_trial",
     "run_candidate_scorer_trial",
     "run_learned_admission_trial",
     "run_memory_task",
@@ -114,5 +123,6 @@ __all__ = [
     "sweep_memory_tasks",
     "train_repeat_admission_lut",
     "train_future_window_candidate_scorer_lut",
+    "train_linear_candidate_indexer",
     "train_repeat_candidate_scorer_lut",
 ]
