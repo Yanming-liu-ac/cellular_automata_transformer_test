@@ -193,6 +193,15 @@ mixed synthetic LM. Dense-min remains the active baseline. The benchmark now
 counts candidate ranking reads explicitly; the gated synthetic LM uses about
 179.6 dense-sketch score reads per mixed event.
 
+A source-phase scoring sketch then tests whether the scorer needs a separate
+state channel instead of a different LUT label. The sketch is a second 4-bit
+dense-context array updated only by topic-output events. It adds about 4KB of
+state and about 2.7 local writes per mixed event. This helps when candidate
+generation is noisy: static topic@64 rises from about 62.1% to about 66.7%, and
+online always-admit topic@64 rises from about 61.4% to about 64.4%. It does not
+improve the current gated path: gated dense scoring is about 67.1%, while gated
+topic-phase scoring is about 67.0% with extra state and writes.
+
 ## Output-Head Metrics
 
 For output scoring, track:

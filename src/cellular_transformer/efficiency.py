@@ -29,6 +29,7 @@ class HarcEventEfficiency:
     onchip_state_bytes: float
     exact_memory_bytes: float
     dense_memory_bytes: float
+    candidate_score_memory_bytes: float
     candidate_memory_bytes: float
     moe_state_bytes: float
     exact_query_fraction: float
@@ -38,6 +39,7 @@ class HarcEventEfficiency:
     candidate_update_cells_per_event: float
     candidate_gate_cells_per_event: float
     candidate_score_cells_per_event: float
+    candidate_score_update_cells_per_event: float
     moe_sparse_rule_updates_per_event: float
     moe_dense_equivalent_rule_updates_per_event: float
     moe_update_reduction: float
@@ -122,6 +124,7 @@ def estimate_harc_event_efficiency(
         onchip_state_bytes=onchip_state_bytes,
         exact_memory_bytes=synthetic.exact_memory_bytes,
         dense_memory_bytes=synthetic.dense_memory_bytes,
+        candidate_score_memory_bytes=synthetic.candidate_score_memory_bytes,
         candidate_memory_bytes=synthetic.candidate_memory_bytes,
         moe_state_bytes=moe_state_bytes,
         exact_query_fraction=query_fraction,
@@ -131,6 +134,7 @@ def estimate_harc_event_efficiency(
         candidate_update_cells_per_event=candidate_cells_per_event,
         candidate_gate_cells_per_event=candidate_gate_cells_per_event,
         candidate_score_cells_per_event=candidate_score_cells_per_event,
+        candidate_score_update_cells_per_event=synthetic.candidate_score_update_cells_per_event,
         moe_sparse_rule_updates_per_event=sparse_rule_updates_per_event,
         moe_dense_equivalent_rule_updates_per_event=dense_equiv_updates_per_event,
         moe_update_reduction=moe.avg_update_reduction,

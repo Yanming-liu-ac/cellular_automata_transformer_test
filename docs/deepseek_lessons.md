@@ -361,6 +361,11 @@ teacher is better aligned with sparse-attention indexing and slightly improves
 the isolated topic stream, but still fails in the mixed synthetic LM. This is a
 useful DeepSeek-style lesson: efficient indexing and scoring need the right
 state interface, not merely a smaller kernel or a better label.
+The first source-phase scoring sketch confirms the same lesson from another
+angle: separating topic-output state from query/fact traffic helps noisy
+candidate paths, but the current admission gate still dominates the best
+synthetic result. CSA-like indexing needs a coordinated state interface, not
+one isolated feature.
 
 ## Revised HARC-CA Design Principle
 

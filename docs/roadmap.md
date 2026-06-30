@@ -194,6 +194,12 @@ add richer local features such as source phase, recency, contamination counters,
 multi-tick state, or distillation from a stronger scorer rather than only
 changing the label on `(dense estimate, cache score)`.
 
+The first source-phase feature is now implemented as a separate topic-only
+scoring sketch. It improves un-gated candidate ranking but does not beat the
+current admission-gated dense baseline. The next scorer should combine source
+phase with recency and contamination counters instead of treating phase
+separation as a standalone replacement.
+
 Second trainable target:
 
 ```text

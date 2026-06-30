@@ -423,6 +423,18 @@ candidate scorer needs phase/source features, multi-tick state, or distillation
 from a stronger teacher rather than just a different label on the same feature
 pair.
 
+The next source-phase experiment added a separate topic-phase scoring sketch.
+It is another 4-bit dense-context sketch, but it is updated only by topic-output
+events and is used only for candidate ranking. This isolates the output indexer
+from exact-memory query/fact traffic. It improves static candidate scoring from
+about 62.1% to about 66.7% topic@64 and online always-admit scoring from about
+61.4% to about 64.4%. However, with the current admission gate it does not beat
+the dense baseline: gated dense scoring is about 67.1%, while gated topic-phase
+scoring is about 67.0% and costs about 4KB extra state plus about 2.7 local
+score-sketch writes per mixed event. The current default therefore remains
+gated dense scoring, but the experiment validates source/phase separation as a
+real control knob rather than just a documentation idea.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:

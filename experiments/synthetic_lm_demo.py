@@ -31,14 +31,32 @@ def main() -> None:
     configs = [
         ("static", SyntheticLMConfig(dense_width=1024)),
         ("static", SyntheticLMConfig(dense_width=2048)),
+        ("static_ph", SyntheticLMConfig(dense_width=2048, candidate_score_source="topic_phase")),
         ("static", SyntheticLMConfig(dense_width=4096)),
         ("online", SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")),
+        (
+            "online_ph",
+            SyntheticLMConfig(
+                dense_width=2048,
+                candidate_strategy="online_cache",
+                candidate_score_source="topic_phase",
+            ),
+        ),
         (
             "gated",
             SyntheticLMConfig(
                 dense_width=2048,
                 candidate_strategy="online_cache",
                 candidate_admission_threshold=1,
+            ),
+        ),
+        (
+            "gated_ph",
+            SyntheticLMConfig(
+                dense_width=2048,
+                candidate_strategy="online_cache",
+                candidate_admission_threshold=1,
+                candidate_score_source="topic_phase",
             ),
         ),
     ]
@@ -54,9 +72,11 @@ def main() -> None:
         "cand_upd",
         "gate_upd",
         "score_upd",
+        "score_wr",
         "admit_r",
         "cand_hit",
         "scorer",
+        "score_src",
         "avg_cells",
         "memory",
     ]
@@ -77,9 +97,15 @@ def main() -> None:
             f"{result.candidate_update_cells_per_event:0.1f}",
             f"{result.candidate_gate_cells_per_event:0.1f}",
             f"{result.candidate_score_cells_per_event:0.1f}",
-            fmt_pct(result.candidate_admission_rate) if label != "static" else "-",
-            fmt_pct(result.candidate_cache_hit_rate) if label != "static" else "-",
+            f"{result.candidate_score_update_cells_per_event:0.1f}",
+            fmt_pct(result.candidate_admission_rate)
+            if result.candidate_strategy != "static"
+            else "-",
+            fmt_pct(result.candidate_cache_hit_rate)
+            if result.candidate_strategy != "static"
+            else "-",
             result.candidate_scorer_mode,
+            result.candidate_score_source,
             f"{result.avg_cells_per_event:0.1f}",
             fmt_bytes(result.total_memory_bytes),
         ]
@@ -91,6 +117,7 @@ def main() -> None:
     print("- Static Topic@k uses an oracle-built candidate pool.")
     print("- Online/gated variants generate candidates from the low-bit cache.")
     print("- Score_upd counts local dense-sketch reads for ranking the candidate shortlist.")
+    print("- Topic-phase rows use a separate scoring sketch updated only by topic events.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
 
 

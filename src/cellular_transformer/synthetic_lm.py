@@ -43,6 +43,7 @@ class SyntheticLMConfig:
     candidate_scorer_cache_bins: int = 16
     candidate_scorer_dense_weight: int = 0
     candidate_scorer_cache_weight: int = 0
+    candidate_score_source: str = "dense"
     fact_count: int = 16384
     topic_events: int = 8192
     query_events: int = 4096
@@ -69,6 +70,8 @@ class SyntheticLMConfig:
             raise ValueError("topic_top_k must be in (0, candidate_pool_size]")
         if self.candidate_strategy not in ("static", "online_cache"):
             raise ValueError("candidate_strategy must be 'static' or 'online_cache'")
+        if self.candidate_score_source not in ("dense", "topic_phase"):
+            raise ValueError("candidate_score_source must be 'dense' or 'topic_phase'")
         if self.candidate_strategy == "static" and self.candidate_pool_size < self.hot_tokens:
             raise ValueError("candidate_pool_size must include all hot tokens")
         if self.candidate_strategy == "online_cache":
@@ -113,6 +116,7 @@ class SyntheticLMResult:
     candidate_strategy: str
     candidate_admission_mode: str
     candidate_scorer_mode: str
+    candidate_score_source: str
     induction_accuracy: float
     topic_topk_hit_rate: float
     exact_avg_visited_cells: float
@@ -121,6 +125,7 @@ class SyntheticLMResult:
     candidate_update_cells_per_event: float
     candidate_gate_cells_per_event: float
     candidate_score_cells_per_event: float
+    candidate_score_update_cells_per_event: float
     candidate_admission_rate: float
     candidate_admission_skips: int
     candidate_cache_hit_rate: float
@@ -129,6 +134,7 @@ class SyntheticLMResult:
     avg_cells_per_event: float
     exact_memory_bytes: float
     dense_memory_bytes: float
+    candidate_score_memory_bytes: float
     candidate_memory_bytes: float
     total_memory_bytes: float
 
@@ -204,6 +210,9 @@ class DualPathSyntheticLM:
             tag_bits=config.tag_bits,
         )
         self.dense = LowBitDenseContext(dense_config)
+        self.candidate_score_dense: LowBitDenseContext | None = None
+        if config.candidate_score_source == "topic_phase":
+            self.candidate_score_dense = LowBitDenseContext(dense_config)
         self.exact = TieredHashRouteCAM(TieredHashRouteCAMConfig(primary, overflow))
         self.rng = np.random.default_rng(seed)
         self.candidate_cache: LowBitCandidateCache | None = None
@@ -272,8 +281,9 @@ class DualPathSyntheticLM:
             candidate_slots = self.candidate_slots
             top_k = self.config.topic_top_k
 
+        score_dense = self._candidate_score_dense()
         bank_indices = np.arange(self.config.dense_banks)[:, None]
-        scores = self.dense.counters[bank_indices, candidate_slots].min(axis=0)
+        scores = score_dense.counters[bank_indices, candidate_slots].min(axis=0)
         score_cells = len(candidates) * self.config.dense_banks
         if self.config.candidate_scorer_lut is not None:
             learned_scores = np.empty(len(candidates), dtype=np.int32)
@@ -302,6 +312,7 @@ class DualPathSyntheticLM:
         candidate_touched = 0
         candidate_gate_touched = 0
         candidate_score_touched = 0
+        candidate_score_update_touched = 0
         candidate_admitted = 0
         candidate_skipped = 0
 
@@ -336,6 +347,8 @@ class DualPathSyntheticLM:
                     else:
                         admit_candidate = estimate >= self.config.candidate_admission_threshold
                 dense_touched += self.dense.update(token)
+                if self.candidate_score_dense is not None:
+                    candidate_score_update_touched += self.candidate_score_dense.update(token)
                 if self.candidate_cache is not None:
                     if admit_candidate:
                         candidate_admitted += 1
@@ -356,6 +369,11 @@ class DualPathSyntheticLM:
         total_events = self.config.topic_events + self.config.query_events
         exact_memory = self.exact.memory_bytes()
         dense_memory = self.dense.memory_bytes()
+        candidate_score_memory = (
+            self.candidate_score_dense.memory_bytes()
+            if self.candidate_score_dense is not None
+            else 0.0
+        )
         candidate_memory = (
             self.candidate_cache.memory_bytes() if self.candidate_cache is not None else 0.0
         )
@@ -382,6 +400,7 @@ class DualPathSyntheticLM:
             candidate_strategy=self.config.candidate_strategy,
             candidate_admission_mode=self._candidate_admission_mode(),
             candidate_scorer_mode=self._candidate_scorer_mode(),
+            candidate_score_source=self.config.candidate_score_source,
             induction_accuracy=correct_queries / self.config.query_events,
             topic_topk_hit_rate=topic_hits / self.config.topic_events,
             exact_avg_visited_cells=exact_visited / self.config.query_events,
@@ -390,6 +409,7 @@ class DualPathSyntheticLM:
             candidate_update_cells_per_event=candidate_touched / total_events,
             candidate_gate_cells_per_event=candidate_gate_touched / total_events,
             candidate_score_cells_per_event=candidate_score_touched / total_events,
+            candidate_score_update_cells_per_event=candidate_score_update_touched / total_events,
             candidate_admission_rate=candidate_admission_rate,
             candidate_admission_skips=candidate_skipped,
             candidate_cache_hit_rate=candidate_cache_hit_rate,
@@ -401,13 +421,20 @@ class DualPathSyntheticLM:
                 + candidate_touched
                 + candidate_gate_touched
                 + candidate_score_touched
+                + candidate_score_update_touched
             )
             / total_events,
             exact_memory_bytes=exact_memory,
             dense_memory_bytes=dense_memory,
+            candidate_score_memory_bytes=candidate_score_memory,
             candidate_memory_bytes=candidate_memory,
-            total_memory_bytes=exact_memory + dense_memory + candidate_memory,
+            total_memory_bytes=exact_memory + dense_memory + candidate_score_memory + candidate_memory,
         )
+
+    def _candidate_score_dense(self) -> LowBitDenseContext:
+        if self.candidate_score_dense is not None:
+            return self.candidate_score_dense
+        return self.dense
 
     def _candidate_admission_mode(self) -> str:
         if self.config.candidate_strategy != "online_cache":

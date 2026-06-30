@@ -287,6 +287,16 @@ traffic contaminates the dense sketch, and the 2D LUT has no source, phase,
 recency, or multi-tick stability feature to distinguish useful context from
 noise.
 
+The thirteenth sweep added the first explicit source/phase feature. Candidate
+ranking can now read a separate topic-phase dense sketch that is updated only
+after topic-output events. This isolates output scoring from exact-memory query
+and fact updates. The effect is conditional rather than universally positive:
+static topic@64 improves from about 62.1% to about 66.7%, and online always-admit
+topic@64 improves from about 61.4% to about 64.4%. Once the admission gate is
+enabled, the same source-phase sketch is redundant: gated dense scoring reaches
+about 67.1%, while gated topic-phase scoring reaches about 67.0% and adds about
+4KB state plus about 2.7 score-sketch writes per mixed event.
+
 The same sweep also fixed an accounting gap: candidate shortlist ranking reads
 dense-sketch counters. In the gated synthetic LM this adds about 179.6 score
 cells per mixed event. Because these are 4-bit local reads, the unified
