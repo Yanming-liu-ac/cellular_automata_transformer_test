@@ -316,6 +316,22 @@ overall language quality. The sparse coverage over all relevant queries is low
 by design because frequent queries are delegated to the HCA-like summary rather
 than rereading many historical blocks.
 
+The HCA-like global summary is now measured separately. At threshold 8:
+
+```text
+width=512   state=1KB  saturation=89.6%  top64=25.0%  top256=32.0%   query route acc=85.4%
+width=1024  state=2KB  saturation=27.8%  top64=53.1%  top256=48.4%   query route acc=94.6%
+width=2048  state=4KB  saturation=11.8%  top64=42.2%  top256=94.1%   query route acc=100.0%
+width=4096  state=8KB  saturation=6.1%   top64=51.6%  top256=100.0%  query route acc=100.0%
+```
+
+This separates route quality from dense-state quality. The 4KB global summary is
+already enough for the current hand threshold policy on the query stream, but
+top-64 frequency recall remains weak even at 8KB because 4-bit counters saturate
+on the hottest tokens. A deployable HCA-like path therefore needs a better
+frequency-preserving state, such as decay, group scales, per-block residual
+summaries, or higher-precision metadata on selected channels.
+
 ## Output-Head Metrics
 
 For output scoring, track:

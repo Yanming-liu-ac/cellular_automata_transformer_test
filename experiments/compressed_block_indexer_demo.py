@@ -14,6 +14,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_policy_trial,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
+    run_hca_summary_quality_sweep,
 )
 from cellular_transformer.hardware import format_bytes
 
@@ -172,6 +173,52 @@ def main() -> None:
     print("- Low thresholds save reads but may send rare/cold queries to the dense path.")
     print("- sparse_cv is low by design when hot queries are delegated to the HCA summary.")
     print("- This is the first explicit CA-side policy knob between CSA and HCA paths.")
+    print()
+
+    quality = run_hca_summary_quality_sweep(threshold=8)
+    print("HCA-like global summary quality")
+    print(
+        f"threshold={quality.threshold}, "
+        f"context={quality.context_length}, "
+        f"vocab={quality.vocab_size}, "
+        f"queries={quality.queries}"
+    )
+    headers = [
+        "width",
+        "state",
+        "sat",
+        "mae",
+        "top64",
+        "top256",
+        "prec",
+        "recall",
+        "q_acc",
+        "false_hca",
+        "miss_hca",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 132)
+    for point in quality.points:
+        row = [
+            f"{point.global_width}",
+            format_bytes(point.state_bytes),
+            fmt_pct(point.saturation_rate),
+            f"{point.clipped_mean_abs_error:0.3f}",
+            fmt_pct(point.top64_recall),
+            fmt_pct(point.top256_recall),
+            fmt_pct(point.threshold_precision),
+            fmt_pct(point.threshold_recall),
+            fmt_pct(point.query_route_accuracy),
+            fmt_pct(point.query_false_hca_rate),
+            fmt_pct(point.query_missed_hca_rate),
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("HCA interpretation:")
+    print("- The threshold classifier is the immediate requirement for CSA/HCA routing.")
+    print("- top-k recall measures whether the global summary preserves dense topic mass.")
+    print("- Saturation shows when 4-bit counters are losing frequency detail.")
 
 
 if __name__ == "__main__":

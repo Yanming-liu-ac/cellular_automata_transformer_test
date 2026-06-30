@@ -215,6 +215,37 @@ class CsaHcaPolicyResult:
     points: Tuple[CsaHcaPolicyPoint, ...]
 
 
+@dataclass(frozen=True)
+class HcaSummaryQualityPoint:
+    """One global-summary width in the HCA-like quality sweep."""
+
+    global_width: int
+    state_bytes: float
+    read_bytes_per_query: float
+    saturation_rate: float
+    clipped_mean_abs_error: float
+    top64_recall: float
+    top256_recall: float
+    threshold_precision: float
+    threshold_recall: float
+    query_route_accuracy: float
+    query_false_hca_rate: float
+    query_missed_hca_rate: float
+
+
+@dataclass(frozen=True)
+class HcaSummaryQualityResult:
+    """Quality diagnostics for the HCA-like global low-bit summary."""
+
+    context_length: int
+    vocab_size: int
+    hot_tokens: int
+    bits: int
+    threshold: int
+    queries: int
+    points: Tuple[HcaSummaryQualityPoint, ...]
+
+
 class LowBitCompressedBlockIndex:
     """Per-block low-bit count-min summaries for candidate block routing."""
 
@@ -653,6 +684,86 @@ def run_csa_hca_policy_trial(
     )
 
 
+def run_hca_summary_quality_sweep(
+    global_widths: Tuple[int, ...] = (512, 1024, 2048, 4096),
+    threshold: int = 8,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> HcaSummaryQualityResult:
+    """Check whether the HCA-like global summary can support path routing."""
+
+    if len(global_widths) == 0:
+        raise ValueError("global_widths must not be empty")
+    if any(int(width) <= 0 for width in global_widths):
+        raise ValueError("all global widths must be positive")
+    if threshold <= 0:
+        raise ValueError("threshold must be positive")
+
+    config = CompressedBlockIndexConfig(context_length=context_length, queries=queries)
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    exact_counts = np.bincount(stream, minlength=config.vocab_size).astype(np.int32)
+    query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
+    exact_query_hca = exact_counts[query_tokens] >= threshold
+
+    points = []
+    for width in tuple(sorted({int(width) for width in global_widths})):
+        global_config = DenseContextConfig(
+            vocab_size=config.vocab_size,
+            banks=config.banks,
+            width=width,
+            bits=config.bits,
+            decay_interval=config.context_length + 1,
+        )
+        summary = LowBitDenseContext(global_config)
+        for token in stream:
+            summary.update(int(token))
+        estimates = summary.estimate_all().astype(np.int32)
+        clipped_exact = np.minimum(exact_counts, global_config.max_value)
+        exact_frequent = exact_counts >= threshold
+        estimated_frequent = estimates >= threshold
+        query_estimated_hca = estimated_frequent[query_tokens]
+
+        true_positive = int(np.count_nonzero(exact_frequent & estimated_frequent))
+        predicted_positive = int(np.count_nonzero(estimated_frequent))
+        actual_positive = int(np.count_nonzero(exact_frequent))
+        query_correct = int(np.count_nonzero(query_estimated_hca == exact_query_hca))
+        query_false_hca = int(np.count_nonzero(query_estimated_hca & ~exact_query_hca))
+        query_missed_hca = int(np.count_nonzero(~query_estimated_hca & exact_query_hca))
+        query_actual_cold = int(np.count_nonzero(~exact_query_hca))
+        query_actual_hot = int(np.count_nonzero(exact_query_hca))
+
+        points.append(
+            HcaSummaryQualityPoint(
+                global_width=width,
+                state_bytes=summary.memory_bytes(),
+                read_bytes_per_query=config.banks * config.bits / 8,
+                saturation_rate=float(
+                    np.count_nonzero(summary.counters == global_config.max_value)
+                    / summary.counters.size
+                ),
+                clipped_mean_abs_error=float(np.mean(np.abs(estimates - clipped_exact))),
+                top64_recall=_topk_recall(estimates, exact_counts, 64),
+                top256_recall=_topk_recall(estimates, exact_counts, 256),
+                threshold_precision=_safe_divide(true_positive, predicted_positive),
+                threshold_recall=_safe_divide(true_positive, actual_positive),
+                query_route_accuracy=query_correct / config.queries,
+                query_false_hca_rate=_safe_divide(query_false_hca, query_actual_cold),
+                query_missed_hca_rate=_safe_divide(query_missed_hca, query_actual_hot),
+            )
+        )
+
+    return HcaSummaryQualityResult(
+        context_length=config.context_length,
+        vocab_size=config.vocab_size,
+        hot_tokens=config.hot_tokens,
+        bits=config.bits,
+        threshold=threshold,
+        queries=config.queries,
+        points=tuple(points),
+    )
+
+
 def _safe_divide(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
 
@@ -699,6 +810,15 @@ def _top_blocks(scores: np.ndarray, count: int) -> np.ndarray:
     block_ids = np.arange(len(scores), dtype=np.int32)
     order = np.lexsort((block_ids, -scores))
     return order[: min(count, len(order))].astype(np.int32)
+
+
+def _topk_recall(estimated: np.ndarray, exact: np.ndarray, k: int) -> float:
+    if k <= 0:
+        raise ValueError("k must be positive")
+    count = min(k, len(exact))
+    exact_top = set(np.argsort(exact)[-count:].tolist())
+    estimated_top = set(np.argsort(estimated)[-count:].tolist())
+    return len(exact_top & estimated_top) / count
 
 
 def _recent_blocks(blocks: int, count: int) -> np.ndarray:

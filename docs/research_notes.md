@@ -383,6 +383,18 @@ reads to about 165/query, about a 396x full-context token-read reduction. This
 is a policy result, not a language result: it assumes the HCA path can summarize
 high-frequency distributed evidence well enough.
 
+The twenty-first sweep tested that assumption directly. The global HCA-like
+summary is a low-bit count-min sketch over the whole context. At threshold 8,
+1KB and 2KB summaries are too collision-heavy for routing: query route accuracy
+is about 85.4% and 94.6%, with many false HCA routes. A 4KB summary reaches
+100% route accuracy on the deterministic query stream and a 100% threshold
+recall, so it is enough for the hand CSA/HCA policy. But dense-state quality is
+not solved. The 4KB summary has only about 42.2% top-64 frequency recall, and
+the 8KB summary still reaches only about 51.6% top-64 recall despite 100%
+top-256 recall. This points to 4-bit saturation among hot tokens. The next HCA
+experiment should add decay, scaling, or grouped higher-precision metadata
+rather than only increasing width.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

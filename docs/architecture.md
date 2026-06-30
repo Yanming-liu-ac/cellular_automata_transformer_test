@@ -260,6 +260,16 @@ block reads fall to about 165 token positions per query. This is a 396x
 full-context token-read reduction, but it assumes the HCA summary can handle
 the high-frequency distributed evidence.
 
+The first HCA-summary quality check weakens that assumption in a useful way. A
+4KB global 4-bit summary is good enough for the threshold-8 routing decision in
+the deterministic query stream: query route accuracy is 100%, with no false HCA
+routes or missed HCA routes. But it is not yet a strong dense semantic state.
+Its top-256 frequency recall is about 94.1%, while top-64 recall is only about
+42.2%; an 8KB version reaches 100% top-256 recall but still only about 51.6%
+top-64 recall. The likely culprit is 4-bit saturation among very frequent
+tokens. The next HCA path needs decay, scaling, grouped summaries, or slightly
+higher-precision metadata if it must preserve fine dense-topic order.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software

@@ -406,6 +406,12 @@ The first hand-written CSA/HCA policy confirms this split in a toy setting. A
 current deterministic trial, reducing average block-score reads to about
 300B/query. The next DeepSeek-style step is to learn that policy and verify the
 compressed HCA path with task loss, not just with routing labels.
+The first HCA-summary quality check is the cautionary half of the lesson. The
+4KB 4-bit global summary is good enough for the current threshold gate, but not
+for fine ranking of the hottest topic tokens. Even an 8KB version has only about
+51.6% top-64 frequency recall because the hottest counters saturate. This is
+exactly why V4-style low-bit design needs scales, offsets, grouped state, and
+sensitive-path exceptions rather than simply using 4-bit counters everywhere.
 
 ## Revised HARC-CA Design Principle
 

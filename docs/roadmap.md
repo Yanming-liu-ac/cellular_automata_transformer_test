@@ -91,6 +91,11 @@ Compressed block-index result:
   With threshold 8 it routes 100% of measured hot relevant queries to HCA and
   100% of measured cold relevant queries to CSA, reducing average block-score
   reads to about 300B/query and token block reads to about 165/query.
+- The first HCA-summary quality check says the same 4KB global summary is good
+  enough for threshold routing but not yet for fine dense-topic ranking:
+  top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
+  An 8KB version reaches 100% top-256 recall but still only about 51.6% top-64,
+  suggesting 4-bit saturation rather than only insufficient width.
 
 Dual-path result:
 
@@ -185,6 +190,8 @@ Next retrieval work:
   block reads versus when to use the compressed dense/HCA-like state.
 - quality tests for the HCA-like summary, because the hand threshold only saves
   reads if the dense recurrent path preserves enough high-frequency evidence.
+- anti-saturation HCA summaries: decayed counters, group scale metadata,
+  per-topic residual summaries, or selected higher-precision frequency channels.
 
 ## Phase 2: Trainable Continuous HARC-CA
 
