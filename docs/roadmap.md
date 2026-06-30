@@ -86,6 +86,11 @@ Compressed block-index result:
   below about 0.3 percentage points. Coverage grows from about 5.6% to 46.1%,
   while read reduction falls from about 170.7x to 7.9x. The next issue is read
   policy and memory-path split, not simply a better block score.
+- The first CSA/HCA routing policy uses a 4KB global low-bit summary to skip
+  block scoring for frequent queries and reserve CSA reads for rare queries.
+  With threshold 8 it routes 100% of measured hot relevant queries to HCA and
+  100% of measured cold relevant queries to CSA, reducing average block-score
+  reads to about 300B/query and token block reads to about 165/query.
 
 Dual-path result:
 
@@ -178,6 +183,8 @@ Next retrieval work:
   fraction of repeated occurrences.
 - a learned read-budget policy that decides when to spend additional sparse
   block reads versus when to use the compressed dense/HCA-like state.
+- quality tests for the HCA-like summary, because the hand threshold only saves
+  reads if the dense recurrent path preserves enough high-frequency evidence.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

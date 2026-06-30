@@ -400,6 +400,12 @@ across the measured read budgets. More indexer cleverness is not the immediate
 answer. High-frequency evidence should move through an HCA-like recurrent
 summary, while extra CSA-style block reads should be spent selectively on
 queries that need exact local detail.
+The first hand-written CSA/HCA policy confirms this split in a toy setting. A
+4KB global low-bit summary decides whether to skip block scoring. At threshold
+8, the policy sends hot queries to HCA and cold relevant queries to CSA in the
+current deterministic trial, reducing average block-score reads to about
+300B/query. The next DeepSeek-style step is to learn that policy and verify the
+compressed HCA path with task loss, not just with routing labels.
 
 ## Revised HARC-CA Design Principle
 

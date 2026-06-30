@@ -370,6 +370,19 @@ block-index rule is therefore already close to the exact block ranking on this
 task; the hard problem is deciding when to spend more sparse reads versus when
 to trust a compressed dense summary.
 
+The twentieth sweep added the first explicit CSA/HCA read-policy diagnostic.
+A 4KB global 4-bit summary estimates query frequency before the block index is
+scored. Frequent queries are delegated to the HCA-like dense/recurrent path;
+low-frequency queries use 4 CSA blocks plus a 2-block tail. At threshold 8, the
+policy routes about 85.4% of all queries to HCA and 14.7% to CSA. In the current
+deterministic trial it sends 100% of measured hot relevant queries to HCA and
+100% of measured cold relevant queries to CSA. CSA-routed relevant queries have
+100% block hit and 100% occurrence coverage because they are mostly rare tokens.
+Average block-score traffic drops to about 300B/query and average token block
+reads to about 165/query, about a 396x full-context token-read reduction. This
+is a policy result, not a language result: it assumes the HCA path can summarize
+high-frequency distributed evidence well enough.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

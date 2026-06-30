@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from cellular_transformer.compressed_block_indexer import (
+    run_csa_hca_policy_trial,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
 )
@@ -124,6 +125,53 @@ def main() -> None:
     print("- Coverage rises slowly because hot tokens are spread across many blocks.")
     print("- The tiny oracle gap says the compressed score nearly matches exact top-block choice.")
     print("- This supports repeated sparse reads or a separate dense summary for high-frequency tokens.")
+    print()
+
+    policy = run_csa_hca_policy_trial(summary_width=256, global_width=2048)
+    print("Low-bit CSA/HCA routing policy")
+    print(
+        "fixed state: "
+        f"blocks={format_bytes(policy.block_summary_state_bytes)}, "
+        f"global={format_bytes(policy.global_summary_state_bytes)}, "
+        f"global_rd={format_bytes(policy.global_summary_read_bytes_per_query)}/query"
+    )
+    headers = [
+        "thresh",
+        "hca_q",
+        "csa_q",
+        "hot_hca",
+        "cold_csa",
+        "csa_hit",
+        "csa_cov",
+        "sparse_cv",
+        "score_rd",
+        "kv_read",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 132)
+    for point in policy.points:
+        row = [
+            f"{point.hca_threshold}",
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.csa_query_rate),
+            fmt_pct(point.hot_to_hca_rate),
+            fmt_pct(point.cold_to_csa_rate),
+            fmt_pct(point.csa_relevant_hit_rate),
+            fmt_pct(point.csa_relevant_coverage),
+            fmt_pct(point.policy_sparse_coverage),
+            format_bytes(point.block_score_bytes_per_query),
+            f"{point.token_reads_per_query:0.0f}",
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("Policy interpretation:")
+    print("- A tiny global summary can skip block scoring for frequent HCA-path queries.")
+    print("- Low thresholds save reads but may send rare/cold queries to the dense path.")
+    print("- sparse_cv is low by design when hot queries are delegated to the HCA summary.")
+    print("- This is the first explicit CA-side policy knob between CSA and HCA paths.")
 
 
 if __name__ == "__main__":

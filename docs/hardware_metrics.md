@@ -295,6 +295,27 @@ block reads for rare/exact details, compressed recurrent summaries for
 high-frequency distributed evidence, and repeated reads only when the query
 requires more attention mass.
 
+The first CSA/HCA routing policy adds a 4KB global low-bit summary and reads
+only 2 bytes of global counters per query. The policy uses that estimate to skip
+block scoring for frequent HCA-path queries and reserve CSA block reads for
+low-frequency queries. With `csa_blocks=4`, `tail_blocks=2`, and threshold 8:
+
+```text
+HCA query rate: about 85.4%
+CSA query rate: about 14.7%
+hot -> HCA: 100.0%
+cold -> CSA: 100.0% on the measured relevant cold subset
+CSA-path hit/coverage: 100.0% / 100.0% on the routed relevant subset
+average block-score reads: about 300B/query instead of 2KB/query
+average token block reads: about 165 token positions/query
+full-context token-read reduction: about 396x
+```
+
+This is the first useful read-policy metric. It should not be interpreted as
+overall language quality. The sparse coverage over all relevant queries is low
+by design because frequent queries are delegated to the HCA-like summary rather
+than rereading many historical blocks.
+
 ## Output-Head Metrics
 
 For output scoring, track:

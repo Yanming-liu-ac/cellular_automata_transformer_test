@@ -249,6 +249,17 @@ top-block selection stays below about 0.3 percentage points. That means the
 current bottleneck is not block ranking; it is the amount of high-frequency
 history one can afford to reread.
 
+The first explicit CSA/HCA read policy adds a tiny global 4-bit summary before
+block scoring. If the global summary says a query token is frequent, the query
+uses the HCA-like recurrent/dense path and skips block scoring; otherwise it
+uses a small CSA block read. With a 4KB global summary and threshold 8, the
+current deterministic stream routes all measured hot relevant queries to HCA and
+all measured cold relevant queries to CSA. Average block-score traffic drops
+from 2KB/query for fixed block scoring to about 300B/query, and average token
+block reads fall to about 165 token positions per query. This is a 396x
+full-context token-read reduction, but it assumes the HCA summary can handle
+the high-frequency distributed evidence.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software

@@ -14,6 +14,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
+from .dense_context import DenseContextConfig, LowBitDenseContext
 from .retrieval import keyed_hash
 
 
@@ -174,6 +175,44 @@ class CompressedBlockBudgetSweepResult:
     summary_state_bytes: float
     score_bytes_per_query: float
     points: Tuple[CompressedBlockBudgetPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaPolicyPoint:
+    """One low-bit global-summary threshold for CSA/HCA path selection."""
+
+    hca_threshold: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_query_rate: float
+    csa_query_rate: float
+    hot_to_hca_rate: float
+    cold_to_csa_rate: float
+    csa_relevant_hit_rate: float
+    csa_relevant_coverage: float
+    policy_sparse_coverage: float
+    token_reads_per_query: float
+    token_read_reduction: float
+    block_score_bytes_per_query: float
+
+
+@dataclass(frozen=True)
+class CsaHcaPolicyResult:
+    """Adaptive sparse/dense path policy driven by a low-bit global summary."""
+
+    context_length: int
+    block_size: int
+    blocks: int
+    banks: int
+    summary_width: int
+    global_width: int
+    bits: int
+    queries: int
+    relevant_query_rate: float
+    block_summary_state_bytes: float
+    global_summary_state_bytes: float
+    global_summary_read_bytes_per_query: float
+    points: Tuple[CsaHcaPolicyPoint, ...]
 
 
 class LowBitCompressedBlockIndex:
@@ -456,6 +495,160 @@ def run_compressed_block_budget_sweep(
         relevant_query_rate=relevant_queries / config.queries,
         summary_state_bytes=index.state_bytes,
         score_bytes_per_query=config.score_bytes_per_query,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_policy_trial(
+    summary_width: int = 256,
+    global_width: int = 2048,
+    thresholds: Tuple[int, ...] = (1, 2, 4, 8, 12),
+    csa_blocks: int = 4,
+    tail_blocks: int = 2,
+    block_size: int = 64,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> CsaHcaPolicyResult:
+    """Route high-frequency queries to HCA and low-frequency queries to CSA."""
+
+    if len(thresholds) == 0:
+        raise ValueError("thresholds must not be empty")
+    if any(int(threshold) <= 0 for threshold in thresholds):
+        raise ValueError("all thresholds must be positive")
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    index = LowBitCompressedBlockIndex(config)
+    global_summary = LowBitDenseContext(global_config)
+    for position, token in enumerate(stream):
+        index.update(int(token), position)
+        global_summary.update(int(token))
+
+    exact_counts = _build_exact_block_counts(stream, config.block_size)
+    query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
+    recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+    thresholds = tuple(sorted({int(threshold) for threshold in thresholds}))
+    metrics = {
+        threshold: {
+            "hca": 0,
+            "csa": 0,
+            "hot_hca": 0,
+            "cold_csa": 0,
+            "csa_relevant": 0,
+            "csa_hits": 0,
+            "csa_coverage": 0.0,
+            "policy_coverage": 0.0,
+            "token_reads": 0.0,
+            "score_bytes": 0.0,
+        }
+        for threshold in thresholds
+    }
+
+    relevant_queries = 0
+    hot_relevant_queries = 0
+    cold_relevant_queries = 0
+    for token in query_tokens:
+        token = int(token)
+        global_estimate = global_summary.estimate(token)
+        is_hot = token < config.hot_tokens
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+        if is_relevant:
+            relevant_queries += 1
+            hot_relevant_queries += int(is_hot)
+            cold_relevant_queries += int(not is_hot)
+        for threshold in thresholds:
+            route_hca = global_estimate >= threshold
+            if route_hca:
+                selected = recent_blocks
+                metrics[threshold]["hca"] += 1
+            else:
+                scores = index.estimate_blocks(token)
+                selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+                metrics[threshold]["csa"] += 1
+                metrics[threshold]["score_bytes"] += config.score_bytes_per_query
+
+            metrics[threshold]["token_reads"] += len(selected) * config.block_size
+            if not is_relevant:
+                continue
+            if route_hca and is_hot:
+                metrics[threshold]["hot_hca"] += 1
+            if (not route_hca) and (not is_hot):
+                metrics[threshold]["cold_csa"] += 1
+            coverage = _occurrence_coverage(selected, block_counts)
+            metrics[threshold]["policy_coverage"] += coverage
+            if not route_hca:
+                metrics[threshold]["csa_relevant"] += 1
+                metrics[threshold]["csa_hits"] += _block_hit(selected, block_counts)
+                metrics[threshold]["csa_coverage"] += coverage
+
+    query_denominator = config.queries if config.queries else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    points = []
+    for threshold in thresholds:
+        token_reads = metrics[threshold]["token_reads"] / query_denominator
+        csa_relevant = metrics[threshold]["csa_relevant"]
+        points.append(
+            CsaHcaPolicyPoint(
+                hca_threshold=threshold,
+                csa_blocks=config.selected_blocks,
+                tail_blocks=config.tail_blocks,
+                hca_query_rate=metrics[threshold]["hca"] / query_denominator,
+                csa_query_rate=metrics[threshold]["csa"] / query_denominator,
+                hot_to_hca_rate=_safe_divide(
+                    metrics[threshold]["hot_hca"],
+                    hot_relevant_queries,
+                ),
+                cold_to_csa_rate=_safe_divide(
+                    metrics[threshold]["cold_csa"],
+                    cold_relevant_queries,
+                ),
+                csa_relevant_hit_rate=_safe_divide(
+                    metrics[threshold]["csa_hits"],
+                    csa_relevant,
+                ),
+                csa_relevant_coverage=_safe_divide(
+                    metrics[threshold]["csa_coverage"],
+                    csa_relevant,
+                ),
+                policy_sparse_coverage=metrics[threshold]["policy_coverage"]
+                / relevant_denominator,
+                token_reads_per_query=token_reads,
+                token_read_reduction=_safe_divide(config.context_length, token_reads),
+                block_score_bytes_per_query=metrics[threshold]["score_bytes"]
+                / query_denominator,
+            )
+        )
+
+    global_summary_read_bytes = config.banks * config.bits / 8
+    return CsaHcaPolicyResult(
+        context_length=config.context_length,
+        block_size=config.block_size,
+        blocks=config.blocks,
+        banks=config.banks,
+        summary_width=config.summary_width,
+        global_width=global_width,
+        bits=config.bits,
+        queries=config.queries,
+        relevant_query_rate=relevant_queries / query_denominator,
+        block_summary_state_bytes=index.state_bytes,
+        global_summary_state_bytes=global_summary.memory_bytes(),
+        global_summary_read_bytes_per_query=global_summary_read_bytes,
         points=tuple(points),
     )
 
