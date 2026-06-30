@@ -366,6 +366,12 @@ angle: separating topic-output state from query/fact traffic helps noisy
 candidate paths, but the current admission gate still dominates the best
 synthetic result. CSA-like indexing needs a coordinated state interface, not
 one isolated feature.
+Combining topic-phase score with candidate-cache score through a fixed
+`2 * topic_score + cache_score` rule improves the noisy online path, which is
+the first positive sign for a multi-feature local indexer. It still does not
+beat the gated dense baseline, so the DeepSeek-style takeaway remains
+systems-level: compression, cache state, routing gate, and scorer state must be
+trained and evaluated together.
 
 ## Revised HARC-CA Design Principle
 

@@ -70,8 +70,15 @@ class SyntheticLMConfig:
             raise ValueError("topic_top_k must be in (0, candidate_pool_size]")
         if self.candidate_strategy not in ("static", "online_cache"):
             raise ValueError("candidate_strategy must be 'static' or 'online_cache'")
-        if self.candidate_score_source not in ("dense", "topic_phase"):
-            raise ValueError("candidate_score_source must be 'dense' or 'topic_phase'")
+        if self.candidate_score_source not in (
+            "dense",
+            "topic_phase",
+            "dense_topic_sum",
+            "topic_cache",
+            "dense_topic_cache",
+            "topic_denoised",
+        ):
+            raise ValueError("candidate_score_source is not supported")
         if self.candidate_strategy == "static" and self.candidate_pool_size < self.hot_tokens:
             raise ValueError("candidate_pool_size must include all hot tokens")
         if self.candidate_strategy == "online_cache":
@@ -211,7 +218,7 @@ class DualPathSyntheticLM:
         )
         self.dense = LowBitDenseContext(dense_config)
         self.candidate_score_dense: LowBitDenseContext | None = None
-        if config.candidate_score_source == "topic_phase":
+        if config.candidate_score_source != "dense":
             self.candidate_score_dense = LowBitDenseContext(dense_config)
         self.exact = TieredHashRouteCAM(TieredHashRouteCAMConfig(primary, overflow))
         self.rng = np.random.default_rng(seed)
@@ -281,10 +288,12 @@ class DualPathSyntheticLM:
             candidate_slots = self.candidate_slots
             top_k = self.config.topic_top_k
 
-        score_dense = self._candidate_score_dense()
         bank_indices = np.arange(self.config.dense_banks)[:, None]
-        scores = score_dense.counters[bank_indices, candidate_slots].min(axis=0)
-        score_cells = len(candidates) * self.config.dense_banks
+        scores, score_cells = self._candidate_scores(
+            candidate_slots=candidate_slots,
+            cache_scores=cache_scores,
+            bank_indices=bank_indices,
+        )
         if self.config.candidate_scorer_lut is not None:
             learned_scores = np.empty(len(candidates), dtype=np.int32)
             for index, (dense_score, cache_score) in enumerate(zip(scores, cache_scores)):
@@ -431,10 +440,37 @@ class DualPathSyntheticLM:
             total_memory_bytes=exact_memory + dense_memory + candidate_score_memory + candidate_memory,
         )
 
-    def _candidate_score_dense(self) -> LowBitDenseContext:
-        if self.candidate_score_dense is not None:
-            return self.candidate_score_dense
-        return self.dense
+    def _candidate_scores(
+        self,
+        candidate_slots: np.ndarray,
+        cache_scores: np.ndarray,
+        bank_indices: np.ndarray,
+    ) -> tuple[np.ndarray, int]:
+        dense_scores = self.dense.counters[bank_indices, candidate_slots].min(axis=0)
+        read_cells = candidate_slots.size
+        source = self.config.candidate_score_source
+        if source == "dense":
+            return dense_scores, read_cells
+
+        if self.candidate_score_dense is None:
+            raise RuntimeError("candidate score dense state is not initialized")
+        topic_scores = self.candidate_score_dense.counters[bank_indices, candidate_slots].min(axis=0)
+        topic_read_cells = candidate_slots.size
+
+        if source == "topic_phase":
+            return topic_scores, topic_read_cells
+        dense_scores = dense_scores.astype(np.int32)
+        topic_scores = topic_scores.astype(np.int32)
+        if source == "dense_topic_sum":
+            return dense_scores + topic_scores, read_cells + topic_read_cells
+        if source == "topic_cache":
+            return 2 * topic_scores + cache_scores.astype(np.int32), topic_read_cells
+        if source == "dense_topic_cache":
+            return dense_scores + topic_scores + cache_scores.astype(np.int32), read_cells + topic_read_cells
+        if source == "topic_denoised":
+            contamination = np.maximum(dense_scores - topic_scores, 0)
+            return 2 * topic_scores - contamination, read_cells + topic_read_cells
+        raise RuntimeError("unsupported candidate score source")
 
     def _candidate_admission_mode(self) -> str:
         if self.config.candidate_strategy != "online_cache":

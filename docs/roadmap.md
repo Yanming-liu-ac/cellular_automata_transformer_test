@@ -200,6 +200,13 @@ current admission-gated dense baseline. The next scorer should combine source
 phase with recency and contamination counters instead of treating phase
 separation as a standalone replacement.
 
+The first source/cache combination is also measured. The fixed
+`2 * topic_score + cache_score` rule improves the noisy online always-admit
+path, but still loses to the admission-gated dense baseline. This makes the next
+target more specific: learn a local indexer over `(dense score, topic score,
+cache score, gate estimate, recency/contamination counters)` instead of
+hand-selecting one score formula.
+
 Second trainable target:
 
 ```text

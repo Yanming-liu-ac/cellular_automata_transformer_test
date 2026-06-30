@@ -32,6 +32,7 @@ def main() -> None:
         ("static", SyntheticLMConfig(dense_width=1024)),
         ("static", SyntheticLMConfig(dense_width=2048)),
         ("static_ph", SyntheticLMConfig(dense_width=2048, candidate_score_source="topic_phase")),
+        ("static_sum", SyntheticLMConfig(dense_width=2048, candidate_score_source="dense_topic_sum")),
         ("static", SyntheticLMConfig(dense_width=4096)),
         ("online", SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")),
         (
@@ -40,6 +41,14 @@ def main() -> None:
                 dense_width=2048,
                 candidate_strategy="online_cache",
                 candidate_score_source="topic_phase",
+            ),
+        ),
+        (
+            "online_tc",
+            SyntheticLMConfig(
+                dense_width=2048,
+                candidate_strategy="online_cache",
+                candidate_score_source="topic_cache",
             ),
         ),
         (
@@ -57,6 +66,15 @@ def main() -> None:
                 candidate_strategy="online_cache",
                 candidate_admission_threshold=1,
                 candidate_score_source="topic_phase",
+            ),
+        ),
+        (
+            "gated_tc",
+            SyntheticLMConfig(
+                dense_width=2048,
+                candidate_strategy="online_cache",
+                candidate_admission_threshold=1,
+                candidate_score_source="topic_cache",
             ),
         ),
     ]
@@ -118,6 +136,7 @@ def main() -> None:
     print("- Online/gated variants generate candidates from the low-bit cache.")
     print("- Score_upd counts local dense-sketch reads for ranking the candidate shortlist.")
     print("- Topic-phase rows use a separate scoring sketch updated only by topic events.")
+    print("- Topic-cache rows use 2 * topic-phase score + candidate-cache score.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
 
 

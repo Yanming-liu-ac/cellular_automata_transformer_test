@@ -428,12 +428,18 @@ It is another 4-bit dense-context sketch, but it is updated only by topic-output
 events and is used only for candidate ranking. This isolates the output indexer
 from exact-memory query/fact traffic. It improves static candidate scoring from
 about 62.1% to about 66.7% topic@64 and online always-admit scoring from about
-61.4% to about 64.4%. However, with the current admission gate it does not beat
-the dense baseline: gated dense scoring is about 67.1%, while gated topic-phase
-scoring is about 67.0% and costs about 4KB extra state plus about 2.7 local
-score-sketch writes per mixed event. The current default therefore remains
-gated dense scoring, but the experiment validates source/phase separation as a
-real control knob rather than just a documentation idea.
+61.4% to about 64.4%.
+
+The follow-up combination sweep tested whether the topic-phase score should be
+combined with other local signals. `dense_topic_sum` raises static topic@64 to
+about 67.0%, but it doubles candidate score reads. `topic_cache` uses
+`2 * topic_score + cache_score`, keeps the same single-sketch read cost as
+`topic_phase`, and raises online always-admit topic@64 to about 65.8%. However,
+with the current admission gate these combinations still do not beat the
+default: gated dense scoring is about 67.1%, gated topic-phase scoring is about
+67.0%, and gated topic-cache scoring is about 66.7%. The current default
+therefore remains gated dense scoring, but source/phase/cache signals are now
+measured local features for the next learned indexer.
 
 ## Event-Level Efficiency Profile
 

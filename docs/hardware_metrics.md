@@ -202,6 +202,14 @@ online always-admit topic@64 rises from about 61.4% to about 64.4%. It does not
 improve the current gated path: gated dense scoring is about 67.1%, while gated
 topic-phase scoring is about 67.0% with extra state and writes.
 
+The first source/cache combination keeps the same topic-phase sketch but adds
+candidate-cache score during ranking. `topic_cache` uses
+`2 * topic_score + cache_score` and raises online always-admit topic@64 to about
+65.8% without increasing score-read cells beyond the single-sketch topic-phase
+path. `dense_topic_sum` reaches about 67.0% on the static candidate pool, but
+doubles candidate score reads from about 1365 to about 2731 cells/event. In the
+current gated path, neither combination beats gated dense scoring.
+
 ## Output-Head Metrics
 
 For output scoring, track:

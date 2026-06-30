@@ -297,6 +297,16 @@ enabled, the same source-phase sketch is redundant: gated dense scoring reaches
 about 67.1%, while gated topic-phase scoring reaches about 67.0% and adds about
 4KB state plus about 2.7 score-sketch writes per mixed event.
 
+The fourteenth sweep combined local scorer signals. `topic_cache` uses
+`2 * topic_score + cache_score` and raises online always-admit topic@64 to about
+65.8% without increasing score-read cells beyond the topic-phase path.
+`dense_topic_sum` combines both dense sketches and reaches about 67.0% on the
+static candidate pool, but doubles candidate score reads. The admission-gated
+path remains the strongest current setting: gated dense scoring is about 67.1%,
+gated topic-phase is about 67.0%, and gated topic-cache is about 66.7%. This
+suggests source/phase/cache signals should feed a learned local indexer, but
+they are not yet a better hand-written replacement for the current gate.
+
 The same sweep also fixed an accounting gap: candidate shortlist ranking reads
 dense-sketch counters. In the gated synthetic LM this adds about 179.6 score
 cells per mixed event. Because these are 4-bit local reads, the unified

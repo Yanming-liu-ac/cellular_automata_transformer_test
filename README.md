@@ -73,8 +73,8 @@ The first experiments compare:
 - learned low-bit candidate admission from self-supervised repeat labels;
 - learned candidate scorer negative benchmarks, including a future-window
   residual indexer, plus explicit scoring-read budget;
-- source/phase-separated candidate scoring sketch for testing dense-state
-  contamination;
+- source/phase/cache candidate scoring sketches for testing dense-state
+  contamination and local indexer features;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;
