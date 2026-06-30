@@ -96,6 +96,12 @@ Compressed block-index result:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
   An 8KB version reaches 100% top-256 recall but still only about 51.6% top-64,
   suggesting 4-bit saturation rather than only insufficient width.
+- Periodic decay is the first anti-saturation fix. With the same 4KB summary,
+  decay intervals from 64 to 512 tokens recover 100% top-64/top-256
+  decayed-topic recall and 100% route accuracy when the decayed-state threshold
+  is adjusted to 2. Decay every 256 tokens costs about 32 decay-cell touches per
+  token if counted synchronously, so the next step is not just quality but
+  maintenance scheduling or scale metadata.
 
 Dual-path result:
 
@@ -192,6 +198,9 @@ Next retrieval work:
   reads if the dense recurrent path preserves enough high-frequency evidence.
 - anti-saturation HCA summaries: decayed counters, group scale metadata,
   per-topic residual summaries, or selected higher-precision frequency channels.
+- replace hand-set HCA decay/threshold with learned or metadata-driven
+  scale/decay control and account for maintenance traffic in the unified
+  event profile.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

@@ -412,6 +412,11 @@ for fine ranking of the hottest topic tokens. Even an 8KB version has only about
 51.6% top-64 frequency recall because the hottest counters saturate. This is
 exactly why V4-style low-bit design needs scales, offsets, grouped state, and
 sensitive-path exceptions rather than simply using 4-bit counters everywhere.
+The decay sweep shows the constructive side: low-bit state can work when the
+state dynamics keep it out of saturation. A 4KB decayed global summary recovers
+100% top-64/top-256 decayed-topic recall in the current stream. The hardware
+lesson is that decay or scale metadata is part of the model, not an
+implementation detail; otherwise maintenance traffic can erase the gain.
 
 ## Revised HARC-CA Design Principle
 

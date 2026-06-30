@@ -270,6 +270,15 @@ top-64 recall. The likely culprit is 4-bit saturation among very frequent
 tokens. The next HCA path needs decay, scaling, grouped summaries, or slightly
 higher-precision metadata if it must preserve fine dense-topic order.
 
+The first anti-saturation fix is simple periodic decay. Keeping the same 4KB
+global summary but decaying counters every 256 tokens removes saturation in the
+current stream, recovers 100% top-64 and top-256 decayed-topic recall, and keeps
+the threshold route accurate when the decayed-state threshold is lowered to 2.
+The cost is about 32 decay-cell touches per token if counted synchronously. This
+looks like the right HCA direction: low-bit recurrent state should be decayed or
+scaled, but the decay interval and routing threshold should become learned or
+metadata-driven rather than hand fixed.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software

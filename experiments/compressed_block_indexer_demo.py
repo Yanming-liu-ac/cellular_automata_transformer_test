@@ -14,6 +14,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_policy_trial,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
+    run_hca_decay_quality_sweep,
     run_hca_summary_quality_sweep,
 )
 from cellular_transformer.hardware import format_bytes
@@ -219,6 +220,52 @@ def main() -> None:
     print("- The threshold classifier is the immediate requirement for CSA/HCA routing.")
     print("- top-k recall measures whether the global summary preserves dense topic mass.")
     print("- Saturation shows when 4-bit counters are losing frequency detail.")
+    print()
+
+    decay = run_hca_decay_quality_sweep(global_width=2048, threshold=2)
+    print("HCA anti-saturation decay sweep")
+    print(
+        f"fixed summary: width={decay.global_width}, "
+        f"state={format_bytes(decay.points[0].state_bytes)}, "
+        f"threshold={decay.threshold}"
+    )
+    headers = [
+        "decay",
+        "dec_cell",
+        "sat",
+        "mae",
+        "top64",
+        "top256",
+        "prec",
+        "recall",
+        "q_acc",
+        "false_hca",
+        "miss_hca",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 132)
+    for point in decay.points:
+        label = "none" if point.decay_interval > decay.context_length else str(point.decay_interval)
+        row = [
+            label,
+            f"{point.avg_decay_cells_per_token:0.1f}",
+            fmt_pct(point.saturation_rate),
+            f"{point.clipped_mean_abs_error:0.3f}",
+            fmt_pct(point.top64_recall),
+            fmt_pct(point.top256_recall),
+            fmt_pct(point.threshold_precision),
+            fmt_pct(point.threshold_recall),
+            fmt_pct(point.query_route_accuracy),
+            fmt_pct(point.query_false_hca_rate),
+            fmt_pct(point.query_missed_hca_rate),
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("Decay interpretation:")
+    print("- Decay fixes saturation and recovers top-k dense-topic order for this stream.")
+    print("- Decayed state needs its own lower threshold or learned scale metadata.")
+    print("- The next HCA state should make decay and threshold/scale trainable rather than fixed.")
 
 
 if __name__ == "__main__":

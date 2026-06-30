@@ -395,6 +395,18 @@ top-256 recall. This points to 4-bit saturation among hot tokens. The next HCA
 experiment should add decay, scaling, or grouped higher-precision metadata
 rather than only increasing width.
 
+The twenty-second sweep tested the simplest anti-saturation mechanism: periodic
+integer decay. Keeping the HCA-like global summary at 4KB (`width=2048`) and
+using a decayed-state threshold of 2, decay intervals from 64 to 512 tokens
+recover 100% top-64 and top-256 decayed-topic recall with 100% route accuracy
+on the deterministic query stream. A 1024-token decay interval still reaches
+about 98.4% top-64 and 99.6% top-256 recall. The no-decay baseline at the same
+threshold falls back to about 42.2% top-64 and 88.2% route accuracy because
+saturation produces false HCA routes. The tradeoff is maintenance traffic:
+decay every 256 tokens costs about 32 decay-cell touches per token if counted
+synchronously. This should become a scheduled/background tile operation or a
+learned scale/threshold mechanism.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

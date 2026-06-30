@@ -332,6 +332,23 @@ on the hottest tokens. A deployable HCA-like path therefore needs a better
 frequency-preserving state, such as decay, group scales, per-block residual
 summaries, or higher-precision metadata on selected channels.
 
+Periodic decay is the first anti-saturation fix. With the same 4KB
+`width=2048` global summary and a decayed-state threshold of 2:
+
+```text
+decay=64    top64=100.0%  top256=100.0%  route acc=100.0%  decay cells/token=128.0
+decay=128   top64=100.0%  top256=100.0%  route acc=100.0%  decay cells/token=64.0
+decay=256   top64=100.0%  top256=100.0%  route acc=100.0%  decay cells/token=32.0
+decay=512   top64=100.0%  top256=100.0%  route acc=100.0%  decay cells/token=16.0
+decay=1024  top64=98.4%   top256=99.6%   route acc=100.0%  decay cells/token=8.0
+no decay    top64=42.2%   top256=94.1%   route acc=88.2%   decay cells/token=0.0
+```
+
+This validates decay as an HCA anti-saturation mechanism on the current
+topic/noise stream. It also exposes the maintenance cost: synchronous all-cell
+decay can dominate the 4-counter update cost unless it is scheduled as a
+background tile operation, amortized, or replaced by scale metadata.
+
 ## Output-Head Metrics
 
 For output scoring, track:

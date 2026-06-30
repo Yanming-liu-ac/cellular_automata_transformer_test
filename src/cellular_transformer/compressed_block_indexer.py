@@ -14,7 +14,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-from .dense_context import DenseContextConfig, LowBitDenseContext
+from .dense_context import DenseContextConfig, LowBitDenseContext, exact_decayed_counts
 from .retrieval import keyed_hash
 
 
@@ -244,6 +244,39 @@ class HcaSummaryQualityResult:
     threshold: int
     queries: int
     points: Tuple[HcaSummaryQualityPoint, ...]
+
+
+@dataclass(frozen=True)
+class HcaDecayQualityPoint:
+    """One decay interval for the HCA-like global summary."""
+
+    decay_interval: int
+    state_bytes: float
+    read_bytes_per_query: float
+    avg_decay_cells_per_token: float
+    saturation_rate: float
+    clipped_mean_abs_error: float
+    top64_recall: float
+    top256_recall: float
+    threshold_precision: float
+    threshold_recall: float
+    query_route_accuracy: float
+    query_false_hca_rate: float
+    query_missed_hca_rate: float
+
+
+@dataclass(frozen=True)
+class HcaDecayQualityResult:
+    """Anti-saturation diagnostics for decayed HCA-like global summaries."""
+
+    context_length: int
+    vocab_size: int
+    hot_tokens: int
+    global_width: int
+    bits: int
+    threshold: int
+    queries: int
+    points: Tuple[HcaDecayQualityPoint, ...]
 
 
 class LowBitCompressedBlockIndex:
@@ -757,6 +790,92 @@ def run_hca_summary_quality_sweep(
         context_length=config.context_length,
         vocab_size=config.vocab_size,
         hot_tokens=config.hot_tokens,
+        bits=config.bits,
+        threshold=threshold,
+        queries=config.queries,
+        points=tuple(points),
+    )
+
+
+def run_hca_decay_quality_sweep(
+    global_width: int = 2048,
+    decay_intervals: Tuple[int, ...] = (64, 128, 256, 512, 1024, 65537),
+    threshold: int = 2,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> HcaDecayQualityResult:
+    """Evaluate periodic decay as the first HCA anti-saturation mechanism."""
+
+    if global_width <= 0:
+        raise ValueError("global_width must be positive")
+    if len(decay_intervals) == 0:
+        raise ValueError("decay_intervals must not be empty")
+    if any(int(interval) <= 0 for interval in decay_intervals):
+        raise ValueError("all decay intervals must be positive")
+    if threshold <= 0:
+        raise ValueError("threshold must be positive")
+
+    config = CompressedBlockIndexConfig(context_length=context_length, queries=queries)
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
+
+    points = []
+    for decay_interval in tuple(sorted({int(interval) for interval in decay_intervals})):
+        global_config = DenseContextConfig(
+            vocab_size=config.vocab_size,
+            banks=config.banks,
+            width=global_width,
+            bits=config.bits,
+            decay_interval=decay_interval,
+        )
+        summary = LowBitDenseContext(global_config)
+        for token in stream:
+            summary.update(int(token))
+        exact = exact_decayed_counts(stream, global_config).astype(np.int32)
+        estimates = summary.estimate_all().astype(np.int32)
+        exact_frequent = exact >= threshold
+        estimated_frequent = estimates >= threshold
+        exact_query_hca = exact_frequent[query_tokens]
+        query_estimated_hca = estimated_frequent[query_tokens]
+
+        true_positive = int(np.count_nonzero(exact_frequent & estimated_frequent))
+        predicted_positive = int(np.count_nonzero(estimated_frequent))
+        actual_positive = int(np.count_nonzero(exact_frequent))
+        query_correct = int(np.count_nonzero(query_estimated_hca == exact_query_hca))
+        query_false_hca = int(np.count_nonzero(query_estimated_hca & ~exact_query_hca))
+        query_missed_hca = int(np.count_nonzero(~query_estimated_hca & exact_query_hca))
+        query_actual_cold = int(np.count_nonzero(~exact_query_hca))
+        query_actual_hot = int(np.count_nonzero(exact_query_hca))
+        decay_events = config.context_length // decay_interval
+        decay_cells = decay_events * config.banks * global_width
+
+        points.append(
+            HcaDecayQualityPoint(
+                decay_interval=decay_interval,
+                state_bytes=summary.memory_bytes(),
+                read_bytes_per_query=config.banks * config.bits / 8,
+                avg_decay_cells_per_token=decay_cells / config.context_length,
+                saturation_rate=float(
+                    np.count_nonzero(summary.counters == global_config.max_value)
+                    / summary.counters.size
+                ),
+                clipped_mean_abs_error=float(np.mean(np.abs(estimates - exact))),
+                top64_recall=_topk_recall(estimates, exact, 64),
+                top256_recall=_topk_recall(estimates, exact, 256),
+                threshold_precision=_safe_divide(true_positive, predicted_positive),
+                threshold_recall=_safe_divide(true_positive, actual_positive),
+                query_route_accuracy=query_correct / config.queries,
+                query_false_hca_rate=_safe_divide(query_false_hca, query_actual_cold),
+                query_missed_hca_rate=_safe_divide(query_missed_hca, query_actual_hot),
+            )
+        )
+
+    return HcaDecayQualityResult(
+        context_length=config.context_length,
+        vocab_size=config.vocab_size,
+        hot_tokens=config.hot_tokens,
+        global_width=global_width,
         bits=config.bits,
         threshold=threshold,
         queries=config.queries,
