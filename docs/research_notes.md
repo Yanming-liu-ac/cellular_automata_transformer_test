@@ -207,7 +207,7 @@ The seventh sweep added a unified event-level efficiency proxy. It combines the
 synthetic dual-path next-token benchmark with Cellular-MoE execution and compares
 the resulting local byte movement with a tiny Transformer KV-cache read volume.
 With 4 Cellular-MoE ticks per event and gated online candidate generation, the
-current HARC-CA profile moves about 51.46KB of local on-chip bytes per event and
+legacy HARC-CA profile moves about 51.46KB of local on-chip bytes per event and
 keeps about 183.8KB of on-chip state. The tiny Transformer KV reference reads
 about 384MB per token at 16k context.
 
@@ -217,7 +217,7 @@ HBM/cache traffic. The useful conclusion is narrower: the current architecture
 has a measurable path to keeping its toy next-token behavior inside local
 low-bit traffic, which is the right bottleneck direction for a CA-first chip.
 
-The eighth sweep added a tile-level floorplan proxy. The current event profile
+The eighth sweep added a tile-level floorplan proxy. The legacy event profile
 is mapped onto repeated tiles with 64 cells, 16KB local SRAM, and 32 local
 bytes/cycle. Under these assumptions, a 32-tile fabric has 512KB local SRAM,
 stores the current 183.8KB state at about 35.9% utilization, and reaches about
@@ -427,6 +427,17 @@ decay intervals and begin to damage dense-topic quality: at decay 4096 top-256
 recall falls to about 81.2%, and at decay 8192 top-64 recall falls to about
 84.4%. The current best hand setting is therefore 4-bit counters plus 8-bit lazy
 epoch metadata.
+
+The twenty-fifth sweep added the CSA/HCA context summaries to the unified event
+profile. The event traffic barely changes: with 4 Cellular-MoE ticks, local
+traffic rises from the legacy 51.46KB/event to about 52.10KB/event. The added
+context path contributes about 648B/event: 6B HCA summary read, 12B HCA update,
+300B CSA block-summary scoring, and 330B selected token-cell reads. The state
+budget changes much more. The 512KB block-summary index plus 12KB 8-bit lazy
+HCA summary raise on-chip state from about 183.8KB to about 707.8KB. Under the
+current 16KB/tile SRAM proxy, 32 tiles no longer fit the state; 64 tiles fit at
+about 69.1% state utilization. This shifts the next hardware pressure from
+event bandwidth to local SRAM capacity and block-summary compression.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6

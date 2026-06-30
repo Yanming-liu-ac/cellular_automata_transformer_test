@@ -55,7 +55,13 @@ from .dense_context import (
     LowBitDenseContext,
     run_dense_context_trial,
 )
-from .efficiency import EfficiencyComparison, HarcEventEfficiency, compare_to_transformer_kv
+from .efficiency import (
+    ContextSummaryBudget,
+    EfficiencyComparison,
+    HarcEventEfficiency,
+    compare_to_transformer_kv,
+    current_csa_hca_context_budget,
+)
 from .admission_policy import (
     LearnedAdmissionResult,
     LowBitAdmissionLUT,
@@ -105,6 +111,7 @@ __all__ = [
     "CompressedBlockBudgetSweepResult",
     "CompressedBlockIndexConfig",
     "CompressedBlockIndexResult",
+    "ContextSummaryBudget",
     "CsaHcaPolicyPoint",
     "CsaHcaPolicyResult",
     "HcaDecayQualityPoint",
@@ -149,6 +156,7 @@ __all__ = [
     "profile_chip",
     "propagation_distances",
     "compare_to_transformer_kv",
+    "current_csa_hca_context_budget",
     "compare_output_heads",
     "estimate_output_head",
     "future_repeat_labels",

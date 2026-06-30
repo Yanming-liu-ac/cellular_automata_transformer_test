@@ -336,6 +336,13 @@ before adding learned rules. This is the CA-chip analog of treating cache,
 communication, and kernels as part of the model design rather than deployment
 afterthoughts.
 
+The CSA/HCA-aware profile tightens that lesson. The lazy HCA summary barely
+changes event traffic, but the 512KB CSA block-summary index changes the SRAM
+floorplan: 32 16KB tiles no longer fit the current state, while 64 tiles fit at
+about 69% state utilization. This is the CA-chip version of cache hierarchy
+pressure: sparse attention-style indexing saves reads, but the index itself
+must be tiered, compressed, or carefully placed.
+
 The first output-head budget adds another systems lesson: solving attention/KV
 traffic is not enough if the logits path becomes the dominant kernel. HARC-CA
 needs exact-token bypass and candidate scoring so the output head stays within

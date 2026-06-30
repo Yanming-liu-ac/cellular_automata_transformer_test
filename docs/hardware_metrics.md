@@ -443,6 +443,7 @@ The project now includes a unified per-event proxy that combines:
 - compressed dense-context counter updates;
 - online candidate-cache updates, admission-gate reads, and shortlist scoring
   reads;
+- CSA/HCA context-summary state and local reads;
 - Cellular-MoE sparse rule-bank local reads/writes;
 - on-chip state bytes;
 - Transformer KV-cache read volume as a reference.
@@ -460,10 +461,24 @@ The current deterministic profile uses:
 Current proxy result:
 
 ```text
-HARC-CA local bytes/event: about 51.46 KB
+Legacy HARC-CA local bytes/event: about 51.46 KB
+CSA/HCA-aware local bytes/event: about 52.10 KB
 Transformer KV read/token: about 384 MB
-On-chip HARC-CA state: about 183.8 KB
+Legacy on-chip HARC-CA state: about 183.8 KB
+CSA/HCA-aware on-chip HARC-CA state: about 707.8 KB
 ```
+
+The CSA/HCA-aware profile adds about 648B/event over the legacy profile:
+
+```text
+HCA lazy summary read: about 6B/event
+HCA lazy summary update: about 12B/event
+CSA block-summary score reads: about 300B/event
+CSA selected token-cell reads: about 330B/event
+```
+
+Most of the cost is state, not event traffic: about 512KB of block summaries and
+12KB of lazy HCA summary metadata/counters.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -497,13 +512,13 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the current 183.8KB HARC-CA state and 51.46KB local
-bytes/event, a 32-tile configuration has:
+bytes/cycle/tile. With the CSA/HCA-aware 707.8KB HARC-CA state and 52.10KB local
+bytes/event, a 32-tile configuration no longer fits:
 
 ```text
-total local SRAM: 512KB
-state utilization: about 35.9%
-bandwidth utilization at 1M events/s: about 5.1%
+32 tiles: 512KB SRAM, 138.2% state utilization, 45 state tiles required
+64 tiles: 1MB SRAM, 69.1% state utilization, 2.6% bandwidth utilization at 1M events/s
+128 tiles: 2MB SRAM, 34.6% state utilization, 1.3% bandwidth utilization at 1M events/s
 ```
 
 These are design-budget numbers. They do not prove timing, routing, area, yield,

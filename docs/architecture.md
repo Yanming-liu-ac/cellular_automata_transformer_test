@@ -570,6 +570,7 @@ event traffic =
   + dense sketch counter updates
   + sparse Cellular-MoE rule-bank local reads/writes
   + online candidate-cache updates, admission-gate reads, and shortlist scoring reads
+  + CSA/HCA context-summary reads and updates
   + candidate output-head scoring
 ```
 
@@ -577,6 +578,13 @@ With gated online candidate generation and 4 Cellular-MoE ticks per synthetic
 decode event, the current deterministic profile estimates about 51.46KB of local
 on-chip byte movement per event. The paired tiny Transformer KV-cache reference
 reads about 384MB per token at 16k context.
+
+After adding the CSA/HCA context summaries, the event traffic rises only slightly
+to about 52.10KB/event because the lazy HCA read/update path and sparse CSA block
+reads add about 648B/event. The more important change is state: the 512KB block
+summary plus 12KB lazy-epoch HCA summary raise on-chip state from about 183.8KB
+to about 707.8KB. This is still local SRAM state, but it changes the tile-count
+floorplan constraint.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
@@ -592,11 +600,12 @@ local-SRAM tiles:
 tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
-At 4 Cellular-MoE ticks per synthetic event, the current event profile needs
-about 51.46KB of local traffic and about 183.8KB of on-chip state. With a
-32-tile fabric under the proxy assumptions, this state occupies about 35.9% of
-local SRAM and a 1M events/s target consumes about 5.1% of aggregate local byte
-bandwidth.
+At 4 Cellular-MoE ticks per synthetic event, the CSA/HCA-aware profile needs
+about 52.10KB of local traffic and about 707.8KB of on-chip state. With a
+32-tile fabric under the proxy assumptions, the state no longer fits: it would
+need about 138% of available SRAM and 45 state tiles. A 64-tile fabric has 1MB
+of local SRAM and stores the current state at about 69.1% utilization, while a
+1M events/s target consumes about 2.6% of aggregate local byte bandwidth.
 
 This is not area/timing closure. It is the first explicit chip budget:
 

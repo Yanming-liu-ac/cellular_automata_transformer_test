@@ -15,6 +15,31 @@ from .synthetic_lm import SyntheticLMConfig, SyntheticLMResult
 
 
 @dataclass(frozen=True)
+class ContextSummaryBudget:
+    """CSA/HCA context-summary state and per-event local traffic budget."""
+
+    block_summary_state_bytes: float = 0.0
+    hca_summary_state_bytes: float = 0.0
+    hca_summary_read_bytes_per_event: float = 0.0
+    hca_summary_update_bytes_per_event: float = 0.0
+    csa_block_score_bytes_per_event: float = 0.0
+    csa_token_read_bytes_per_event: float = 0.0
+
+    @property
+    def state_bytes(self) -> float:
+        return self.block_summary_state_bytes + self.hca_summary_state_bytes
+
+    @property
+    def local_bytes_per_event(self) -> float:
+        return (
+            self.hca_summary_read_bytes_per_event
+            + self.hca_summary_update_bytes_per_event
+            + self.csa_block_score_bytes_per_event
+            + self.csa_token_read_bytes_per_event
+        )
+
+
+@dataclass(frozen=True)
 class HarcEventEfficiency:
     """Per-event proxy metrics for a HARC-CA decode schedule."""
 
@@ -24,6 +49,7 @@ class HarcEventEfficiency:
     exact_local_bytes_per_event: float
     dense_local_bytes_per_event: float
     candidate_local_bytes_per_event: float
+    context_summary_local_bytes_per_event: float
     moe_local_bytes_per_event: float
     total_local_bytes_per_event: float
     onchip_state_bytes: float
@@ -31,6 +57,9 @@ class HarcEventEfficiency:
     dense_memory_bytes: float
     candidate_score_memory_bytes: float
     candidate_memory_bytes: float
+    context_summary_state_bytes: float
+    hca_summary_state_bytes: float
+    csa_block_summary_state_bytes: float
     moe_state_bytes: float
     exact_query_fraction: float
     exact_avg_visited_cells: float
@@ -40,6 +69,10 @@ class HarcEventEfficiency:
     candidate_gate_cells_per_event: float
     candidate_score_cells_per_event: float
     candidate_score_update_cells_per_event: float
+    hca_summary_read_bytes_per_event: float
+    hca_summary_update_bytes_per_event: float
+    csa_block_score_bytes_per_event: float
+    csa_token_read_bytes_per_event: float
     moe_sparse_rule_updates_per_event: float
     moe_dense_equivalent_rule_updates_per_event: float
     moe_update_reduction: float
@@ -66,6 +99,7 @@ def estimate_harc_event_efficiency(
     moe: MoERolloutResult,
     moe_config: CellularMoEConfig,
     moe_ticks_per_event: int = 4,
+    context_summary: ContextSummaryBudget | None = None,
 ) -> HarcEventEfficiency:
     """Estimate local byte movement for one mixed synthetic decode event."""
 
@@ -109,8 +143,15 @@ def estimate_harc_event_efficiency(
     moe_local_bytes = sparse_rule_updates_per_event * cell_state_bytes * 4
 
     moe_state_bytes = moe_config.length * cell_state_bytes
-    total_local_bytes = exact_local_bytes + dense_local_bytes + candidate_local_bytes + moe_local_bytes
-    onchip_state_bytes = synthetic.total_memory_bytes + moe_state_bytes
+    context_budget = context_summary or ContextSummaryBudget()
+    total_local_bytes = (
+        exact_local_bytes
+        + dense_local_bytes
+        + candidate_local_bytes
+        + context_budget.local_bytes_per_event
+        + moe_local_bytes
+    )
+    onchip_state_bytes = synthetic.total_memory_bytes + context_budget.state_bytes + moe_state_bytes
 
     return HarcEventEfficiency(
         context_length=synthetic.fact_count,
@@ -119,6 +160,7 @@ def estimate_harc_event_efficiency(
         exact_local_bytes_per_event=exact_local_bytes,
         dense_local_bytes_per_event=dense_local_bytes,
         candidate_local_bytes_per_event=candidate_local_bytes,
+        context_summary_local_bytes_per_event=context_budget.local_bytes_per_event,
         moe_local_bytes_per_event=moe_local_bytes,
         total_local_bytes_per_event=total_local_bytes,
         onchip_state_bytes=onchip_state_bytes,
@@ -126,6 +168,9 @@ def estimate_harc_event_efficiency(
         dense_memory_bytes=synthetic.dense_memory_bytes,
         candidate_score_memory_bytes=synthetic.candidate_score_memory_bytes,
         candidate_memory_bytes=synthetic.candidate_memory_bytes,
+        context_summary_state_bytes=context_budget.state_bytes,
+        hca_summary_state_bytes=context_budget.hca_summary_state_bytes,
+        csa_block_summary_state_bytes=context_budget.block_summary_state_bytes,
         moe_state_bytes=moe_state_bytes,
         exact_query_fraction=query_fraction,
         exact_avg_visited_cells=synthetic.exact_avg_visited_cells,
@@ -135,6 +180,10 @@ def estimate_harc_event_efficiency(
         candidate_gate_cells_per_event=candidate_gate_cells_per_event,
         candidate_score_cells_per_event=candidate_score_cells_per_event,
         candidate_score_update_cells_per_event=synthetic.candidate_score_update_cells_per_event,
+        hca_summary_read_bytes_per_event=context_budget.hca_summary_read_bytes_per_event,
+        hca_summary_update_bytes_per_event=context_budget.hca_summary_update_bytes_per_event,
+        csa_block_score_bytes_per_event=context_budget.csa_block_score_bytes_per_event,
+        csa_token_read_bytes_per_event=context_budget.csa_token_read_bytes_per_event,
         moe_sparse_rule_updates_per_event=sparse_rule_updates_per_event,
         moe_dense_equivalent_rule_updates_per_event=dense_equiv_updates_per_event,
         moe_update_reduction=moe.avg_update_reduction,
@@ -151,6 +200,7 @@ def compare_to_transformer_kv(
     heads: int = 8,
     head_dim: int = 64,
     kv_bits: int = 16,
+    context_summary: ContextSummaryBudget | None = None,
 ) -> EfficiencyComparison:
     """Build a HARC event profile and a Transformer KV-cache reference."""
 
@@ -160,6 +210,7 @@ def compare_to_transformer_kv(
         moe=moe,
         moe_config=moe_config,
         moe_ticks_per_event=moe_ticks_per_event,
+        context_summary=context_summary,
     )
     transformer = estimate_transformer_kv(
         context_length=synthetic.fact_count,
@@ -170,3 +221,28 @@ def compare_to_transformer_kv(
     )
     local_vs_kv = harc.total_local_bytes_per_event / transformer.kv_read_bytes_per_token
     return EfficiencyComparison(harc=harc, transformer=transformer, local_vs_kv_byte_ratio=local_vs_kv)
+
+
+def current_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Current measured CSA/HCA context-summary budget for the synthetic profile.
+
+    This uses the hand-selected setting from ``compressed_block_indexer_demo``:
+    512KB block summaries, a 4-bit counter plus 8-bit lazy epoch HCA summary,
+    threshold-routed CSA/HCA reads, and 16-bit token-cell reads for selected
+    context blocks.
+    """
+
+    block_summary_state = 1024 * 4 * 256 * 4 / 8
+    hca_state = 4 * 2048 * (4 + 8) / 8
+    hca_read = 4 * (4 + 8) / 8
+    hca_update = 4 * (4 + 8) / 8 * 2
+    csa_block_score = 300.0
+    csa_token_read = 165.0 * 16 / 8
+    return ContextSummaryBudget(
+        block_summary_state_bytes=block_summary_state,
+        hca_summary_state_bytes=hca_state,
+        hca_summary_read_bytes_per_event=hca_read,
+        hca_summary_update_bytes_per_event=hca_update,
+        csa_block_score_bytes_per_event=csa_block_score,
+        csa_token_read_bytes_per_event=csa_token_read,
+    )

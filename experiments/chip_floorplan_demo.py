@@ -12,7 +12,7 @@ if str(SRC) not in sys.path:
 
 from cellular_transformer.cellular_moe import CellularMoE, CellularMoEConfig
 from cellular_transformer.chip_model import ChipConfig, TileConfig, profile_chip
-from cellular_transformer.efficiency import compare_to_transformer_kv
+from cellular_transformer.efficiency import compare_to_transformer_kv, current_csa_hca_context_budget
 from cellular_transformer.hardware import format_bytes
 from cellular_transformer.synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig
 
@@ -56,11 +56,13 @@ def main() -> None:
         moe=moe_result,
         moe_config=moe_config,
         moe_ticks_per_event=4,
+        context_summary=current_csa_hca_context_budget(),
     )
 
     tile = TileConfig(cells_per_tile=64, local_sram_bytes=16 * 1024, local_bytes_per_cycle=32)
     print("HARC-CA tile/floorplan proxy")
     print("tile: 64 cells, 16KB local SRAM, 32 local bytes/cycle")
+    print("profile: CSA/HCA-aware context summaries")
     print("target: 1M synthetic decode events/s")
     print()
 

@@ -169,6 +169,8 @@ Unified efficiency profile:
 - With 4 rule ticks per event, estimated local on-chip traffic is about
   51.46KB per synthetic event including gated online candidate-cache updates
   and candidate scoring reads.
+- Adding the current CSA/HCA context summaries raises this to about 52.10KB/event
+  but increases on-chip state from about 183.8KB to about 707.8KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -176,10 +178,12 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- A 32-tile fabric stores the current prototype state in about 35.9% of local
-  SRAM.
+- With the CSA/HCA-aware state, a 32-tile fabric no longer fits the current
+  prototype state. It requires about 45 16KB tiles for state.
+- A 64-tile fabric stores the current CSA/HCA-aware state in about 69.1% of
+  local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
-  about 5.1% under the proxy assumptions.
+  about 2.6% on 64 tiles under the proxy assumptions.
 - This defines a budget for learned rules and richer output heads; it is not
   physical design closure.
 
@@ -215,6 +219,8 @@ Next retrieval work:
   per-tile shared epochs, or group scale/offset state.
 - promote 8-bit lazy epoch HCA summary to the default HCA baseline for the next
   unified event-profile update.
+- compress or tier the 512KB CSA block-summary index, because it is now the
+  dominant SRAM addition in the unified profile.
 
 ## Phase 2: Trainable Continuous HARC-CA
 
