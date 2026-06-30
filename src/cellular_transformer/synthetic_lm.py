@@ -41,6 +41,8 @@ class SyntheticLMConfig:
     candidate_scorer_lut: Tuple[int, ...] | None = None
     candidate_scorer_dense_bins: int = 16
     candidate_scorer_cache_bins: int = 16
+    candidate_scorer_dense_weight: int = 0
+    candidate_scorer_cache_weight: int = 0
     fact_count: int = 16384
     topic_events: int = 8192
     query_events: int = 4096
@@ -84,6 +86,10 @@ class SyntheticLMConfig:
                 expected = self.candidate_scorer_dense_bins * self.candidate_scorer_cache_bins
                 if len(self.candidate_scorer_lut) != expected:
                     raise ValueError("candidate_scorer_lut length must equal dense_bins * cache_bins")
+                if self.candidate_scorer_dense_weight < 0:
+                    raise ValueError("candidate_scorer_dense_weight must be non-negative")
+                if self.candidate_scorer_cache_weight < 0:
+                    raise ValueError("candidate_scorer_cache_weight must be non-negative")
         if self.fact_count <= 0:
             raise ValueError("fact_count must be positive")
         if self.topic_events <= 0:
@@ -275,7 +281,11 @@ class DualPathSyntheticLM:
                 dense_index = min(int(dense_score), self.config.candidate_scorer_dense_bins - 1)
                 cache_index = min(int(cache_score), self.config.candidate_scorer_cache_bins - 1)
                 lut_index = dense_index * self.config.candidate_scorer_cache_bins + cache_index
-                learned_scores[index] = int(self.config.candidate_scorer_lut[lut_index])
+                learned_scores[index] = (
+                    self.config.candidate_scorer_dense_weight * int(dense_score)
+                    + self.config.candidate_scorer_cache_weight * int(cache_score)
+                    + int(self.config.candidate_scorer_lut[lut_index])
+                )
             top_indices = np.lexsort((scores, learned_scores))[-top_k:]
         else:
             top_indices = np.argsort(scores)[-top_k:]
@@ -410,6 +420,11 @@ class DualPathSyntheticLM:
 
     def _candidate_scorer_mode(self) -> str:
         if self.config.candidate_scorer_lut is not None:
+            if (
+                self.config.candidate_scorer_dense_weight > 0
+                or self.config.candidate_scorer_cache_weight > 0
+            ):
+                return "learned_residual"
             return "learned_lut"
         return "dense_min"
 

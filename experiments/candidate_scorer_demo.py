@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.admission_policy import make_topic_stream
 from cellular_transformer.candidate_scorer import (
     run_candidate_scorer_trial,
+    train_future_window_candidate_scorer_lut,
     train_repeat_candidate_scorer_lut,
 )
 from cellular_transformer.dense_context import DenseContextConfig
@@ -25,7 +26,14 @@ def fmt_pct(value: float) -> str:
 
 
 def main() -> None:
-    trial = run_candidate_scorer_trial()
+    current_trial = run_candidate_scorer_trial(
+        training_target="current_token_repeat",
+        scoring_dense_weight=0,
+    )
+    window_trial = run_candidate_scorer_trial(
+        training_target="future_window",
+        scoring_dense_weight=1,
+    )
     dense_config = DenseContextConfig(
         vocab_size=65536,
         banks=4,
@@ -41,7 +49,8 @@ def main() -> None:
         zipf_exponent=1.15,
         seed=100,
     )
-    scorer = train_repeat_candidate_scorer_lut(train_stream, dense_config)
+    current_scorer = train_repeat_candidate_scorer_lut(train_stream, dense_config)
+    window_scorer = train_future_window_candidate_scorer_lut(train_stream, dense_config)
 
     baseline_lm = run_synthetic_lm_trial(
         seed=31,
@@ -51,26 +60,38 @@ def main() -> None:
             candidate_admission_threshold=1,
         ),
     )
-    learned_lm = run_synthetic_lm_trial(
+    current_lm = run_synthetic_lm_trial(
         seed=31,
         config=SyntheticLMConfig(
             dense_width=2048,
             candidate_strategy="online_cache",
             candidate_admission_threshold=1,
-            candidate_scorer_lut=scorer.scores,
+            candidate_scorer_lut=current_scorer.scores,
+        ),
+    )
+    window_lm = run_synthetic_lm_trial(
+        seed=31,
+        config=SyntheticLMConfig(
+            dense_width=2048,
+            candidate_strategy="online_cache",
+            candidate_admission_threshold=1,
+            candidate_scorer_lut=window_scorer.scores,
+            candidate_scorer_dense_weight=1,
         ),
     )
 
     print("Learned low-bit candidate scorer")
-    print("training label: resident candidate matches a future-repeat token")
+    print("training labels: current-token repeat vs future-window teacher")
     print("features: dense-sketch estimate + candidate-cache score")
-    print(f"LUT state={format_bytes(scorer.state_bytes)}")
+    print(f"LUT state={format_bytes(window_scorer.state_bytes)} each")
     print()
 
     headers = [
-        "case",
+        "target",
         "baseline",
         "learned",
+        "dense_w",
+        "cache_w",
         "admit_r",
         "upd_hit",
         "score_cells",
@@ -80,24 +101,31 @@ def main() -> None:
     print("Standalone candidate scoring")
     print(" | ".join(f"{h:>11}" for h in headers))
     print("-" * 112)
-    row = [
-        "topic",
-        fmt_pct(trial.baseline_topk_hit_rate),
-        fmt_pct(trial.learned_topk_hit_rate),
-        fmt_pct(trial.admission_rate),
-        fmt_pct(trial.cache_update_hit_rate),
-        f"{trial.avg_score_cells:0.1f}",
-        f"{trial.replacements}",
-        f"{trial.full_vocab_scan_tokens}",
-    ]
-    print(" | ".join(f"{cell:>11}" for cell in row))
+    for trial in (current_trial, window_trial):
+        row = [
+            trial.training_target,
+            fmt_pct(trial.baseline_topk_hit_rate),
+            fmt_pct(trial.learned_topk_hit_rate),
+            f"{trial.scoring_dense_weight}",
+            f"{trial.scoring_cache_weight}",
+            fmt_pct(trial.admission_rate),
+            fmt_pct(trial.cache_update_hit_rate),
+            f"{trial.avg_score_cells:0.1f}",
+            f"{trial.replacements}",
+            f"{trial.full_vocab_scan_tokens}",
+        ]
+        print(" | ".join(f"{cell:>11}" for cell in row))
 
     print()
     print("Synthetic LM scoring")
     headers = ["policy", "scorer", "topic@k", "score_cells", "avg_cells"]
     print(" | ".join(f"{h:>11}" for h in headers))
     print("-" * 72)
-    for label, result in (("baseline", baseline_lm), ("learned", learned_lm)):
+    for label, result in (
+        ("baseline", baseline_lm),
+        ("current", current_lm),
+        ("window", window_lm),
+    ):
         row = [
             label,
             result.candidate_scorer_mode,
@@ -109,8 +137,9 @@ def main() -> None:
 
     print()
     print("Interpretation:")
-    print("- The dense-min scorer remains the stronger synthetic-LM baseline.")
-    print("- The learned 2D LUT is a negative result, not a replacement yet.")
+    print("- The current-token LUT remains a negative synthetic-LM result.")
+    print("- The future-window residual helps standalone scoring but still fails in mixed context.")
+    print("- Two local scalar features are not enough for a CSA-like indexer yet.")
     print("- Candidate scoring reads are now explicitly counted instead of treated as free.")
 
 

@@ -356,9 +356,11 @@ The first learned version trains an 8-byte signed 4-bit LUT from future-repeat
 labels and recovers the same behavior as the hand-set threshold gate. That is
 the first concrete step from manual indexing policy toward learned low-bit CA
 routing.
-The learned candidate-scorer LUT did not beat dense-min scoring, which is also a
+The learned candidate-scorer LUT did not beat dense-min scoring. A future-window
+teacher is better aligned with sparse-attention indexing and slightly improves
+the isolated topic stream, but still fails in the mixed synthetic LM. This is a
 useful DeepSeek-style lesson: efficient indexing and scoring need the right
-training objective, not merely a smaller kernel.
+state interface, not merely a smaller kernel or a better label.
 
 ## Revised HARC-CA Design Principle
 

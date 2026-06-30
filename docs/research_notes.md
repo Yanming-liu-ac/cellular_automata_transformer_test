@@ -274,8 +274,18 @@ same future-repeat signal. It uses 128 bytes and matches dense-min scoring on
 the standalone topic stream, but it does not generalize to the mixed synthetic
 LM: topic@64 drops from about 67.1% with dense-min scoring to about 64.6% with
 the learned LUT. This is a useful negative result. Admission can be learned with
-the current feature, but candidate scoring needs a richer state, a better
-training target, or a teacher/distillation signal.
+the current feature, but candidate scoring needs a richer state.
+
+The twelfth sweep changed the scorer objective rather than the hardware shape.
+It trains the same 128-byte LUT from a future-window teacher and applies it as a
+local residual on top of the dense score. This is closer to a CSA-style indexer:
+the rule is asked which resident candidates will matter soon, not only whether
+they match the current token. It improves the standalone topic stream from about
+67.7% to about 68.2%, but it still fails in the mixed synthetic LM, reaching
+only about 64.5% topic@64. The likely cause is feature insufficiency: query/fact
+traffic contaminates the dense sketch, and the 2D LUT has no source, phase,
+recency, or multi-tick stability feature to distinguish useful context from
+noise.
 
 The same sweep also fixed an accounting gap: candidate shortlist ranking reads
 dense-sketch counters. In the gated synthetic LM this adds about 179.6 score

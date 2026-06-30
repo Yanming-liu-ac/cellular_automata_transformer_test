@@ -187,9 +187,12 @@ The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
 
-The first learned candidate scorer did not beat the dense-min baseline. The next
-version should use richer local features, multi-tick state, or distillation from
-a stronger scorer rather than only future-repeat labels.
+The first learned candidate scorers did not beat the dense-min baseline. A
+future-window teacher with dense-score residual slightly improves the standalone
+topic stream, but still fails in the mixed synthetic LM. The next version should
+add richer local features such as source phase, recency, contamination counters,
+multi-tick state, or distillation from a stronger scorer rather than only
+changing the label on `(dense estimate, cache score)`.
 
 Second trainable target:
 

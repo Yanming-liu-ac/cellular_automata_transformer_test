@@ -183,12 +183,15 @@ synthetic-LM topic@64: about 67.1%
 full-vocabulary scans: 0
 ```
 
-The first learned candidate scorer tests a 16x16 signed 4-bit LUT over dense
-estimate and cache score. It uses 128 bytes. This is a negative result in the
-mixed synthetic LM: dense-min scoring reaches about 67.1% topic@64, while the
-learned LUT reaches about 64.6%. Dense-min remains the active baseline. The
-benchmark now counts candidate ranking reads explicitly; the gated synthetic LM
-uses about 179.6 dense-sketch score reads per mixed event.
+The first learned candidate scorers test 16x16 signed 4-bit LUTs over dense
+estimate and cache score. Each uses 128 bytes. The current-token repeat target
+is a negative result in the mixed synthetic LM: dense-min scoring reaches about
+67.1% topic@64, while the learned LUT reaches about 64.6%. A future-window
+teacher plus dense-score residual improves the standalone topic stream from
+about 67.7% to about 68.2%, but still falls to about 64.5% topic@64 in the
+mixed synthetic LM. Dense-min remains the active baseline. The benchmark now
+counts candidate ranking reads explicitly; the gated synthetic LM uses about
+179.6 dense-sketch score reads per mixed event.
 
 ## Output-Head Metrics
 

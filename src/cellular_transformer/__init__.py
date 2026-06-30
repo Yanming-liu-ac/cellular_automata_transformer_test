@@ -12,6 +12,7 @@ from .candidate_scorer import (
     CandidateScorerTrialResult,
     LowBitCandidateScorerLUT,
     run_candidate_scorer_trial,
+    train_future_window_candidate_scorer_lut,
     train_repeat_candidate_scorer_lut,
 )
 from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
@@ -112,5 +113,6 @@ __all__ = [
     "shortest_propagation_steps",
     "sweep_memory_tasks",
     "train_repeat_admission_lut",
+    "train_future_window_candidate_scorer_lut",
     "train_repeat_candidate_scorer_lut",
 ]

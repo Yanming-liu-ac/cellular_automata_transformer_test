@@ -71,7 +71,8 @@ The first experiments compare:
 - online low-bit candidate-cache generation with admission gating and no
   full-vocabulary scans;
 - learned low-bit candidate admission from self-supervised repeat labels;
-- learned candidate scorer negative benchmark and explicit scoring-read budget;
+- learned candidate scorer negative benchmarks, including a future-window
+  residual indexer, plus explicit scoring-read budget;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;

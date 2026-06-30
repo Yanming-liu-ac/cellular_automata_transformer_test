@@ -407,13 +407,21 @@ This is not yet a full language-model router, but it shows the candidate policy
 can be represented as a tiny trainable low-bit rule instead of a hand-written
 constant.
 
-The first learned candidate scorer is a negative result. A 16x16 signed 4-bit
+The first learned candidate scorers are negative results. A 16x16 signed 4-bit
 LUT over `(dense estimate, cache score)` uses 128 bytes and matches the dense-min
 baseline on the standalone topic stream, but drops synthetic-LM topic@64 from
-about 67.1% to about 64.6%. The current baseline therefore keeps dense-min
-candidate scoring. The important accounting correction is that shortlist ranking
-now explicitly counts dense-sketch reads: the gated synthetic run needs about
-179.6 candidate score cells/event.
+about 67.1% to about 64.6%. A second future-window teacher with a dense-score
+residual improves standalone topic scoring from about 67.7% to about 68.2%, but
+still drops the mixed synthetic LM to about 64.5%. The current baseline
+therefore keeps dense-min candidate scoring. The important accounting correction
+is that shortlist ranking now explicitly counts dense-sketch reads: the gated
+synthetic run needs about 179.6 candidate score cells/event.
+
+The lesson is specific: two scalar local features are not enough for a CSA-like
+indexer once query/fact traffic pollutes the recurrent dense sketch. The next
+candidate scorer needs phase/source features, multi-tick state, or distillation
+from a stronger teacher rather than just a different label on the same feature
+pair.
 
 ## Event-Level Efficiency Profile
 
