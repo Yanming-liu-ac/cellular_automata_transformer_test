@@ -303,6 +303,7 @@ class CsaHcaRareDirectoryStressPoint:
     """One rare-directory stress scenario and directory size."""
 
     scenario: str
+    directory_guard: bool
     directory_blocks_per_token: int
     stress_token_count: int
     directory_entries: int
@@ -311,6 +312,7 @@ class CsaHcaRareDirectoryStressPoint:
     hca_query_rate: float
     csa_query_rate: float
     rare_false_hca_rate: float
+    directory_guard_hit_rate: float
     directory_query_rate: float
     base_relevant_hit_rate: float
     repaired_relevant_hit_rate: float
@@ -339,6 +341,7 @@ class CsaHcaRareDirectoryStressResult:
     hca_threshold: int
     csa_blocks: int
     tail_blocks: int
+    directory_guard: bool
     queries: int
     block_summary_state_bytes: float
     global_summary_state_bytes: float
@@ -1277,6 +1280,7 @@ def run_csa_hca_rare_directory_stress_sweep(
     csa_blocks: int = 4,
     global_width: int = 2048,
     hca_threshold: int = 15,
+    directory_guard: bool = False,
     tail_blocks: int = 2,
     context_length: int = 65536,
     queries: int = 4096,
@@ -1346,6 +1350,7 @@ def run_csa_hca_rare_directory_stress_sweep(
                     directory_entry_bytes=directory_entry_bytes,
                     directory_state_bytes=directory_state_bytes,
                     hca_threshold=hca_threshold,
+                    directory_guard=directory_guard,
                     recent_blocks=recent_blocks,
                     query_tokens=query_tokens,
                     stress_token_count=stress_token_count,
@@ -1363,6 +1368,7 @@ def run_csa_hca_rare_directory_stress_sweep(
         hca_threshold=hca_threshold,
         csa_blocks=config.selected_blocks,
         tail_blocks=config.tail_blocks,
+        directory_guard=directory_guard,
         queries=config.queries,
         block_summary_state_bytes=CompressedBlockIndexConfig(
             context_length=context_length,
@@ -1801,6 +1807,7 @@ def _evaluate_rare_directory_stress_point(
     directory_entry_bytes: float,
     directory_state_bytes: float,
     hca_threshold: int,
+    directory_guard: bool,
     recent_blocks: np.ndarray,
     query_tokens: np.ndarray,
     stress_token_count: int,
@@ -1808,6 +1815,7 @@ def _evaluate_rare_directory_stress_point(
     hca_queries = 0
     csa_queries = 0
     directory_queries = 0
+    directory_guard_hits = 0
     relevant_queries = 0
     rare_relevant_queries = 0
     rare_false_hca = 0
@@ -1826,7 +1834,14 @@ def _evaluate_rare_directory_stress_point(
     for token in query_tokens:
         token = int(token)
         global_estimate = global_summary.estimate(token)
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
         route_hca = global_estimate >= hca_threshold
+        if directory_guard and directory_blocks_per_token > 0:
+            directory_read_bytes += directory_entry_bytes
+            if directory_hit:
+                route_hca = False
+                directory_guard_hits += 1
         block_counts = exact_counts.get(token)
         is_relevant = block_counts is not None
 
@@ -1837,11 +1852,13 @@ def _evaluate_rare_directory_stress_point(
         else:
             scores = index.estimate_blocks(token)
             base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
-            directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
             selected = np.union1d(base_selected, directory_blocks)
             csa_queries += 1
             if directory_blocks_per_token > 0:
-                directory_read_bytes += directory_entry_bytes * max(1, len(directory_blocks))
+                if directory_guard:
+                    directory_read_bytes += directory_entry_bytes * max(0, len(directory_blocks) - 1)
+                else:
+                    directory_read_bytes += directory_entry_bytes * max(1, len(directory_blocks))
             if len(directory_blocks) > 0:
                 directory_queries += 1
 
@@ -1876,6 +1893,7 @@ def _evaluate_rare_directory_stress_point(
     token_reads_per_query = token_reads / query_denominator
     return CsaHcaRareDirectoryStressPoint(
         scenario=scenario,
+        directory_guard=directory_guard,
         directory_blocks_per_token=directory_blocks_per_token,
         stress_token_count=stress_token_count,
         directory_entries=sum(len(blocks) for blocks in directory.values()),
@@ -1884,6 +1902,7 @@ def _evaluate_rare_directory_stress_point(
         hca_query_rate=hca_queries / query_denominator,
         csa_query_rate=csa_queries / query_denominator,
         rare_false_hca_rate=rare_false_hca / rare_denominator,
+        directory_guard_hit_rate=directory_guard_hits / query_denominator,
         directory_query_rate=directory_queries / query_denominator,
         base_relevant_hit_rate=base_hits / relevant_denominator,
         repaired_relevant_hit_rate=repaired_hits / relevant_denominator,

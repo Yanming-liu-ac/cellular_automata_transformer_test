@@ -434,6 +434,11 @@ grow when rare names are spread across many blocks. This mirrors the CSA/HCA
 systems lesson more closely than a single larger index: dense recurrent state,
 sparse compressed routing, exact rare-detail state, and learned admission/fanout
 policy should be separate cooperating structures.
+The directory-guard experiment makes that cooperation active rather than
+passive. The exact rare directory can override HCA admission when a token is
+known to be rare and exact-sensitive. That costs a tiny directory probe, but it
+turns the exact lane into a control signal for the memory hierarchy, not just a
+fallback store.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

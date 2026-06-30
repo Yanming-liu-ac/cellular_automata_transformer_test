@@ -368,6 +368,19 @@ reference traffic, but `dir_k=6` is the safer repeated-name setting. Pure
 rare-query stress spends more token reads than the average event profile,
 because exact rare-detail preservation is intentionally more expensive.
 
+An exact-directory guard is the conservative alternative to raising the HCA
+threshold. With `dir_k=6`:
+
+```text
+t8_no_guard   repeated_name  false-HCA=75.0%  coverage=25.0%   dir read=4.9B/query   reduction=129.5x
+t8_guard      repeated_name  false-HCA=0.0%   coverage=100.0%  dir read=19.5B/query  reduction=51.9x
+t15_no_guard  repeated_name  false-HCA=0.8%   coverage=99.2%   dir read=19.4B/query  reduction=52.2x
+```
+
+On the reference stream, `t8_guard` adds about one 3.25B directory probe per
+query without changing token reads. This is small in the average profile but
+should be a policy mode, not always-on hidden behavior.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

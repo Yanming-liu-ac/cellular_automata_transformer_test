@@ -322,6 +322,55 @@ def main() -> None:
     print("- dir_k=6 is the current stress-safe directory setting for repeated rare names.")
     print()
 
+    print("Rare-directory guard comparison")
+    guard_runs = [
+        ("t8_no_guard", run_csa_hca_rare_directory_stress_sweep(
+            global_width=2048,
+            hca_threshold=8,
+            directory_guard=False,
+            directory_blocks=(6,),
+            queries=2048,
+        )),
+        ("t8_guard", run_csa_hca_rare_directory_stress_sweep(
+            global_width=2048,
+            hca_threshold=8,
+            directory_guard=True,
+            directory_blocks=(6,),
+            queries=2048,
+        )),
+        ("t15_no_guard", run_csa_hca_rare_directory_stress_sweep(
+            global_width=2048,
+            hca_threshold=15,
+            directory_guard=False,
+            directory_blocks=(6,),
+            queries=2048,
+        )),
+    ]
+    headers = ["policy", "scenario", "false_hca", "coverage", "dir_rd", "kv_read", "reduct"]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 112)
+    for label, result in guard_runs:
+        for point in result.points:
+            if point.scenario not in ("zipf_reference", "repeated_name"):
+                continue
+            row = [
+                label,
+                point.scenario,
+                fmt_pct(point.rare_false_hca_rate),
+                fmt_pct(point.repaired_relevant_coverage),
+                format_bytes(point.directory_read_bytes_per_query),
+                f"{point.token_reads_per_query:0.1f}",
+                f"{point.token_read_reduction:0.1f}x",
+            ]
+            print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Guard interpretation:")
+    print("- directory_guard makes the exact rare directory an admission override before HCA.")
+    print("- t8_guard removes rare false-HCA routes but adds one directory probe per query.")
+    print("- t15_no_guard is cheaper on average; t8_guard is the more conservative exact-recall mode.")
+    print()
+
     quality = run_hca_summary_quality_sweep(threshold=8)
     print("HCA-like global summary quality")
     print(

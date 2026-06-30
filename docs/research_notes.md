@@ -483,6 +483,19 @@ to about 69.3%, requiring 23 state tiles. This is a better CA-chip split:
 frequent distributed evidence belongs in HCA, fuzzy block proposals belong in
 CSA, and rare exact location hints belong in a small associative directory.
 
+The twenty-ninth sweep tested an exact-directory guard. Instead of raising the
+global HCA threshold, the guard probes the rare-token directory before HCA
+admission; a directory hit forces the query into CSA. This fixes the original
+threshold-8 failure mode directly. On the repeated-name stress case, threshold 8
+without the guard has 75% rare false-HCA and only 25% coverage. Threshold 8 with
+the guard removes those false-HCA routes and recovers 100% coverage. The cost is
+one small directory probe per query, about 3.25B/query on the reference stream,
+and about 19.5B/query on repeated-name stress when all six block ids are read.
+The current default remains the cheaper threshold-15 no-guard policy because it
+gets about 99.2% repeated-name coverage with less average directory traffic, but
+the guard is a useful exact-recall mode for names, code symbols, or other
+sensitive rare tokens.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

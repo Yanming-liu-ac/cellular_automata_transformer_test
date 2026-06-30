@@ -291,6 +291,14 @@ stress, token-read reduction falls to roughly 52x-86x because more exact blocks
 are intentionally read; that is the expected worst-case cost of preserving rare
 details.
 
+There is also a conservative guard mode. If the exact rare-token directory is
+probed before HCA admission, a directory hit overrides the HCA route and forces
+CSA. On the repeated-name stress case, `threshold=8` without the guard has 75%
+rare false-HCA and only 25% coverage. `threshold=8` with the guard removes those
+false-HCA routes and recovers 100% coverage, at the cost of one small directory
+probe per query. The cheaper default remains `threshold=15` without the guard;
+the guard is the higher-recall mode for exact-sensitive workloads.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

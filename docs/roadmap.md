@@ -107,6 +107,11 @@ Compressed block-index result:
   about 0.8% in the stress set. `dir_k=2` handles burst/split rare tokens, while
   repeated names spread across six blocks need `dir_k=6` to reach about 99.2%
   coverage. Pure rare-query stress reduces token-read savings to about 52x-86x.
+- A directory-guard mode gives a higher-recall alternative: probe the rare-token
+  directory before HCA admission and force CSA on a hit. On repeated-name stress,
+  threshold 8 without the guard gives 75% false-HCA and 25% coverage; threshold
+  8 with the guard gives 0% false-HCA and 100% coverage, at the cost of an extra
+  directory probe.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -241,9 +246,9 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- replace the hand-set threshold-15 HCA gate and fixed `dir_k=6` directory
-  fanout with learned or metadata-driven admission/fanout policies, then
-  re-run the bursty rare-token and repeated-name stress tests.
+- replace the hand-set threshold-15 HCA gate, fixed `dir_k=6` directory fanout,
+  and always-off guard with learned or metadata-driven admission/fanout/guard
+  policies, then re-run the bursty rare-token and repeated-name stress tests.
 
 ## Phase 2: Trainable Continuous HARC-CA
 
