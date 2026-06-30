@@ -98,6 +98,9 @@ class CandidateIndexerTrialResult:
     additive_state_bytes: float
     state_bytes: float
     resident_hit_rate: float
+    feature_ceiling_hit_rate: float
+    positive_unique_rate: float
+    mean_positive_bucket_size: float
     dense_hit_rate: float
     topic_hit_rate: float
     topic_cache_hit_rate: float
@@ -201,6 +204,9 @@ def run_candidate_indexer_trial(
         additive_state_bytes=additive.state_bytes,
         state_bytes=indexer.state_bytes,
         resident_hit_rate=metrics["resident"],
+        feature_ceiling_hit_rate=metrics["feature_ceiling"],
+        positive_unique_rate=metrics["positive_unique"],
+        mean_positive_bucket_size=metrics["positive_bucket"],
         dense_hit_rate=metrics["dense"],
         topic_hit_rate=metrics["topic"],
         topic_cache_hit_rate=metrics["topic_cache"],
@@ -247,6 +253,10 @@ def _replay_candidate_stream(
     score_cells = 0
     score_updates = 0
     topic_events = 0
+    feature_ceiling = 0.0
+    positive_unique = 0
+    positive_bucket_total = 0
+    resident_events = 0
     query_cursor = 0
 
     for event_type in event_types:
@@ -264,6 +274,13 @@ def _replay_candidate_stream(
                 top_k = min(lm.config.topic_top_k, len(candidates))
                 token_matches = candidates == int(token)
                 hits["resident"] += int(bool(token_matches.any()))
+                if bool(token_matches.any()):
+                    positive_index = int(np.flatnonzero(token_matches)[0])
+                    bucket_size = _feature_bucket_size(features, positive_index)
+                    resident_events += 1
+                    positive_bucket_total += bucket_size
+                    positive_unique += int(bucket_size == 1)
+                    feature_ceiling += min(1.0, top_k / bucket_size)
                 hits["dense"] += _topk_hit(features[:, 0], candidates, token, top_k)
                 hits["topic"] += _topk_hit(features[:, 1], candidates, token, top_k)
                 topic_cache_scores = 2 * features[:, 1] + features[:, 2]
@@ -302,6 +319,11 @@ def _replay_candidate_stream(
     denominator = topic_events if topic_events else 1
     return {
         "resident": hits["resident"] / denominator,
+        "feature_ceiling": feature_ceiling / denominator,
+        "positive_unique": positive_unique / denominator,
+        "positive_bucket": (
+            positive_bucket_total / resident_events if resident_events else 0.0
+        ),
         "dense": hits["dense"] / denominator,
         "topic": hits["topic"] / denominator,
         "topic_cache": hits["topic_cache"] / denominator,
@@ -397,6 +419,11 @@ def _candidate_features(
 def _topk_hit(scores: np.ndarray, candidates: np.ndarray, token: int, top_k: int) -> int:
     chosen = np.argsort(scores)[-top_k:]
     return int(int(token) in {int(candidates[index]) for index in chosen})
+
+
+def _feature_bucket_size(features: np.ndarray, index: int) -> int:
+    key = features[index]
+    return int(np.count_nonzero(np.all(features == key, axis=1)))
 
 
 def _perceptron_update(

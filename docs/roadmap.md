@@ -214,6 +214,11 @@ it. The next version should use a richer objective, pairwise distillation from
 an oracle scorer, or a less factorized pairwise/tensor LUT rather than only a
 linear or additive update.
 
+The feature-collision ceiling narrows that next step. Online always-admit has a
+large resident/feature-ceiling gap, so it needs new local state such as recency,
+age, or a finer source phase. Gated mode has almost no resident/feature-ceiling
+gap, so it needs better ranking supervision rather than more scalar features.
+
 Second trainable target:
 
 ```text

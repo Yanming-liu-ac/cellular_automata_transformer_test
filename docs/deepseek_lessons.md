@@ -376,6 +376,10 @@ The first learned linear and additive-LUT versions are small enough for hardware
 but they only match the hand-written direction and do not beat it. That mirrors
 the DeepSeek lesson again: the win comes from the full training/inference
 system, not from replacing a formula with any learned low-bit rule.
+The feature-collision diagnostic makes that concrete: before adding more LUT
+capacity, the system must know whether its local state actually separates the
+right candidates. This is the CA-chip analog of measuring sparse-index recall
+before optimizing the attention kernel.
 
 ## Revised HARC-CA Design Principle
 

@@ -220,6 +220,15 @@ compact rules, but not yet wins: online topic@64 is about 65.4% for linear and
 topic@64 is about 66.6% for both learned rules, versus about 67.1% for gated
 dense scoring.
 
+The current feature-collision diagnostic reports two additional hardware-facing
+numbers: optimistic feature ceiling and positive bucket size. In online
+always-admit mode, resident recall is about 79.0%, but the four-feature tuple
+only supports about 69.5% optimistic top-k recall because the positive token
+shares its exact low-bit feature bucket with about 61.6 resident candidates on
+average. In gated mode, the feature ceiling is about 69.2% and the average
+positive bucket size falls to about 3.9. This suggests the noisy online path
+needs more local state, while the gated path mostly needs a better ranking rule.
+
 ## Output-Head Metrics
 
 For output scoring, track:

@@ -320,6 +320,16 @@ dense scoring. This is a useful boundary result. The feature interface is
 reasonable, but the current learners are too weak, too factorized, or trained
 against the wrong objective.
 
+The sixteenth sweep added a feature-collision ceiling. This asks whether a
+perfect scorer over the existing low-bit feature tuple could separate the true
+resident token from other residents. In online always-admit mode, resident recall
+is about 79.0%, but the optimistic feature ceiling is only about 69.5%; the true
+token shares its exact feature bucket with about 61.6 candidates on average. In
+gated mode, resident recall is about 69.2% and the feature ceiling is also about
+69.2%, with an average positive bucket of about 3.9 candidates. This separates
+two problems: online mode needs additional local state to reduce feature
+collisions, while gated mode mostly needs a stronger ranking/training objective.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

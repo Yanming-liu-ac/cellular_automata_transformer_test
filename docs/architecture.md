@@ -454,6 +454,16 @@ confirms that tiny local rules can absorb source/cache features, but the learner
 needs a better objective or a less factorized state before it can replace the
 hand-written gate/scorer.
 
+The feature-collision diagnostic shows where the next capacity should go. In
+online always-admit mode, the resident-token ceiling is about 79.0%, but the
+current feature tuple has an optimistic top-k ceiling of only about 69.5%; the
+positive candidate shares its exact feature bucket with about 61.6 candidates on
+average. In gated mode, the feature ceiling is about 69.2%, essentially the
+same as the resident-token ceiling, and the mean positive bucket falls to about
+3.9. This means admission gating is already doing most of the noise separation;
+the next scorer should add finer recency or pairwise state mainly for the noisy
+online path, while the gated path needs a better ranking objective.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:

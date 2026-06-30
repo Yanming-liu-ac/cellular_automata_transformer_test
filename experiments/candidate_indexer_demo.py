@@ -27,6 +27,9 @@ def main() -> None:
         "weights",
         "state",
         "resident",
+        "ceiling",
+        "unique",
+        "bucket",
         "dense",
         "topic",
         "topic_cache",
@@ -45,6 +48,9 @@ def main() -> None:
             str(result.weights),
             format_bytes(result.state_bytes),
             fmt_pct(result.resident_hit_rate),
+            fmt_pct(result.feature_ceiling_hit_rate),
+            fmt_pct(result.positive_unique_rate),
+            f"{result.mean_positive_bucket_size:0.1f}",
             fmt_pct(result.dense_hit_rate),
             fmt_pct(result.topic_hit_rate),
             fmt_pct(result.topic_cache_hit_rate),
@@ -60,6 +66,7 @@ def main() -> None:
     print("Interpretation:")
     print("- The learned rules are tiny, but they do not beat the best hand formula yet.")
     print("- Topic/cache/source features are useful; the learner and objective need work.")
+    print("- Ceiling estimates the best possible top-k hit from these features if learned perfectly.")
     print("- The current strongest synthetic path remains admission-gated dense scoring.")
 
 
