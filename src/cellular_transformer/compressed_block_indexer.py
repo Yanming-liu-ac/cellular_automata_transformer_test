@@ -299,6 +299,54 @@ class CsaHcaRareDirectorySweepResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaRareDirectoryStressPoint:
+    """One rare-directory stress scenario and directory size."""
+
+    scenario: str
+    directory_blocks_per_token: int
+    stress_token_count: int
+    directory_entries: int
+    directory_state_bytes: float
+    block_plus_directory_state_bytes: float
+    hca_query_rate: float
+    csa_query_rate: float
+    rare_false_hca_rate: float
+    directory_query_rate: float
+    base_relevant_hit_rate: float
+    repaired_relevant_hit_rate: float
+    base_relevant_coverage: float
+    repaired_relevant_coverage: float
+    base_csa_relevant_hit_rate: float
+    repaired_csa_relevant_hit_rate: float
+    base_csa_relevant_coverage: float
+    repaired_csa_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryStressResult:
+    """Stress diagnostics for the exact rare-token block directory."""
+
+    context_length: int
+    block_size: int
+    blocks: int
+    banks: int
+    summary_width: int
+    global_width: int
+    bits: int
+    hca_threshold: int
+    csa_blocks: int
+    tail_blocks: int
+    queries: int
+    block_summary_state_bytes: float
+    global_summary_state_bytes: float
+    global_summary_read_bytes_per_query: float
+    points: Tuple[CsaHcaRareDirectoryStressPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -799,7 +847,7 @@ def run_compressed_block_budget_sweep(
 def run_csa_hca_policy_trial(
     summary_width: int = 256,
     global_width: int = 2048,
-    thresholds: Tuple[int, ...] = (1, 2, 4, 8, 12),
+    thresholds: Tuple[int, ...] = (1, 2, 4, 8, 12, 15),
     csa_blocks: int = 4,
     tail_blocks: int = 2,
     block_size: int = 64,
@@ -1036,12 +1084,12 @@ def run_csa_hca_rare_directory_sweep(
         (128, 128, 4, 0),
         (128, 128, 4, 1),
         (128, 128, 4, 2),
-        (128, 128, 4, 8),
+        (128, 128, 4, 6),
         (256, 256, 4, 1),
-        (256, 256, 4, 8),
+        (256, 256, 4, 6),
     ),
     global_width: int = 2048,
-    hca_threshold: int = 8,
+    hca_threshold: int = 15,
     tail_blocks: int = 2,
     context_length: int = 65536,
     queries: int = 4096,
@@ -1211,6 +1259,121 @@ def run_csa_hca_rare_directory_sweep(
         relevant_query_rate=reference.relevant_query_rate,
         global_summary_state_bytes=reference.global_summary_state_bytes,
         global_summary_read_bytes_per_query=reference.global_summary_read_bytes_per_query,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_stress_sweep(
+    scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    directory_blocks: Tuple[int, ...] = (0, 2, 4, 6),
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    hca_threshold: int = 15,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> CsaHcaRareDirectoryStressResult:
+    """Stress the rare-token directory beyond the smooth topic/noise stream."""
+
+    if len(scenarios) == 0:
+        raise ValueError("scenarios must not be empty")
+    if len(directory_blocks) == 0:
+        raise ValueError("directory_blocks must not be empty")
+    if any(int(blocks) < 0 for blocks in directory_blocks):
+        raise ValueError("directory block counts must be non-negative")
+    if hca_threshold <= 0:
+        raise ValueError("hca_threshold must be positive")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(scenarios):
+        stream, query_tokens, stress_token_count = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+        for directory_blocks_per_token in tuple(sorted({int(blocks) for blocks in directory_blocks})):
+            directory = _build_rare_block_directory(
+                exact_counts=exact_counts,
+                hca_threshold=hca_threshold,
+                max_blocks_per_token=directory_blocks_per_token,
+            )
+            directory_entries = sum(len(blocks) for blocks in directory.values())
+            directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+            directory_state_bytes = directory_entries * directory_entry_bytes
+            points.append(
+                _evaluate_rare_directory_stress_point(
+                    scenario=scenario,
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    directory_entry_bytes=directory_entry_bytes,
+                    directory_state_bytes=directory_state_bytes,
+                    hca_threshold=hca_threshold,
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                    stress_token_count=stress_token_count,
+                )
+            )
+
+    return CsaHcaRareDirectoryStressResult(
+        context_length=config.context_length,
+        block_size=config.block_size,
+        blocks=config.blocks,
+        banks=config.banks,
+        summary_width=config.summary_width,
+        global_width=global_width,
+        bits=config.bits,
+        hca_threshold=hca_threshold,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        queries=config.queries,
+        block_summary_state_bytes=CompressedBlockIndexConfig(
+            context_length=context_length,
+            block_size=block_size,
+            selected_blocks=csa_blocks,
+            tail_blocks=tail_blocks,
+            summary_width=summary_width,
+            queries=queries,
+        ).summary_state_bytes,
+        global_summary_state_bytes=global_config.state_bytes,
+        global_summary_read_bytes_per_query=config.banks * config.bits / 8,
         points=tuple(points),
     )
 
@@ -1550,6 +1713,190 @@ def _make_zipf_topic_stream(
         else:
             stream[index] = int(rng.integers(config.hot_tokens, config.vocab_size))
     return stream
+
+
+def _make_rare_directory_stress_case(
+    config: CompressedBlockIndexConfig,
+    scenario: str,
+    hca_threshold: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    scenario = scenario.lower()
+    if scenario == "zipf_reference":
+        return (
+            _make_zipf_topic_stream(config, seed=seed),
+            _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries),
+            0,
+        )
+
+    valid = {"rare_burst", "split_rare", "repeated_name", "collision_noise"}
+    if scenario not in valid:
+        raise ValueError(f"unknown rare-directory stress scenario: {scenario}")
+
+    rng = np.random.default_rng(seed)
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    non_tail_blocks = max(1, config.blocks - config.tail_blocks)
+    target_count = min(128, non_tail_blocks, config.vocab_size - config.hot_tokens)
+    if target_count <= 0:
+        raise ValueError("vocab does not have room for stress tokens")
+    target_start = config.hot_tokens
+    target_tokens = np.arange(target_start, target_start + target_count, dtype=np.int32)
+
+    accidental = (stream >= target_start) & (stream < target_start + target_count)
+    if np.any(accidental):
+        replacement_low = target_start + target_count
+        if replacement_low < config.vocab_size:
+            stream[accidental] = rng.integers(
+                replacement_low,
+                config.vocab_size,
+                size=int(np.count_nonzero(accidental)),
+            )
+        else:
+            stream[accidental] = rng.integers(0, config.hot_tokens, size=int(np.count_nonzero(accidental)))
+
+    def write_token(token: int, block: int, ordinal: int) -> None:
+        offset = (int(token) * 17 + ordinal * 23) % config.block_size
+        stream[int(block) * config.block_size + offset] = int(token)
+
+    for index, token in enumerate(target_tokens):
+        base_block = (index * 37 + 11) % non_tail_blocks
+        if scenario == "rare_burst":
+            for occurrence in range(min(6, hca_threshold - 1)):
+                write_token(int(token), base_block, occurrence)
+        elif scenario == "split_rare":
+            stride = max(1, non_tail_blocks // 3)
+            for split in range(3):
+                block = (base_block + split * stride) % non_tail_blocks
+                for occurrence in range(2):
+                    write_token(int(token), block, split * 2 + occurrence)
+        elif scenario == "repeated_name":
+            stride = max(1, non_tail_blocks // 6)
+            for occurrence in range(min(6, hca_threshold - 1)):
+                block = (base_block + occurrence * stride) % non_tail_blocks
+                write_token(int(token), block, occurrence)
+        else:
+            for occurrence in range(min(4, hca_threshold - 1)):
+                write_token(int(token), base_block, occurrence)
+            distractor_start = target_start + target_count + index * 16
+            for distractor in range(16):
+                token_id = distractor_start + distractor
+                if token_id >= config.vocab_size:
+                    token_id = target_start + target_count + (
+                        (index * 16 + distractor) % max(1, config.vocab_size - target_start - target_count)
+                    )
+                write_token(int(token_id), base_block, 10 + distractor)
+
+    query_tokens = np.resize(target_tokens, config.queries).astype(np.int32)
+    return stream, query_tokens, target_count
+
+
+def _evaluate_rare_directory_stress_point(
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+    stress_token_count: int,
+) -> CsaHcaRareDirectoryStressPoint:
+    hca_queries = 0
+    csa_queries = 0
+    directory_queries = 0
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    csa_relevant = 0
+    base_hits = 0
+    repaired_hits = 0
+    base_coverage = 0.0
+    repaired_coverage = 0.0
+    base_csa_hits = 0
+    repaired_csa_hits = 0
+    base_csa_coverage = 0.0
+    repaired_csa_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+
+    for token in query_tokens:
+        token = int(token)
+        global_estimate = global_summary.estimate(token)
+        route_hca = global_estimate >= hca_threshold
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            base_selected = recent_blocks
+            selected = recent_blocks
+            hca_queries += 1
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+            selected = np.union1d(base_selected, directory_blocks)
+            csa_queries += 1
+            if directory_blocks_per_token > 0:
+                directory_read_bytes += directory_entry_bytes * max(1, len(directory_blocks))
+            if len(directory_blocks) > 0:
+                directory_queries += 1
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+
+        base_hit = _block_hit(base_selected, block_counts)
+        repaired_hit = _block_hit(selected, block_counts)
+        base_hits += base_hit
+        repaired_hits += repaired_hit
+        base_coverage += _occurrence_coverage(base_selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+        if not route_hca:
+            csa_relevant += 1
+            base_csa_hits += base_hit
+            repaired_csa_hits += repaired_hit
+            base_csa_coverage += _occurrence_coverage(base_selected, block_counts)
+            repaired_csa_coverage += _occurrence_coverage(selected, block_counts)
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    csa_denominator = csa_relevant if csa_relevant else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    token_reads_per_query = token_reads / query_denominator
+    return CsaHcaRareDirectoryStressPoint(
+        scenario=scenario,
+        directory_blocks_per_token=directory_blocks_per_token,
+        stress_token_count=stress_token_count,
+        directory_entries=sum(len(blocks) for blocks in directory.values()),
+        directory_state_bytes=directory_state_bytes,
+        block_plus_directory_state_bytes=index.state_bytes + directory_state_bytes,
+        hca_query_rate=hca_queries / query_denominator,
+        csa_query_rate=csa_queries / query_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        directory_query_rate=directory_queries / query_denominator,
+        base_relevant_hit_rate=base_hits / relevant_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        base_relevant_coverage=base_coverage / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        base_csa_relevant_hit_rate=base_csa_hits / csa_denominator,
+        repaired_csa_relevant_hit_rate=repaired_csa_hits / csa_denominator,
+        base_csa_relevant_coverage=base_csa_coverage / csa_denominator,
+        repaired_csa_relevant_coverage=repaired_csa_coverage / csa_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
 
 
 def _build_exact_block_counts(

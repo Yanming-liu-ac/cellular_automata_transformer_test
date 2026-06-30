@@ -287,14 +287,14 @@ def rare_directory_csa_hca_context_budget() -> ContextSummaryBudget:
     """Current rare-directory CSA/HCA context-summary budget.
 
     This uses the measured low-state point from ``run_csa_hca_rare_directory_sweep``:
-    128-token blocks, ``summary_width=128``, two exact rare-token directory
-    blocks per token, an 8-bit lazy-epoch HCA summary, and threshold-routed
-    CSA/HCA reads.
+    128-token blocks, ``summary_width=128``, six exact rare-token directory
+    blocks per token, an 8-bit lazy-epoch HCA summary, and a threshold-15
+    CSA/HCA route gate.
     """
 
     block_summary_state = 512 * 4 * 128 * 4 / 8
     directory_entry_bytes = (16 + 9 + 1) / 8
-    directory_state = 9662 * directory_entry_bytes
+    directory_state = 9694 * directory_entry_bytes
     hca_state = 4 * 2048 * (4 + 8) / 8
     hca_read = 4 * (4 + 8) / 8
     hca_update = 4 * (4 + 8) / 8 * 2

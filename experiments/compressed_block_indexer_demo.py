@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
+    run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
@@ -227,7 +228,7 @@ def main() -> None:
     print("- block=256,width=256 reaches 128KB but loses too much cold exact recall in this trial.")
     print()
 
-    rare = run_csa_hca_rare_directory_sweep(global_width=2048, hca_threshold=8)
+    rare = run_csa_hca_rare_directory_sweep(global_width=2048, hca_threshold=15)
     print("Rare-token block directory repair")
     print(
         f"fixed HCA: width={rare.global_width}, "
@@ -274,8 +275,51 @@ def main() -> None:
     print()
     print("Rare-directory interpretation:")
     print("- A small exact directory repairs low-width CSA misses for rare/cold tokens.")
-    print("- block=128,width=128,dir_k=2 uses about 159KB and restores measured coverage.")
+    print("- block=128,width=128,dir_k=6 uses about 159KB and restores measured coverage.")
     print("- This is the cleaner CA split: HCA for frequent context, exact directory for rare block ids.")
+    print()
+
+    stress = run_csa_hca_rare_directory_stress_sweep(global_width=2048, hca_threshold=15)
+    print("Rare-directory stress sweep")
+    print(
+        f"block={stress.block_size}, width={stress.summary_width}, "
+        f"hca_threshold={stress.hca_threshold}, "
+        f"block_state={format_bytes(stress.block_summary_state_bytes)}"
+    )
+    headers = [
+        "scenario",
+        "dir_k",
+        "dir_state",
+        "false_hca",
+        "hit",
+        "coverage",
+        "csa_cov",
+        "dir_rd",
+        "kv_read",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 158)
+    for point in stress.points:
+        row = [
+            point.scenario,
+            f"{point.directory_blocks_per_token}",
+            format_bytes(point.directory_state_bytes),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_hit_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            fmt_pct(point.repaired_csa_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_reads_per_query:0.1f}",
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Stress interpretation:")
+    print("- Raising the HCA gate to threshold 15 prevents most rare false-HCA routes.")
+    print("- dir_k=2 handles burst/split rare tokens but not names spread across many blocks.")
+    print("- dir_k=6 is the current stress-safe directory setting for repeated rare names.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

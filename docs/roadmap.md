@@ -97,10 +97,16 @@ Compressed block-index result:
   coverage on routed relevant queries. Token block reads rise to about
   331/query, but the full-context token-read reduction remains about 198x.
 - A rare-token block directory improves that point again. With `block_size=128`,
-  `summary_width=128`, and two exact directory block ids per rare token, CSA
-  state is about 158.7KB instead of 256KB and the routed CSA subset still
-  reaches 100% measured hit and coverage. The directory read cost is only about
-  0.48B/query in the current trial.
+  `summary_width=128`, threshold 15, and six exact directory block ids per rare
+  token, CSA state is about 158.8KB instead of 256KB and the routed CSA subset
+  still reaches 100% measured hit and coverage on the reference stream. The
+  directory read cost is only about 0.48B/query in the current average trial.
+- The first rare-directory stress sweep shows why the gate and directory fanout
+  must be explicit hardware policy knobs. Threshold 8 creates too many
+  false-HCA routes for bursty rare tokens; threshold 15 cuts rare false-HCA to
+  about 0.8% in the stress set. `dir_k=2` handles burst/split rare tokens, while
+  repeated names spread across six blocks need `dir_k=6` to reach about 99.2%
+  coverage. Pure rare-query stress reduces token-read savings to about 52x-86x.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -184,7 +190,7 @@ Unified efficiency profile:
 - The compact128 CSA/HCA profile raises local traffic to about
   52.28KB/event but lowers on-chip state to about 451.8KB.
 - The current rare128 CSA/HCA profile keeps local traffic about 52.28KB/event
-  and lowers on-chip state further to about 354.5KB.
+  and lowers on-chip state further to about 354.6KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -193,7 +199,7 @@ Tile/floorplan profile:
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
 - With the current rare128 CSA/HCA-aware state, a 32-tile fabric now fits at
-  about 69.2% SRAM utilization and requires 23 16KB state tiles.
+  about 69.3% SRAM utilization and requires 23 16KB state tiles.
 - A 64-tile fabric stores the same state in about 34.6% of local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
   about 5.2% on 32 tiles and about 2.6% on 64 tiles under the proxy assumptions.
@@ -235,9 +241,9 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- stress-test the rare-token block directory on bursty rare tokens, repeated
-  names, and adversarial collisions before treating it as a stable hardware
-  primitive.
+- replace the hand-set threshold-15 HCA gate and fixed `dir_k=6` directory
+  fanout with learned or metadata-driven admission/fanout policies, then
+  re-run the bursty rare-token and repeated-name stress tests.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

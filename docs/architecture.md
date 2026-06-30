@@ -272,14 +272,24 @@ this stream.
 
 The rare-token directory sweep uses the exact sparse lane to repair that
 low-state point instead of widening every block summary. With `block_size=128`,
-`summary_width=128`, and two exact directory block ids per rare token, CSA
-block-summary state is only 128KB and the directory adds about 30.7KB. The
-combined 158.7KB CSA state restores the routed CSA subset from 68.9% hit and
-coverage to 100% hit and 100% coverage in the current trial. Directory reads
-add only about 0.48B/query, while selected token reads stay about 332
-positions/query. This is a cleaner CA split: HCA handles frequent distributed
-context, the low-width CSA summary proposes blocks, and a tiny exact directory
-repairs rare block ids.
+`summary_width=128`, threshold 15, and six exact directory block ids per rare
+token, CSA block-summary state is only 128KB and the directory adds about
+30.8KB. The combined 158.8KB CSA state restores the routed CSA subset from
+68.9% hit and coverage to 100% hit and 100% coverage in the current trial.
+Directory reads add only about 0.48B/query on the reference stream, while
+selected token reads stay about 332 positions/query. This is a cleaner CA split:
+HCA handles frequent distributed context, the low-width CSA summary proposes
+blocks, and a tiny exact directory repairs rare block ids.
+
+The stress sweep is the caution. At the older threshold 8, bursty or repeated
+rare tokens can be falsely routed to HCA before the directory is consulted.
+Raising the HCA gate to threshold 15 reduces rare false-HCA routes to about
+0.8% in the current synthetic stress cases. `dir_k=2` is enough for burst and
+three-way split rare tokens, but repeated-name tokens spread across six blocks
+need `dir_k=6` to recover about 99.2% measured coverage. In pure rare-query
+stress, token-read reduction falls to roughly 52x-86x because more exact blocks
+are intentionally read; that is the expected worst-case cost of preserving rare
+details.
 
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
@@ -607,7 +617,7 @@ profile uses 256KB block summaries instead. It raises local traffic to about
 52.28KB/event because selected token block reads double, but it lowers on-chip
 state to about 451.8KB. The current rare128 profile replaces half of that block
 summary with a small exact directory: context traffic remains about
-52.28KB/event, while on-chip state falls to about 354.5KB.
+52.28KB/event, while on-chip state falls to about 354.6KB.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
@@ -624,9 +634,9 @@ tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
 At 4 Cellular-MoE ticks per synthetic event, the rare-directory CSA/HCA-aware
-profile needs about 52.28KB of local traffic and about 354.5KB of on-chip state.
+profile needs about 52.28KB of local traffic and about 354.6KB of on-chip state.
 With a 32-tile fabric under the proxy assumptions, the state now fits in about
-69.2% of available SRAM and requires 23 state tiles. A 64-tile fabric stores the
+69.3% of available SRAM and requires 23 state tiles. A 64-tile fabric stores the
 same state at about 34.6% utilization, while a 1M events/s target consumes
 about 2.6% of aggregate local byte bandwidth.
 

@@ -340,14 +340,33 @@ small exact sparse structure:
 block=128  width=128  dir_k=0  block=128KB  dir=0KB     combined=128KB    hit/cov=68.9% / 68.9%    token reads=330.8
 block=128  width=128  dir_k=1  block=128KB  dir=28.6KB  combined=156.6KB  hit/cov=100% / 99.3%     token reads=331.6
 block=128  width=128  dir_k=2  block=128KB  dir=30.7KB  combined=158.7KB  hit/cov=100% / 100%      token reads=331.6
+block=128  width=128  dir_k=6  block=128KB  dir=30.8KB  combined=158.8KB  hit/cov=100% / 100%      token reads=331.6
 block=256  width=256  dir_k=1  block=128KB  dir=27.5KB  combined=155.5KB  hit/cov=100% / 100%      token reads=662.1
 ```
 
-The best current point is `block_size=128`, `summary_width=128`, `dir_k=2`.
-It uses about 158.7KB for CSA block summaries plus exact rare-token block ids,
+The best current point is `block_size=128`, `summary_width=128`, `dir_k=6`, and
+a safer HCA route threshold of 15. It uses about 158.8KB for CSA block summaries
+plus exact rare-token block ids,
 restores measured routed-CSA hit and coverage to 100%, and adds only about
-0.48B/query of directory read traffic. This shifts rare exact location recall
+0.48B/query of directory read traffic on the reference stream. This shifts rare exact location recall
 out of the compressed block summary and into the exact sparse lane.
+
+The stress sweep exposes the two failure modes that the reference stream hides:
+false HCA admission and repeated rare names spread across many blocks. With the
+safer threshold 15 and `block_size=128`, `summary_width=128`:
+
+```text
+rare_burst      dir_k=2  false-HCA=0.8%  repaired hit/cov=99.2% / 99.2%  reduction=85.9x
+split_rare      dir_k=2  false-HCA=0.8%  repaired hit/cov=99.2% / 99.0%  reduction=85.2x
+repeated_name   dir_k=2  false-HCA=0.8%  repaired hit/cov=99.2% / 67.5%  reduction=64.8x
+repeated_name   dir_k=6  false-HCA=0.8%  repaired hit/cov=99.2% / 99.2%  reduction=52.2x
+collision_noise dir_k=2  false-HCA=0.8%  repaired hit/cov=99.2% / 99.2%  reduction=85.8x
+```
+
+This makes the current policy explicit: `dir_k=2` is enough for compact
+reference traffic, but `dir_k=6` is the safer repeated-name setting. Pure
+rare-query stress spends more token reads than the average event profile,
+because exact rare-detail preservation is intentionally more expensive.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 
@@ -502,7 +521,7 @@ Transformer KV read/token: about 384 MB
 legacy on-chip HARC-CA state: about 183.8 KB
 wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
 compact128 CSA/HCA on-chip HARC-CA state: about 451.8 KB
-rare128 CSA/HCA on-chip HARC-CA state: about 354.5 KB
+rare128 CSA/HCA on-chip HARC-CA state: about 354.6 KB
 ```
 
 The rare128 CSA/HCA-aware profile adds about 831.7B/event over the legacy
@@ -519,7 +538,7 @@ CSA selected token-cell reads: about 663.2B/event
 The wide64 baseline spends less selected-token traffic, about 648B/event total
 context traffic, but it needs about 512KB of CSA block summaries. The
 compact128 point uses about 256KB of block summaries. The current rare128 point
-uses about 128KB of block summaries, about 30.7KB of rare-token directory state,
+uses about 128KB of block summaries, about 30.8KB of rare-token directory state,
 and 12KB of lazy HCA summary metadata/counters.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
@@ -554,12 +573,12 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the rare128 CSA/HCA-aware 354.5KB HARC-CA state and
+bytes/cycle/tile. With the rare128 CSA/HCA-aware 354.6KB HARC-CA state and
 52.28KB local bytes/event, a 32-tile configuration now has meaningful SRAM
 headroom:
 
 ```text
-32 tiles: 512KB SRAM, 69.2% state utilization, 23 state tiles required, 5.2% bandwidth utilization
+32 tiles: 512KB SRAM, 69.3% state utilization, 23 state tiles required, 5.2% bandwidth utilization
 64 tiles: 1MB SRAM, 34.6% state utilization, 23 state tiles required, 2.6% bandwidth utilization
 128 tiles: 2MB SRAM, 17.3% state utilization, 23 state tiles required, 1.3% bandwidth utilization
 ```

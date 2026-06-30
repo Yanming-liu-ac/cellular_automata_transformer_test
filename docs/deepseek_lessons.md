@@ -342,7 +342,7 @@ tile fabric fits. The earlier 512KB wide64 index pushed the 32-tile proxy over
 its SRAM budget. The compact128 point brings current state down to about
 451.8KB. The rare128 point goes further by replacing half of the block-summary
 state with a small exact rare-token directory, bringing current state to about
-354.5KB and 32-tile utilization to about 69.2%. This is the CA-chip version of
+354.6KB and 32-tile utilization to about 69.3%. This is the CA-chip version of
 cache hierarchy pressure: sparse attention-style indexing saves reads, but the
 index itself must be tiered, compressed, and co-designed with the routing
 policy and exact-memory lane.
@@ -426,11 +426,14 @@ about 331 positions/query instead of 165. That is the right kind of trade:
 SRAM, bandwidth, and route quality are co-designed rather than optimized in
 isolation.
 The rare-directory sweep sharpens the split. A lower-width 128-token CSA summary
-uses only 128KB but misses too many cold blocks by itself. Adding about 30.7KB
+uses only 128KB but misses too many cold blocks by itself. Adding about 30.8KB
 of exact rare-token block ids restores measured routed-CSA hit and coverage to
-100%. This mirrors the CSA/HCA systems lesson more closely than a single larger
-index: dense recurrent state, sparse compressed routing, and exact rare-detail
-state should be separate cooperating structures.
+100% on the reference stream. The stress sweep adds the missing systems lesson:
+the HCA gate must not falsely swallow rare tokens, and directory fanout must
+grow when rare names are spread across many blocks. This mirrors the CSA/HCA
+systems lesson more closely than a single larger index: dense recurrent state,
+sparse compressed routing, exact rare-detail state, and learned admission/fanout
+policy should be separate cooperating structures.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about
