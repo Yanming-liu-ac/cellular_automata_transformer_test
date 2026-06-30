@@ -154,3 +154,39 @@ magnitude without routing all traffic into one overloaded rule bank.
 ```
 
 This is a chip metric, not a language quality metric.
+
+## Unified Event Profile
+
+The project now includes a unified per-event proxy that combines:
+
+- exact sparse-memory local reads;
+- compressed dense-context counter updates;
+- Cellular-MoE sparse rule-bank local reads/writes;
+- on-chip state bytes;
+- Transformer KV-cache read volume as a reference.
+
+The current deterministic profile uses:
+
+- 16k exact facts;
+- a synthetic mixed decode stream;
+- 4-bit dense sketch state;
+- Cellular-MoE with 20% active cells, top-1 routing, and 4 rule ticks per event;
+- a tiny Transformer KV reference with 12 layers, 8 heads, 64 head dimension,
+  and 16-bit KV cache.
+
+Current proxy result:
+
+```text
+HARC-CA local bytes/event: about 51 KB
+Transformer KV read/token: about 384 MB
+On-chip HARC-CA state: about 182 KB
+```
+
+This is not a measured energy claim. Local on-chip bytes and KV-cache read bytes
+are physically different costs, and the current HARC-CA prototype is not quality
+equivalent to a Transformer. The metric is useful because it makes the design
+target explicit:
+
+```text
+Keep useful next-token behavior inside a small amount of local low-bit traffic.
+```

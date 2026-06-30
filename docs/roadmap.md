@@ -93,6 +93,15 @@ Cellular-MoE execution result:
   the current deterministic rollout.
 - This validates the execution shape, not trained model quality.
 
+Unified efficiency profile:
+
+- The current event-level proxy combines exact memory, dense sketch updates, and
+  Cellular-MoE rule execution.
+- With 4 rule ticks per event, estimated local on-chip traffic is about 51KB per
+  synthetic event.
+- The tiny Transformer KV reference at 16k context reads about 384MB per token.
+- This is a design-budget signal, not an energy or quality-equivalence claim.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;

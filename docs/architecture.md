@@ -336,6 +336,27 @@ The dual-path memory system can be wired into a next-token interface.
 It is not yet a trainable language model.
 ```
 
+## Event-Level Efficiency Profile
+
+The current prototype can be profiled as a decode event:
+
+```text
+event traffic =
+    exact sparse-memory reads
+  + dense sketch counter updates
+  + sparse Cellular-MoE rule-bank local reads/writes
+```
+
+With 4 Cellular-MoE ticks per synthetic decode event, the current deterministic
+profile estimates about 51KB of local on-chip byte movement per event. The
+paired tiny Transformer KV-cache reference reads about 384MB per token at 16k
+context.
+
+This is a proxy comparison, not a performance claim. It ignores model quality,
+full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
+and learned-rule overhead. Its value is that it gives the chip design a concrete
+budget to protect as the model becomes more capable.
+
 ## Immediate Falsification Tests
 
 HARC-CA should be rejected or redesigned if:

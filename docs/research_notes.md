@@ -203,6 +203,19 @@ dense all-rule execution. Bias control reduces load imbalance but does not fully
 solve it, which means learned routing or stronger hardware scheduling will still
 be needed.
 
+The seventh sweep added a unified event-level efficiency proxy. It combines the
+synthetic dual-path next-token benchmark with Cellular-MoE execution and compares
+the resulting local byte movement with a tiny Transformer KV-cache read volume.
+With 4 Cellular-MoE ticks per event, the current HARC-CA profile moves about
+51KB of local on-chip bytes per event and keeps about 182KB of on-chip state.
+The tiny Transformer KV reference reads about 384MB per token at 16k context.
+
+This ratio is intentionally not treated as a win. The HARC-CA prototype is not a
+quality-equivalent model, and local SRAM/register traffic is not the same as
+HBM/cache traffic. The useful conclusion is narrower: the current architecture
+has a measurable path to keeping its toy next-token behavior inside local
+low-bit traffic, which is the right bottleneck direction for a CA-first chip.
+
 Current interpretation:
 
 ```text

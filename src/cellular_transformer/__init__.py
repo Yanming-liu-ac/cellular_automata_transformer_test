@@ -8,6 +8,7 @@ from .dense_context import (
     LowBitDenseContext,
     run_dense_context_trial,
 )
+from .efficiency import EfficiencyComparison, HarcEventEfficiency, compare_to_transformer_kv
 from .propagation import (
     PropagationResult,
     harc_ca_edges,
@@ -36,7 +37,9 @@ __all__ = [
     "HashRouteCAMConfig",
     "DenseContextConfig",
     "DenseContextResult",
+    "EfficiencyComparison",
     "InsertResult",
+    "HarcEventEfficiency",
     "LookupResult",
     "LowBitDenseContext",
     "MoERolloutResult",
@@ -52,6 +55,7 @@ __all__ = [
     "harc_ca_edges",
     "line_edges",
     "propagation_distances",
+    "compare_to_transformer_kv",
     "run_dense_context_trial",
     "run_memory_task",
     "run_recall_trial",
