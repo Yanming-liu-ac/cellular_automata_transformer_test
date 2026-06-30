@@ -7,7 +7,13 @@ from typing import Callable, Iterable, List, Tuple
 
 import numpy as np
 
-from .retrieval import HashRouteCAM, HashRouteCAMConfig, keyed_hash
+from .retrieval import (
+    HashRouteCAM,
+    HashRouteCAMConfig,
+    TieredHashRouteCAM,
+    TieredHashRouteCAMConfig,
+    keyed_hash,
+)
 
 PairFactory = Callable[[int, int], List[Tuple[int, int]]]
 
@@ -30,12 +36,25 @@ class MemoryTaskResult:
     avg_visited_cells: float
     full_scan_cells: int
     memory_bytes: float
+    memory: str = "single"
+    overflow_buckets: int = 0
+    overflow_ways: int = 0
+    overflow_routes: int = 0
+    overflow_evictions: int = 0
+    overflow_insertions: int = 0
+    overflow_queries: int = 0
 
     @property
     def scan_avoidance_ratio(self) -> float:
         if self.avg_visited_cells == 0.0:
             return 0.0
         return self.full_scan_cells / self.avg_visited_cells
+
+    @property
+    def overflow_query_rate(self) -> float:
+        if self.queries == 0:
+            return 0.0
+        return self.overflow_queries / self.queries
 
 
 def make_key_value_pairs(context_length: int, seed: int) -> List[Tuple[int, int]]:
@@ -92,6 +111,9 @@ def run_memory_task(
     ways: int = 4,
     routes: int = 2,
     tag_bits: int = 24,
+    overflow_bucket_multiplier: float | None = None,
+    overflow_ways: int = 4,
+    overflow_routes: int = 2,
     query_count: int | None = None,
     seed: int = 0,
 ) -> MemoryTaskResult:
@@ -102,13 +124,27 @@ def run_memory_task(
 
     pairs = TASK_FACTORIES[task](context_length, seed)
     expected = dict(pairs)
-    config = HashRouteCAMConfig(
+    primary_config = HashRouteCAMConfig(
         buckets=buckets,
         ways=ways,
         routes=routes,
         tag_bits=tag_bits,
     )
-    cam = HashRouteCAM(config)
+    if overflow_bucket_multiplier is None:
+        cam = HashRouteCAM(primary_config)
+        memory = "single"
+        overflow_buckets = 0
+    else:
+        overflow_buckets = max(1, int(round(context_length * overflow_bucket_multiplier)))
+        overflow_config = HashRouteCAMConfig(
+            buckets=overflow_buckets,
+            ways=overflow_ways,
+            routes=overflow_routes,
+            tag_bits=tag_bits,
+        )
+        cam = TieredHashRouteCAM(TieredHashRouteCAMConfig(primary_config, overflow_config))
+        memory = "tiered"
+
     for key, value in pairs:
         cam.insert(key, value)
 
@@ -121,6 +157,7 @@ def run_memory_task(
     correct = 0
     false_positive = 0
     visited = 0
+    overflow_queries = 0
     for index in query_indices:
         key, _ = pairs[int(index)]
         result = cam.lookup(key)
@@ -128,6 +165,7 @@ def run_memory_task(
         correct += int(value_correct)
         false_positive += int(result.found and not value_correct)
         visited += result.visited_cells
+        overflow_queries += int(getattr(result, "used_overflow", False))
 
     queries = len(query_indices)
     return MemoryTaskResult(
@@ -137,7 +175,7 @@ def run_memory_task(
         ways=ways,
         routes=routes,
         tag_bits=tag_bits,
-        load_factor=context_length / config.capacity,
+        load_factor=context_length / primary_config.capacity,
         evictions=cam.evictions,
         queries=queries,
         correct_rate=correct / queries if queries else 0.0,
@@ -145,6 +183,13 @@ def run_memory_task(
         avg_visited_cells=visited / queries if queries else 0.0,
         full_scan_cells=context_length,
         memory_bytes=cam.memory_bytes(),
+        memory=memory,
+        overflow_buckets=overflow_buckets,
+        overflow_ways=overflow_ways if overflow_bucket_multiplier is not None else 0,
+        overflow_routes=overflow_routes if overflow_bucket_multiplier is not None else 0,
+        overflow_evictions=getattr(cam, "overflow_evictions", 0),
+        overflow_insertions=getattr(cam, "overflow_insertions", 0),
+        overflow_queries=overflow_queries,
     )
 
 
@@ -155,6 +200,9 @@ def sweep_memory_tasks(
     bucket_multiplier: float = 0.25,
     ways: int = 4,
     tag_bits: int = 24,
+    overflow_bucket_multiplier: float | None = None,
+    overflow_ways: int = 4,
+    overflow_routes: int = 2,
     query_count: int = 1000,
     seed: int = 0,
 ) -> List[MemoryTaskResult]:
@@ -173,6 +221,9 @@ def sweep_memory_tasks(
                         ways=ways,
                         routes=routes,
                         tag_bits=tag_bits,
+                        overflow_bucket_multiplier=overflow_bucket_multiplier,
+                        overflow_ways=overflow_ways,
+                        overflow_routes=overflow_routes,
                         query_count=min(query_count, length),
                         seed=seed,
                     )

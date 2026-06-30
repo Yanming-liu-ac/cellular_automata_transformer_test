@@ -146,12 +146,30 @@ key-value tasks. At fixed capacity (`buckets = context / 4`, `ways = 4`) and
 32 cells per query. That is still far below a full scan of 16,384 token cells,
 but it is not yet reliable enough for LLM-grade exact memory.
 
+The third sweep added a hash-routed overflow tier, following the DeepSeek-V4
+cache-hierarchy lesson. At 16k context, the primary lane used
+`buckets=context/4`, `ways=4`, `routes=2`; the overflow lane used
+`buckets=context/16`, `ways=4`, `routes=2`; tags were widened to 32 bits. On the
+deterministic full-context copy, induction, and key-value trials, this recovered
+100% exact recall while average query work stayed around 34 visited cells. The
+single-lane baseline stayed around 92-93% recall at about 32 visited cells.
+Only about 8% of tiered queries touched overflow, so the overflow tier behaved
+like a cache hierarchy rather than a scan fallback.
+
+This suggests a promising memory hierarchy:
+
+```text
+primary associative lane   -> common hot facts
+overflow associative lane  -> bucket-pressure victims
+compressed CA field        -> fuzzy dense context
+```
+
 Current interpretation:
 
 ```text
 Multi-route associative CA memory is a credible primitive, but the architecture
-still needs overflow or learned routing before it can replace attention for
-facts that must be recalled exactly.
+needs overflow or learned routing before it can replace attention for facts
+that must be recalled exactly.
 ```
 
 ## Primary References

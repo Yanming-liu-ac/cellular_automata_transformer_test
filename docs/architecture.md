@@ -236,6 +236,16 @@ substantially over single-route lookup, but still leaves too many misses for a
 general language model. The likely useful region is lower load factor plus a
 small overflow tier, unless learned routing can reduce bucket imbalance.
 
+The first overflow-tier experiment supports this. At 16k context, a primary lane
+with `buckets=context/4`, `ways=4`, and `routes=2` reaches only about 92-93%
+exact recall because of primary bucket evictions. Adding a smaller overflow lane
+with `buckets=context/16`, `ways=4`, and `routes=2` recovers full recall in the
+current deterministic full-context trial with 32-bit tags. Average query work
+increases only from about 32 visited cells to about 34 visited cells because
+only about 8% of queries touch overflow.
+
+This is a CA-native cache hierarchy: no full-context scan fallback is used.
+
 ## Immediate Falsification Tests
 
 HARC-CA should be rejected or redesigned if:

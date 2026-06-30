@@ -45,6 +45,7 @@ The near-term goal is to turn this into a sequence-model testbed:
 python experiments/propagation_demo.py
 python experiments/retrieval_demo.py
 python experiments/task_benchmark_demo.py
+python experiments/overflow_benchmark_demo.py
 python experiments/hardware_estimate_demo.py
 python experiments/lowbit_demo.py
 ```
@@ -54,5 +55,6 @@ The first experiments compare:
 - propagation depth for local CA versus HARC-CA;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
+- overflow-tier associative memory for exact-recall reliability;
 - rough local-message traffic versus Transformer KV-cache traffic;
 - integer-only low-bit state rollout.

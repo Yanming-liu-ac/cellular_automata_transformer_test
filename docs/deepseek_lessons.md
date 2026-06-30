@@ -301,6 +301,12 @@ HARC-CA translation:
 - repeated prompt prefixes can be stored as pre-relaxed CA states;
 - prefill, decode, and background refresh need different schedules.
 
+The first HARC-CA overflow experiment is the minimal version of this idea:
+evicted primary associative entries spill into a smaller hash-routed overflow
+lane. Queries touch overflow only after a primary miss or tag collision. This
+recovers exact recall in the current 16k full-context trial with a small average
+visited-cell increase.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

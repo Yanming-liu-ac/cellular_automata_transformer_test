@@ -73,3 +73,20 @@ visited cells = routes * route_depth + routes * ways
 More routes can reduce evictions at the same SRAM capacity, but they increase
 local query work. This is acceptable only while the scan-avoidance ratio remains
 large and exact recall improves enough to justify the extra local activity.
+
+For overflow-tier memory, also report:
+
+- primary evictions;
+- overflow insertions;
+- overflow evictions;
+- fraction of queries that touch overflow;
+- total memory bytes across tiers;
+- average visited cells including overflow misses;
+- tag width needed to avoid collisions.
+
+The first useful overflow gate is:
+
+```text
+Adding a small overflow tier should recover exact recall without turning the
+query into a full scan or doubling average visited cells.
+```

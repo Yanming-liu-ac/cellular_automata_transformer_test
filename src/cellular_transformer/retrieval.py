@@ -91,6 +91,48 @@ class LookupResult:
 
 
 @dataclass(frozen=True)
+class InsertResult:
+    """Insertion trace, including the victim entry if one was evicted."""
+
+    evicted: bool
+    evicted_key: int | None = None
+    evicted_value: int | None = None
+    bucket: int | None = None
+    way: int | None = None
+
+
+@dataclass(frozen=True)
+class TieredHashRouteCAMConfig:
+    """Primary plus overflow associative-memory configuration."""
+
+    primary: HashRouteCAMConfig
+    overflow: HashRouteCAMConfig
+
+
+@dataclass(frozen=True)
+class TieredLookupResult:
+    """Lookup trace for a primary/overflow associative lane."""
+
+    key: int
+    found: bool
+    correct: bool
+    value: int | None
+    primary: LookupResult
+    overflow: LookupResult | None = None
+
+    @property
+    def visited_cells(self) -> int:
+        total = self.primary.visited_cells
+        if self.overflow is not None:
+            total += self.overflow.visited_cells
+        return total
+
+    @property
+    def used_overflow(self) -> bool:
+        return self.overflow is not None
+
+
+@dataclass(frozen=True)
 class RecallTrialResult:
     """Aggregate recall metrics for the associative lane."""
 
@@ -153,11 +195,8 @@ class HashRouteCAM:
     def _value_mask(self) -> int:
         return (1 << self.config.value_bits) - 1
 
-    def insert(self, key: int, value: int) -> bool:
-        """Insert or update one key/value pair.
-
-        Returns `True` if an occupied entry was evicted.
-        """
+    def insert_with_result(self, key: int, value: int) -> InsertResult:
+        """Insert or update one key/value pair with victim details."""
 
         buckets = self._buckets(key)
         tag = self._tag(key)
@@ -172,7 +211,7 @@ class HashRouteCAM:
                 way = int(np.argmax(same_key))
                 self.values[bucket, way] = value_u64
                 self.ages[bucket, way] = self.clock
-                return False
+                return InsertResult(evicted=False, bucket=bucket, way=way)
 
         best_empty: Tuple[int, int] | None = None
         lowest_occupancy = self.config.ways + 1
@@ -198,12 +237,29 @@ class HashRouteCAM:
             evicted = True
             self.evictions += 1
 
+        evicted_key = int(self.debug_keys[bucket, way]) if evicted else None
+        evicted_value = int(self.values[bucket, way]) if evicted else None
+
         self.valid[bucket, way] = True
         self.tags[bucket, way] = tag
         self.values[bucket, way] = value_u64
         self.debug_keys[bucket, way] = int(key)
         self.ages[bucket, way] = self.clock
-        return evicted
+        return InsertResult(
+            evicted=evicted,
+            evicted_key=evicted_key,
+            evicted_value=evicted_value,
+            bucket=bucket,
+            way=way,
+        )
+
+    def insert(self, key: int, value: int) -> bool:
+        """Insert or update one key/value pair.
+
+        Returns `True` if an occupied entry was evicted.
+        """
+
+        return self.insert_with_result(key, value).evicted
 
     def lookup(self, key: int) -> LookupResult:
         """Lookup one key using only bucket routing and tag comparison."""
@@ -249,6 +305,80 @@ class HashRouteCAM:
         """Deployment-shaped storage estimate, excluding debug keys and ages."""
 
         return self.config.capacity * self.config.entry_bits / 8
+
+
+class TieredHashRouteCAM:
+    """Primary associative lane with a hash-routed overflow tier.
+
+    This models a CA chip memory hierarchy: hot entries stay in the primary lane;
+    entries displaced by bucket pressure are inserted into an overflow lane that
+    is still hash-routed and set-associative, not linearly scanned.
+    """
+
+    def __init__(self, config: TieredHashRouteCAMConfig) -> None:
+        self.config = config
+        self.primary = HashRouteCAM(config.primary)
+        self.overflow = HashRouteCAM(config.overflow)
+        self.overflow_insertions = 0
+
+    @property
+    def evictions(self) -> int:
+        return self.primary.evictions
+
+    @property
+    def overflow_evictions(self) -> int:
+        return self.overflow.evictions
+
+    def insert(self, key: int, value: int) -> bool:
+        """Insert into primary, spilling evicted victims into overflow."""
+
+        result = self.primary.insert_with_result(key, value)
+        if not result.evicted:
+            return False
+        if result.evicted_key is None or result.evicted_value is None:
+            return True
+
+        self.overflow.insert(result.evicted_key, result.evicted_value)
+        self.overflow_insertions += 1
+        return True
+
+    def lookup(self, key: int) -> TieredLookupResult:
+        """Lookup primary first, then overflow only on miss or tag collision."""
+
+        primary = self.primary.lookup(key)
+        if primary.found and primary.correct:
+            return TieredLookupResult(
+                key=int(key),
+                found=True,
+                correct=True,
+                value=primary.value,
+                primary=primary,
+            )
+
+        overflow = self.overflow.lookup(key)
+        if overflow.found:
+            return TieredLookupResult(
+                key=int(key),
+                found=True,
+                correct=overflow.correct,
+                value=overflow.value,
+                primary=primary,
+                overflow=overflow,
+            )
+
+        return TieredLookupResult(
+            key=int(key),
+            found=primary.found,
+            correct=False,
+            value=primary.value if primary.found else None,
+            primary=primary,
+            overflow=overflow,
+        )
+
+    def memory_bytes(self) -> float:
+        """Deployment-shaped total storage estimate."""
+
+        return self.primary.memory_bytes() + self.overflow.memory_bytes()
 
 
 def make_induction_pairs(context_length: int, seed: int = 0) -> List[Tuple[int, int]]:

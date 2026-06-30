@@ -11,18 +11,26 @@ from .propagation import (
 from .retrieval import (
     HashRouteCAM,
     HashRouteCAMConfig,
+    InsertResult,
     LookupResult,
     RecallTrialResult,
+    TieredHashRouteCAM,
+    TieredHashRouteCAMConfig,
+    TieredLookupResult,
     run_recall_trial,
 )
 
 __all__ = [
     "HashRouteCAM",
     "HashRouteCAMConfig",
+    "InsertResult",
     "LookupResult",
     "MemoryTaskResult",
     "PropagationResult",
     "RecallTrialResult",
+    "TieredHashRouteCAM",
+    "TieredHashRouteCAMConfig",
+    "TieredLookupResult",
     "harc_ca_edges",
     "line_edges",
     "propagation_distances",

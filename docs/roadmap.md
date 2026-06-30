@@ -48,9 +48,19 @@ Initial result:
   do not guarantee perfect recall; capacity pressure remains a real design
   problem.
 
+Overflow-tier result:
+
+- At 16k context, `buckets=context/4`, `ways=4`, `routes=2`, single-lane recall
+  is roughly 92-93% on copy, induction, and key-value tasks.
+- Adding a smaller overflow lane with `buckets=context/16`, `ways=4`,
+  `routes=2`, and 32-bit tags recovers 100% exact recall in the current
+  deterministic full-context trial.
+- Average visited cells rise only from about 32 to about 34, because overflow is
+  checked only after primary misses; about 8% of queries touch overflow in the
+  current trial.
+
 Next retrieval work:
 
-- overflow tier for evicted facts;
 - learned or content-aware routing instead of pure hashing;
 - variable-width exact memory for rare names, numbers, and code symbols;
 - degradation tests with repeated keys and conflicting induction patterns.
