@@ -102,6 +102,16 @@ Unified efficiency profile:
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
+Tile/floorplan profile:
+
+- The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
+  local bytes/cycle/tile.
+- A 32-tile fabric stores the current prototype state in about 36% of local SRAM.
+- At a 1M synthetic events/s target, aggregate local bandwidth utilization is
+  about 5.1% under the proxy assumptions.
+- This defines a budget for learned rules and richer output heads; it is not
+  physical design closure.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;
@@ -199,6 +209,8 @@ Translate the architecture into a hardware proposal:
 - route-wave / reduction communication offload;
 - state-cache hierarchy for active tail, summaries, exact-memory overflow, and
   reusable prompt-prefix states;
+- floorplan proxy with tile count, local SRAM, local bandwidth, and state
+  utilization budgets;
 - area and bandwidth estimates;
 - FPGA prototype plan.
 

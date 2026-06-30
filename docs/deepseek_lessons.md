@@ -330,6 +330,12 @@ and output candidates must fit one decode-event budget. The current profile is
 still a toy, but it gives HARC-CA the same kind of systems accounting mindset
 that makes DeepSeek's architecture reports useful.
 
+The first floorplan proxy extends that mindset to tile budgets. It asks whether
+the current state and event traffic fit into local SRAM and local byte bandwidth
+before adding learned rules. This is the CA-chip analog of treating cache,
+communication, and kernels as part of the model design rather than deployment
+afterthoughts.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

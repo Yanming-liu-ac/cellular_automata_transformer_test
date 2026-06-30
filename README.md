@@ -51,6 +51,7 @@ python experiments/dual_path_demo.py
 python experiments/synthetic_lm_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
+python experiments/chip_floorplan_demo.py
 python experiments/hardware_estimate_demo.py
 python experiments/lowbit_demo.py
 ```
@@ -66,5 +67,6 @@ The first experiments compare:
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;
+- tile-level HARC-CA floorplan and local SRAM/bandwidth proxy;
 - rough local-message traffic versus Transformer KV-cache traffic;
 - integer-only low-bit state rollout.

@@ -216,6 +216,17 @@ HBM/cache traffic. The useful conclusion is narrower: the current architecture
 has a measurable path to keeping its toy next-token behavior inside local
 low-bit traffic, which is the right bottleneck direction for a CA-first chip.
 
+The eighth sweep added a tile-level floorplan proxy. The current event profile
+is mapped onto repeated tiles with 64 cells, 16KB local SRAM, and 32 local
+bytes/cycle. Under these assumptions, a 32-tile fabric has 512KB local SRAM,
+stores the current 182.5KB state at about 35.6% utilization, and reaches about
+5.1% aggregate local bandwidth utilization at 1M synthetic events/s. This gives
+the project a first SRAM/bandwidth budget for future learned rules.
+
+The warning remains important: this is not area, power, timing, or model quality.
+It is a bookkeeping tool to prevent future experiments from silently consuming
+the locality advantage.
+
 Current interpretation:
 
 ```text

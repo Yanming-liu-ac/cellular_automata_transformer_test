@@ -2,6 +2,7 @@
 
 from .benchmarks import MemoryTaskResult, run_memory_task, sweep_memory_tasks
 from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
+from .chip_model import ChipConfig, ChipProfile, TileConfig, profile_chip
 from .dense_context import (
     DenseContextConfig,
     DenseContextResult,
@@ -32,6 +33,8 @@ from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, SyntheticLMRes
 __all__ = [
     "CellularMoE",
     "CellularMoEConfig",
+    "ChipConfig",
+    "ChipProfile",
     "DualPathSyntheticLM",
     "HashRouteCAM",
     "HashRouteCAMConfig",
@@ -52,8 +55,10 @@ __all__ = [
     "TieredHashRouteCAM",
     "TieredHashRouteCAMConfig",
     "TieredLookupResult",
+    "TileConfig",
     "harc_ca_edges",
     "line_edges",
+    "profile_chip",
     "propagation_distances",
     "compare_to_transformer_kv",
     "run_dense_context_trial",

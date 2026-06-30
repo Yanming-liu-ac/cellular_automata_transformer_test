@@ -190,3 +190,34 @@ target explicit:
 ```text
 Keep useful next-token behavior inside a small amount of local low-bit traffic.
 ```
+
+## Tile/Floorplan Metrics
+
+For chip mapping, track:
+
+- cells per tile;
+- local SRAM per tile;
+- local bytes per cycle per tile;
+- tile count;
+- total local SRAM;
+- on-chip state bytes;
+- state utilization;
+- tiles required by state;
+- target events/s;
+- required aggregate local bandwidth;
+- peak aggregate local bandwidth under the proxy assumption;
+- local bandwidth utilization;
+- proxy maximum events/s.
+
+The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
+bytes/cycle/tile. With the current 182.5KB HARC-CA state and 51.36KB local
+bytes/event, a 32-tile configuration has:
+
+```text
+total local SRAM: 512KB
+state utilization: about 35.6%
+bandwidth utilization at 1M events/s: about 5.1%
+```
+
+These are design-budget numbers. They do not prove timing, routing, area, yield,
+or energy.
