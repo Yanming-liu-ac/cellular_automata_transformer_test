@@ -337,11 +337,13 @@ communication, and kernels as part of the model design rather than deployment
 afterthoughts.
 
 The CSA/HCA-aware profile tightens that lesson. The lazy HCA summary barely
-changes event traffic, but the 512KB CSA block-summary index changes the SRAM
-floorplan: 32 16KB tiles no longer fit the current state, while 64 tiles fit at
-about 69% state utilization. This is the CA-chip version of cache hierarchy
-pressure: sparse attention-style indexing saves reads, but the index itself
-must be tiered, compressed, or carefully placed.
+changes event traffic, while CSA block-summary geometry controls whether a small
+tile fabric fits. The earlier 512KB wide64 index pushed the 32-tile proxy over
+its SRAM budget. The compact128 point brings current state down to about
+451.8KB, so 32 tiles fit at about 88.2% utilization. This is the CA-chip version
+of cache hierarchy pressure: sparse attention-style indexing saves reads, but
+the index itself must be tiered, compressed, and co-designed with the routing
+policy.
 
 The first output-head budget adds another systems lesson: solving attention/KV
 traffic is not enough if the logits path becomes the dominant kernel. HARC-CA
@@ -413,6 +415,14 @@ The first hand-written CSA/HCA policy confirms this split in a toy setting. A
 current deterministic trial, reducing average block-score reads to about
 300B/query. The next DeepSeek-style step is to learn that policy and verify the
 compressed HCA path with task loss, not just with routing labels.
+The block-state sweep adds the hardware half of the same lesson. A 64-token
+block index with `summary_width=256` is reliable but costs 512KB of SRAM. Moving
+to 128-token blocks with the same width halves CSA state to 256KB and halves
+average block-score reads, while preserving measured CSA-path hit and coverage
+in the deterministic stream. The cost shifts into larger selected token blocks,
+about 331 positions/query instead of 165. That is the right kind of trade:
+SRAM, bandwidth, and route quality are co-designed rather than optimized in
+isolation.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

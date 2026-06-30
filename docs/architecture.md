@@ -260,6 +260,16 @@ block reads fall to about 165 token positions per query. This is a 396x
 full-context token-read reduction, but it assumes the HCA summary can handle
 the high-frequency distributed evidence.
 
+The next block-state sweep tests the SRAM cost directly. Keeping the same HCA
+gate and `csa_blocks=4`, `block_size=128` with `summary_width=256` cuts the CSA
+block-summary state from 512KB to 256KB. In the current deterministic trial it
+preserves 100% measured CSA-path hit and coverage on routed relevant queries,
+while block-score traffic falls from about 300B/query to about 150B/query. The
+price is larger selected blocks: average token block reads rise from about 165
+to about 331 positions/query, still about a 198x full-context token-read
+reduction. Smaller 128KB/64KB points begin to lose too much cold exact recall in
+this stream.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA
@@ -579,12 +589,13 @@ decode event, the current deterministic profile estimates about 51.46KB of local
 on-chip byte movement per event. The paired tiny Transformer KV-cache reference
 reads about 384MB per token at 16k context.
 
-After adding the CSA/HCA context summaries, the event traffic rises only slightly
-to about 52.10KB/event because the lazy HCA read/update path and sparse CSA block
-reads add about 648B/event. The more important change is state: the 512KB block
-summary plus 12KB lazy-epoch HCA summary raise on-chip state from about 183.8KB
-to about 707.8KB. This is still local SRAM state, but it changes the tile-count
-floorplan constraint.
+The earlier wide64 CSA/HCA context profile raises event traffic only slightly to
+about 52.10KB/event, but its 512KB block summary plus 12KB lazy-epoch HCA
+summary raise on-chip state from about 183.8KB to about 707.8KB. The current
+compact128 profile uses 256KB block summaries instead. It raises local traffic
+to about 52.28KB/event because selected token block reads double, but it lowers
+on-chip state to about 451.8KB. This is the better current chip point: spend a
+small amount of local read bandwidth to recover SRAM capacity.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
@@ -600,12 +611,12 @@ local-SRAM tiles:
 tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
-At 4 Cellular-MoE ticks per synthetic event, the CSA/HCA-aware profile needs
-about 52.10KB of local traffic and about 707.8KB of on-chip state. With a
-32-tile fabric under the proxy assumptions, the state no longer fits: it would
-need about 138% of available SRAM and 45 state tiles. A 64-tile fabric has 1MB
-of local SRAM and stores the current state at about 69.1% utilization, while a
-1M events/s target consumes about 2.6% of aggregate local byte bandwidth.
+At 4 Cellular-MoE ticks per synthetic event, the compact CSA/HCA-aware profile
+needs about 52.28KB of local traffic and about 451.8KB of on-chip state. With a
+32-tile fabric under the proxy assumptions, the state now fits in about 88.2% of
+available SRAM and requires 29 state tiles. A 64-tile fabric stores the same
+state at about 44.1% utilization, while a 1M events/s target consumes about
+2.6% of aggregate local byte bandwidth.
 
 This is not area/timing closure. It is the first explicit chip budget:
 

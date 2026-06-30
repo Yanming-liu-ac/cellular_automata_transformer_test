@@ -216,6 +216,44 @@ class CsaHcaPolicyResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaBlockStatePoint:
+    """One CSA block-summary geometry under a fixed HCA routing policy."""
+
+    block_size: int
+    blocks: int
+    summary_width: int
+    csa_blocks: int
+    tail_blocks: int
+    block_summary_state_bytes: float
+    block_score_bytes_per_query: float
+    hca_query_rate: float
+    csa_query_rate: float
+    hot_to_hca_rate: float
+    cold_to_csa_rate: float
+    csa_relevant_hit_rate: float
+    csa_relevant_coverage: float
+    policy_sparse_coverage: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaBlockStateSweepResult:
+    """State/read/quality sweep for CSA summaries behind an HCA gate."""
+
+    context_length: int
+    banks: int
+    global_width: int
+    bits: int
+    hca_threshold: int
+    queries: int
+    relevant_query_rate: float
+    global_summary_state_bytes: float
+    global_summary_read_bytes_per_query: float
+    points: Tuple[CsaHcaBlockStatePoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -863,6 +901,87 @@ def run_csa_hca_policy_trial(
         block_summary_state_bytes=index.state_bytes,
         global_summary_state_bytes=global_summary.memory_bytes(),
         global_summary_read_bytes_per_query=global_summary_read_bytes,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_block_state_sweep(
+    candidates: Tuple[Tuple[int, int, int], ...] = (
+        (64, 128, 4),
+        (64, 256, 4),
+        (128, 128, 4),
+        (128, 256, 4),
+        (256, 128, 4),
+        (256, 256, 4),
+    ),
+    global_width: int = 2048,
+    hca_threshold: int = 8,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> CsaHcaBlockStateSweepResult:
+    """Sweep CSA block-summary state under a fixed HCA/CSA routing gate.
+
+    Candidate tuples are ``(block_size, summary_width, csa_blocks)``. The HCA
+    global summary and threshold are intentionally held fixed, so differences in
+    the output isolate the CSA geometry tradeoff: SRAM state versus score reads,
+    selected token reads, and cold-query reliability.
+    """
+
+    if len(candidates) == 0:
+        raise ValueError("candidates must not be empty")
+    if hca_threshold <= 0:
+        raise ValueError("hca_threshold must be positive")
+
+    points = []
+    reference: CsaHcaPolicyResult | None = None
+    for block_size, summary_width, csa_blocks in candidates:
+        trial = run_csa_hca_policy_trial(
+            summary_width=int(summary_width),
+            global_width=global_width,
+            thresholds=(hca_threshold,),
+            csa_blocks=int(csa_blocks),
+            tail_blocks=tail_blocks,
+            block_size=int(block_size),
+            context_length=context_length,
+            queries=queries,
+            seed=seed,
+        )
+        reference = reference or trial
+        policy_point = trial.points[0]
+        points.append(
+            CsaHcaBlockStatePoint(
+                block_size=trial.block_size,
+                blocks=trial.blocks,
+                summary_width=trial.summary_width,
+                csa_blocks=policy_point.csa_blocks,
+                tail_blocks=policy_point.tail_blocks,
+                block_summary_state_bytes=trial.block_summary_state_bytes,
+                block_score_bytes_per_query=policy_point.block_score_bytes_per_query,
+                hca_query_rate=policy_point.hca_query_rate,
+                csa_query_rate=policy_point.csa_query_rate,
+                hot_to_hca_rate=policy_point.hot_to_hca_rate,
+                cold_to_csa_rate=policy_point.cold_to_csa_rate,
+                csa_relevant_hit_rate=policy_point.csa_relevant_hit_rate,
+                csa_relevant_coverage=policy_point.csa_relevant_coverage,
+                policy_sparse_coverage=policy_point.policy_sparse_coverage,
+                token_reads_per_query=policy_point.token_reads_per_query,
+                token_read_reduction=policy_point.token_read_reduction,
+            )
+        )
+
+    assert reference is not None
+    return CsaHcaBlockStateSweepResult(
+        context_length=reference.context_length,
+        banks=reference.banks,
+        global_width=reference.global_width,
+        bits=reference.bits,
+        hca_threshold=hca_threshold,
+        queries=reference.queries,
+        relevant_query_rate=reference.relevant_query_rate,
+        global_summary_state_bytes=reference.global_summary_state_bytes,
+        global_summary_read_bytes_per_query=reference.global_summary_read_bytes_per_query,
         points=tuple(points),
     )
 

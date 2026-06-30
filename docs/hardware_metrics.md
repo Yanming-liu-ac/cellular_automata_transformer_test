@@ -316,6 +316,23 @@ overall language quality. The sparse coverage over all relevant queries is low
 by design because frequent queries are delegated to the HCA-like summary rather
 than rereading many historical blocks.
 
+The CSA block-summary state sweep keeps the same HCA gate (`width=2048`,
+threshold 8) and asks how far the block index can be compressed:
+
+```text
+block=64   width=128  state=256KB  score=300B/query  csa hit/cov=96.0% / 95.3%   token reads=165.5  reduction=396.0x
+block=64   width=256  state=512KB  score=300B/query  csa hit/cov=100% / 100%     token reads=165.5  reduction=396.0x
+block=128  width=128  state=128KB  score=150B/query  csa hit/cov=68.9% / 68.9%   token reads=330.8  reduction=198.1x
+block=128  width=256  state=256KB  score=150B/query  csa hit/cov=100% / 100%     token reads=330.9  reduction=198.1x
+block=256  width=128  state=64KB   score=75B/query   csa hit/cov=40.5% / 40.5%   token reads=661.7  reduction=99.0x
+block=256  width=256  state=128KB  score=75B/query   csa hit/cov=90.5% / 89.2%   token reads=661.6  reduction=99.1x
+```
+
+The best current SRAM tradeoff is `block_size=128`, `summary_width=256`: it
+halves CSA block-summary state to 256KB and preserves measured CSA-path
+reliability in this stream. The cost is doubled selected-token traffic versus
+64-token blocks, but the full-context read reduction remains about 198x.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text
@@ -461,24 +478,29 @@ The current deterministic profile uses:
 Current proxy result:
 
 ```text
-Legacy HARC-CA local bytes/event: about 51.46 KB
-CSA/HCA-aware local bytes/event: about 52.10 KB
+legacy local bytes/event: about 51.46 KB
+wide64 CSA/HCA local bytes/event: about 52.10 KB
+compact128 CSA/HCA local bytes/event: about 52.28 KB
 Transformer KV read/token: about 384 MB
-Legacy on-chip HARC-CA state: about 183.8 KB
-CSA/HCA-aware on-chip HARC-CA state: about 707.8 KB
+legacy on-chip HARC-CA state: about 183.8 KB
+wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
+compact128 CSA/HCA on-chip HARC-CA state: about 451.8 KB
 ```
 
-The CSA/HCA-aware profile adds about 648B/event over the legacy profile:
+The compact128 CSA/HCA-aware profile adds about 829.8B/event over the legacy
+profile:
 
 ```text
 HCA lazy summary read: about 6B/event
 HCA lazy summary update: about 12B/event
-CSA block-summary score reads: about 300B/event
-CSA selected token-cell reads: about 330B/event
+CSA block-summary score reads: about 150B/event
+CSA selected token-cell reads: about 661.8B/event
 ```
 
-Most of the cost is state, not event traffic: about 512KB of block summaries and
-12KB of lazy HCA summary metadata/counters.
+The wide64 baseline spends less selected-token traffic, about 648B/event total
+context traffic, but it needs about 512KB of CSA block summaries. The current
+compact128 point uses about 256KB of block summaries plus 12KB of lazy HCA
+summary metadata/counters.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -512,13 +534,14 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the CSA/HCA-aware 707.8KB HARC-CA state and 52.10KB local
-bytes/event, a 32-tile configuration no longer fits:
+bytes/cycle/tile. With the compact128 CSA/HCA-aware 451.8KB HARC-CA state and
+52.28KB local bytes/event, a 32-tile configuration fits but leaves limited SRAM
+headroom:
 
 ```text
-32 tiles: 512KB SRAM, 138.2% state utilization, 45 state tiles required
-64 tiles: 1MB SRAM, 69.1% state utilization, 2.6% bandwidth utilization at 1M events/s
-128 tiles: 2MB SRAM, 34.6% state utilization, 1.3% bandwidth utilization at 1M events/s
+32 tiles: 512KB SRAM, 88.2% state utilization, 29 state tiles required, 5.2% bandwidth utilization
+64 tiles: 1MB SRAM, 44.1% state utilization, 29 state tiles required, 2.6% bandwidth utilization
+128 tiles: 2MB SRAM, 22.1% state utilization, 29 state tiles required, 1.3% bandwidth utilization
 ```
 
 These are design-budget numbers. They do not prove timing, routing, area, yield,

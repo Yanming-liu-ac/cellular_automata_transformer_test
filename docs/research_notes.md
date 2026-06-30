@@ -428,16 +428,32 @@ recall falls to about 81.2%, and at decay 8192 top-64 recall falls to about
 84.4%. The current best hand setting is therefore 4-bit counters plus 8-bit lazy
 epoch metadata.
 
-The twenty-fifth sweep added the CSA/HCA context summaries to the unified event
-profile. The event traffic barely changes: with 4 Cellular-MoE ticks, local
-traffic rises from the legacy 51.46KB/event to about 52.10KB/event. The added
-context path contributes about 648B/event: 6B HCA summary read, 12B HCA update,
-300B CSA block-summary scoring, and 330B selected token-cell reads. The state
-budget changes much more. The 512KB block-summary index plus 12KB 8-bit lazy
-HCA summary raise on-chip state from about 183.8KB to about 707.8KB. Under the
-current 16KB/tile SRAM proxy, 32 tiles no longer fit the state; 64 tiles fit at
-about 69.1% state utilization. This shifts the next hardware pressure from
-event bandwidth to local SRAM capacity and block-summary compression.
+The twenty-fifth sweep added the wide64 CSA/HCA context summaries to the
+unified event profile. The event traffic barely changes: with 4 Cellular-MoE
+ticks, local traffic rises from the legacy 51.46KB/event to about
+52.10KB/event. The added context path contributes about 648B/event: 6B HCA
+summary read, 12B HCA update, 300B CSA block-summary scoring, and 330B selected
+token-cell reads. The state budget changes much more. The 512KB block-summary
+index plus 12KB 8-bit lazy HCA summary raise on-chip state from about 183.8KB
+to about 707.8KB. Under the current 16KB/tile SRAM proxy, 32 tiles no longer
+fit the state; 64 tiles fit at about 69.1% state utilization. This shifted the
+next hardware pressure from event bandwidth to local SRAM capacity and
+block-summary compression.
+
+The twenty-sixth sweep compressed that CSA block-summary state. Holding the HCA
+gate fixed at `width=2048`, threshold 8, and `csa_blocks=4`, the useful point is
+`block_size=128`, `summary_width=256`: CSA block-summary state falls from 512KB
+to 256KB, block-score traffic falls from about 300B/query to 150B/query, and
+the routed CSA relevant subset still has 100% measured hit and 100% coverage in
+the deterministic stream. The cost is larger selected blocks: average selected
+token reads rise from about 165.5 positions/query to about 330.9, reducing the
+full-context read reduction from about 396x to about 198x. In the unified
+event-level profile this compact128 point raises context traffic to about
+829.8B/event and total local traffic to about 52.28KB/event, but on-chip state
+falls to about 451.8KB. The 32-tile, 16KB/tile floorplan now fits at about
+88.2% SRAM utilization, requiring 29 state tiles. This is the first concrete
+SRAM/bandwidth tradeoff that moves the design back toward a smaller CA chip
+without breaking the current synthetic routing quality.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6

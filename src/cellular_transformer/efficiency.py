@@ -223,13 +223,13 @@ def compare_to_transformer_kv(
     return EfficiencyComparison(harc=harc, transformer=transformer, local_vs_kv_byte_ratio=local_vs_kv)
 
 
-def current_csa_hca_context_budget() -> ContextSummaryBudget:
-    """Current measured CSA/HCA context-summary budget for the synthetic profile.
+def wide_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Earlier wide CSA/HCA context-summary budget for comparison.
 
-    This uses the hand-selected setting from ``compressed_block_indexer_demo``:
-    512KB block summaries, a 4-bit counter plus 8-bit lazy epoch HCA summary,
+    This uses 64-token blocks, 1024 block summaries, 4-bit counters,
+    ``summary_width=256``, a 4-bit counter plus 8-bit lazy epoch HCA summary,
     threshold-routed CSA/HCA reads, and 16-bit token-cell reads for selected
-    context blocks.
+    context cells.
     """
 
     block_summary_state = 1024 * 4 * 256 * 4 / 8
@@ -246,3 +246,33 @@ def current_csa_hca_context_budget() -> ContextSummaryBudget:
         csa_block_score_bytes_per_event=csa_block_score,
         csa_token_read_bytes_per_event=csa_token_read,
     )
+
+
+def compact_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Current compact CSA/HCA context-summary budget for the synthetic profile.
+
+    This uses the block-state sweep's measured compact setting: 128-token
+    blocks, 512 block summaries, 4-bit counters, ``summary_width=256``, the
+    8-bit lazy-epoch HCA summary, and threshold-routed CSA/HCA reads.
+    """
+
+    block_summary_state = 512 * 4 * 256 * 4 / 8
+    hca_state = 4 * 2048 * (4 + 8) / 8
+    hca_read = 4 * (4 + 8) / 8
+    hca_update = 4 * (4 + 8) / 8 * 2
+    csa_block_score = 150.0
+    csa_token_read = 330.9 * 16 / 8
+    return ContextSummaryBudget(
+        block_summary_state_bytes=block_summary_state,
+        hca_summary_state_bytes=hca_state,
+        hca_summary_read_bytes_per_event=hca_read,
+        hca_summary_update_bytes_per_event=hca_update,
+        csa_block_score_bytes_per_event=csa_block_score,
+        csa_token_read_bytes_per_event=csa_token_read,
+    )
+
+
+def current_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Current recommended CSA/HCA context-summary budget."""
+
+    return compact_csa_hca_context_budget()

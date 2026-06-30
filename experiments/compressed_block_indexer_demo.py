@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from cellular_transformer.compressed_block_indexer import (
+    run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
@@ -175,6 +176,54 @@ def main() -> None:
     print("- Low thresholds save reads but may send rare/cold queries to the dense path.")
     print("- sparse_cv is low by design when hot queries are delegated to the HCA summary.")
     print("- This is the first explicit CA-side policy knob between CSA and HCA paths.")
+    print()
+
+    state = run_csa_hca_block_state_sweep(global_width=2048, hca_threshold=8)
+    print("CSA/HCA block-summary state sweep")
+    print(
+        f"fixed HCA: width={state.global_width}, "
+        f"state={format_bytes(state.global_summary_state_bytes)}, "
+        f"threshold={state.hca_threshold}, "
+        f"global_rd={format_bytes(state.global_summary_read_bytes_per_query)}/query"
+    )
+    headers = [
+        "block",
+        "blocks",
+        "width",
+        "csa",
+        "state",
+        "score_rd",
+        "hca_q",
+        "cold_csa",
+        "csa_hit",
+        "csa_cov",
+        "kv_read",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 144)
+    for point in state.points:
+        row = [
+            f"{point.block_size}",
+            f"{point.blocks}",
+            f"{point.summary_width}",
+            f"{point.csa_blocks}",
+            format_bytes(point.block_summary_state_bytes),
+            format_bytes(point.block_score_bytes_per_query),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.cold_to_csa_rate),
+            fmt_pct(point.csa_relevant_hit_rate),
+            fmt_pct(point.csa_relevant_coverage),
+            f"{point.token_reads_per_query:0.1f}",
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("State-sweep interpretation:")
+    print("- block=128,width=256 halves CSA state to 256KB while preserving measured CSA hit/coverage.")
+    print("- block=64,width=128 also uses 256KB but weakens cold-query reliability.")
+    print("- block=256,width=256 reaches 128KB but loses too much cold exact recall in this trial.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

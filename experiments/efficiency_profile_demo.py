@@ -11,7 +11,11 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from cellular_transformer.cellular_moe import CellularMoE, CellularMoEConfig
-from cellular_transformer.efficiency import compare_to_transformer_kv, current_csa_hca_context_budget
+from cellular_transformer.efficiency import (
+    compare_to_transformer_kv,
+    current_csa_hca_context_budget,
+    wide_csa_hca_context_budget,
+)
 from cellular_transformer.hardware import format_bytes
 from cellular_transformer.synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig
 
@@ -42,6 +46,7 @@ def main() -> None:
     print("Unified HARC-CA hardware proxy profile")
     print("context=16k facts, synthetic mixed decode events, tiny Transformer KV reference")
     print()
+    wide_context_budget = wide_csa_hca_context_budget()
     context_budget = current_csa_hca_context_budget()
     headers = [
         "profile",
@@ -59,7 +64,11 @@ def main() -> None:
     print(" | ".join(f"{h:>12}" for h in headers))
     print("-" * 148)
     rows = []
-    for label, maybe_context in (("legacy", None), ("csa_hca", context_budget)):
+    for label, maybe_context in (
+        ("legacy", None),
+        ("wide64", wide_context_budget),
+        ("compact128", context_budget),
+    ):
         for moe_ticks in (1, 2, 4, 8):
             rows.append((label, moe_ticks, maybe_context))
     for label, moe_ticks, maybe_context in rows:
@@ -97,7 +106,7 @@ def main() -> None:
         context_summary=context_budget,
     )
     harc = comparison.harc
-    print("Detailed CSA/HCA-aware profile:")
+    print("Detailed compact CSA/HCA-aware profile:")
     print(f"  exact_query_fraction={harc.exact_query_fraction:0.3f}")
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
@@ -118,7 +127,8 @@ def main() -> None:
     print()
     print("Interpretation:")
     print("- HARC numbers are local on-chip byte movement proxies.")
-    print("- csa_hca includes 512KB block summaries plus a 12KB lazy-epoch HCA summary.")
+    print("- wide64 is the earlier 512KB block-summary baseline.")
+    print("- compact128 uses 256KB block summaries plus a 12KB lazy-epoch HCA summary.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")
 
