@@ -25,8 +25,10 @@ from .retrieval import (
     TieredLookupResult,
     run_recall_trial,
 )
+from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, SyntheticLMResult, run_synthetic_lm_trial
 
 __all__ = [
+    "DualPathSyntheticLM",
     "HashRouteCAM",
     "HashRouteCAMConfig",
     "DenseContextConfig",
@@ -37,6 +39,8 @@ __all__ = [
     "MemoryTaskResult",
     "PropagationResult",
     "RecallTrialResult",
+    "SyntheticLMConfig",
+    "SyntheticLMResult",
     "TieredHashRouteCAM",
     "TieredHashRouteCAMConfig",
     "TieredLookupResult",
@@ -46,6 +50,7 @@ __all__ = [
     "run_dense_context_trial",
     "run_memory_task",
     "run_recall_trial",
+    "run_synthetic_lm_trial",
     "shortest_propagation_steps",
     "sweep_memory_tasks",
 ]

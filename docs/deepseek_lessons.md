@@ -313,6 +313,11 @@ counter updates per token. It is intentionally separate from exact sparse recall
 This reinforces the V4 lesson that sparse and dense memory paths should be
 optimized independently.
 
+The first synthetic next-token experiment adds the output-interface lesson:
+exact sparse recall can produce value tokens directly, but dense context still
+needs candidate generation and ranking. This mirrors the broader DeepSeek lesson
+that model architecture and inference system cannot be separated.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

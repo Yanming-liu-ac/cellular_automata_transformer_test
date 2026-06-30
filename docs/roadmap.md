@@ -74,6 +74,16 @@ Dual-path result:
 - Exact lane handles deterministic 16k induction recall.
 - Dense sketch handles deterministic 65k-vocabulary topic/recency distribution.
 
+Synthetic next-token result:
+
+- A non-trained dual-path predictor now handles mixed topic events and induction
+  key-query events.
+- Exact induction next-token accuracy is 100% in the current deterministic run.
+- Dense topic candidate top-k hit rate is about 62% using a 512-token candidate
+  shortlist.
+- The mixed stream touches about 27 local cells per event.
+- This is a bridge benchmark, not a language-model quality result.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;
@@ -99,6 +109,13 @@ Implement:
 - multi-token / multi-tick prediction heads;
 - tiny Transformer teacher for distillation experiments.
 - optional Muon-style optimizer experiment for the shared recurrent rule.
+
+First trainable target:
+
+```text
+Learn the routing decision and candidate scoring currently hand-coded in the
+synthetic next-token benchmark.
+```
 
 Success criterion:
 

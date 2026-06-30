@@ -181,6 +181,19 @@ The current dual-path demo combines:
 This is still a memory-system prototype, not an LLM. The next hard step is to
 connect these paths to a trainable recurrent CA rule and a prediction head.
 
+The fifth sweep added a non-trained synthetic next-token benchmark. It combines
+topic-like events and induction key-query events in one stream. The exact sparse
+lane predicts key values; the compressed dense sketch ranks a candidate pool for
+topic tokens. In the current deterministic run, induction accuracy is 100%,
+topic top-k hit rate is about 62%, overflow is touched by about 6.7% of exact
+queries, and the mixed stream touches about 27 local cells per event.
+
+This is a useful bridge because it exposes the output-interface problem:
+
+- exact facts can bypass a dense output head;
+- fuzzy topic tokens still need candidate generation/ranking;
+- a future trainable CA must learn when to use each path.
+
 Current interpretation:
 
 ```text

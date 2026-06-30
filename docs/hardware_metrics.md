@@ -113,3 +113,21 @@ Associative memory measures exact fact preservation.
 
 Do not use top-k dense-topic recall as evidence that exact names, numbers, or
 code symbols are preserved.
+
+## Synthetic Next-Token Metrics
+
+For the dual-path next-token interface, track:
+
+- exact induction next-token accuracy;
+- topic candidate top-k hit rate;
+- candidate pool size;
+- exact visited cells per query;
+- overflow query rate;
+- dense update cells per event;
+- average local cells touched per event;
+- total memory bytes;
+- whether the benchmark uses full-vocabulary ranking.
+
+The first benchmark intentionally uses a candidate shortlist instead of scanning
+the whole vocabulary. A CA-first chip should make candidate generation explicit;
+otherwise the output head can erase memory-system savings.

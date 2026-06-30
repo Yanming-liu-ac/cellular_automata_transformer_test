@@ -284,6 +284,39 @@ prototype uses about 166.5KB for:
 - about 34 visited cells per exact query;
 - four low-bit counter updates per dense-context token.
 
+## Synthetic Next-Token Interface
+
+The first next-token-style prototype connects the two memory paths to a simple
+prediction interface:
+
+```text
+if input is a key query:
+    exact sparse lane predicts the next value token
+else:
+    compressed dense sketch ranks a small candidate pool for topic-like tokens
+```
+
+This is deliberately non-neural and non-trained. Its purpose is to check whether
+the memory system can serve next-token behavior without falling back to full
+attention or full-vocabulary dense projection.
+
+Current deterministic trial:
+
+- 16k exact facts in a tiered associative lane;
+- 8k topic events and 4k key-query events;
+- 65k vocabulary and a 512-token candidate shortlist for dense prediction;
+- exact induction next-token accuracy: 100%;
+- topic candidate top-k hit rate: about 62%;
+- average local cells touched per mixed event: about 27;
+- combined memory: about 166KB to 171KB depending on dense sketch width.
+
+The correct conclusion is narrow:
+
+```text
+The dual-path memory system can be wired into a next-token interface.
+It is not yet a trainable language model.
+```
+
 ## Immediate Falsification Tests
 
 HARC-CA should be rejected or redesigned if:
