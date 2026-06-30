@@ -17,7 +17,7 @@ from cellular_transformer.synthetic_lm import DualPathSyntheticLM, SyntheticLMCo
 
 
 def main() -> None:
-    synthetic_config = SyntheticLMConfig(dense_width=2048)
+    synthetic_config = SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")
     synthetic = DualPathSyntheticLM(synthetic_config, seed=31).run()
 
     moe_config = CellularMoEConfig(
@@ -42,6 +42,7 @@ def main() -> None:
         "moe_ticks",
         "exact/event",
         "dense/event",
+        "cand/event",
         "moe/event",
         "total/event",
         "KV/token",
@@ -63,6 +64,7 @@ def main() -> None:
             f"{moe_ticks}",
             format_bytes(harc.exact_local_bytes_per_event),
             format_bytes(harc.dense_local_bytes_per_event),
+            format_bytes(harc.candidate_local_bytes_per_event),
             format_bytes(harc.moe_local_bytes_per_event),
             format_bytes(harc.total_local_bytes_per_event),
             format_bytes(comparison.transformer.kv_read_bytes_per_token),
@@ -85,6 +87,7 @@ def main() -> None:
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
     print(f"  dense_update_cells_per_event={harc.dense_update_cells_per_event:0.1f}")
+    print(f"  candidate_update_cells_per_event={harc.candidate_update_cells_per_event:0.1f}")
     print(f"  moe_sparse_rule_updates/event={harc.moe_sparse_rule_updates_per_event:0.1f}")
     print(f"  moe_dense_equiv_rule_updates/event={harc.moe_dense_equivalent_rule_updates_per_event:0.1f}")
     print(f"  moe_update_reduction={harc.moe_update_reduction:0.1f}x")

@@ -206,9 +206,10 @@ be needed.
 The seventh sweep added a unified event-level efficiency proxy. It combines the
 synthetic dual-path next-token benchmark with Cellular-MoE execution and compares
 the resulting local byte movement with a tiny Transformer KV-cache read volume.
-With 4 Cellular-MoE ticks per event, the current HARC-CA profile moves about
-51KB of local on-chip bytes per event and keeps about 182KB of on-chip state.
-The tiny Transformer KV reference reads about 384MB per token at 16k context.
+With 4 Cellular-MoE ticks per event and online candidate generation, the current
+HARC-CA profile moves about 51.39KB of local on-chip bytes per event and keeps
+about 183.8KB of on-chip state. The tiny Transformer KV reference reads about
+384MB per token at 16k context.
 
 This ratio is intentionally not treated as a win. The HARC-CA prototype is not a
 quality-equivalent model, and local SRAM/register traffic is not the same as
@@ -219,7 +220,7 @@ low-bit traffic, which is the right bottleneck direction for a CA-first chip.
 The eighth sweep added a tile-level floorplan proxy. The current event profile
 is mapped onto repeated tiles with 64 cells, 16KB local SRAM, and 32 local
 bytes/cycle. Under these assumptions, a 32-tile fabric has 512KB local SRAM,
-stores the current 182.5KB state at about 35.6% utilization, and reaches about
+stores the current 183.8KB state at about 35.9% utilization, and reaches about
 5.1% aggregate local bandwidth utilization at 1M synthetic events/s. This gives
 the project a first SRAM/bandwidth budget for future learned rules.
 
@@ -233,6 +234,18 @@ current HARC-CA event profile is about 51KB/event before output scoring, while a
 4.13MB/event and 8.39M MACs/event. A 512-token candidate head with exact-query
 bypass costs about 22KB/event. This makes candidate generation and exact bypass
 mandatory parts of the architecture, not optional optimizations.
+
+The tenth sweep removed the static hot-token oracle from candidate generation.
+The new online candidate cache is set-associative, low-bit, and decayed. With
+512 entries, 4-bit scores, 2 routes, and 4 ways, it uses about 1.31KB of state
+and performs zero full-vocabulary scans. On the standalone topic/noise stream it
+reaches about 69% top-64 hit rate after warmup. Plugged into the synthetic LM,
+it gives about 61.4% topic@64 versus about 62.1% for the static candidate pool,
+with about 6.6 extra candidate-cache cell touches per mixed event.
+
+This is an important correction to the research accounting: candidate
+generation is no longer assumed to be free. It is still not learned and not
+sufficient for real LLM quality.
 
 Current interpretation:
 

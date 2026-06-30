@@ -84,6 +84,16 @@ Synthetic next-token result:
 - The mixed stream touches about 27 local cells per event.
 - This is a bridge benchmark, not a language-model quality result.
 
+Online candidate-cache result:
+
+- A 512-entry low-bit set-associative cache now generates candidate shortlists
+  without a hot-token oracle or full-vocabulary scan.
+- Standalone topic/noise top-64 hit rate is about 69% after warmup.
+- Plugged into the synthetic LM, online topic@64 is about 61.4% versus about
+  62.1% for the static candidate pool.
+- The online cache adds about 1.31KB of state and about 6.6 candidate-cache cell
+  touches per mixed event.
+
 Cellular-MoE execution result:
 
 - A low-bit CA rule-bank prototype routes active cells to one of six local rules.
@@ -97,8 +107,8 @@ Unified efficiency profile:
 
 - The current event-level proxy combines exact memory, dense sketch updates, and
   Cellular-MoE rule execution.
-- With 4 rule ticks per event, estimated local on-chip traffic is about 51KB per
-  synthetic event.
+- With 4 rule ticks per event, estimated local on-chip traffic is about
+  51.39KB per synthetic event including online candidate-cache updates.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -106,7 +116,8 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- A 32-tile fabric stores the current prototype state in about 36% of local SRAM.
+- A 32-tile fabric stores the current prototype state in about 35.9% of local
+  SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
   about 5.1% under the proxy assumptions.
 - This defines a budget for learned rules and richer output heads; it is not

@@ -341,6 +341,13 @@ traffic is not enough if the logits path becomes the dominant kernel. HARC-CA
 needs exact-token bypass and candidate scoring so the output head stays within
 the same local budget as the CA memory and rule fabric.
 
+The first online candidate-cache experiment removes the hot-token oracle from
+that path. A 512-entry low-bit set-associative cache now generates the dense
+candidate shortlist from observed tokens with zero full-vocabulary scans. This
+is the CA analog of making the indexer/cache part of the model system rather
+than assuming the expensive scoring kernel receives a perfect shortlist for
+free.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:
@@ -353,6 +360,7 @@ compressed persistent state
 + multi-tick prediction training
 + grouped local/recurrent/routing channels
 + cache-aware state hierarchy
++ online candidate cache plus exact-token bypass
 + hardware-native low-bit arithmetic
 ```
 
@@ -370,6 +378,8 @@ This is the CA analog of DeepSeek's efficient-LLM recipe.
 7. Split CA memory into compressed dense context and exact sparse recall paths.
 8. Add grouped channel layout before the first trainable HARC-CA model.
 9. Add a state-cache hierarchy design, including prefix-state reuse.
+10. Treat online candidate generation as a learned/cacheable hardware path, not
+    an oracle shortlist.
 
 ## Strong Warning
 

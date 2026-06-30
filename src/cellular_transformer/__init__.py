@@ -1,6 +1,13 @@
 """Cellular Transformer research prototypes."""
 
 from .benchmarks import MemoryTaskResult, run_memory_task, sweep_memory_tasks
+from .candidate_cache import (
+    CandidateCacheConfig,
+    CandidateCacheTrialResult,
+    CandidateCacheUpdate,
+    LowBitCandidateCache,
+    run_candidate_cache_trial,
+)
 from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
 from .chip_model import ChipConfig, ChipProfile, TileConfig, profile_chip
 from .dense_context import (
@@ -40,6 +47,9 @@ from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, SyntheticLMRes
 __all__ = [
     "CellularMoE",
     "CellularMoEConfig",
+    "CandidateCacheConfig",
+    "CandidateCacheTrialResult",
+    "CandidateCacheUpdate",
     "ChipConfig",
     "ChipProfile",
     "DualPathSyntheticLM",
@@ -52,6 +62,7 @@ __all__ = [
     "HarcEventEfficiency",
     "LookupResult",
     "LowBitDenseContext",
+    "LowBitCandidateCache",
     "MoERolloutResult",
     "MoEStepStats",
     "MemoryTaskResult",
@@ -74,6 +85,7 @@ __all__ = [
     "compare_output_heads",
     "estimate_output_head",
     "run_dense_context_trial",
+    "run_candidate_cache_trial",
     "run_memory_task",
     "run_recall_trial",
     "run_synthetic_lm_trial",

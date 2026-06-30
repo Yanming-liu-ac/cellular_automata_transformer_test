@@ -29,18 +29,22 @@ def fmt_bytes(value: float) -> str:
 
 def main() -> None:
     configs = [
-        SyntheticLMConfig(dense_width=1024),
-        SyntheticLMConfig(dense_width=2048),
-        SyntheticLMConfig(dense_width=4096),
+        ("static", SyntheticLMConfig(dense_width=1024)),
+        ("static", SyntheticLMConfig(dense_width=2048)),
+        ("static", SyntheticLMConfig(dense_width=4096)),
+        ("online", SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")),
     ]
 
     headers = [
+        "candidate",
         "dense_w",
         "induct",
         "topic@k",
         "exact_vis",
         "overflow_q",
         "dense_upd",
+        "cand_upd",
+        "cand_hit",
         "avg_cells",
         "memory",
     ]
@@ -48,15 +52,18 @@ def main() -> None:
     print("exact task: key -> next value; dense task: topic token in top-k candidate shortlist")
     print(" | ".join(f"{h:>11}" for h in headers))
     print("-" * 112)
-    for config in configs:
+    for label, config in configs:
         result = run_synthetic_lm_trial(seed=31, config=config)
         row = [
+            label,
             f"{config.dense_width}",
             fmt_pct(result.induction_accuracy),
             fmt_pct(result.topic_topk_hit_rate),
             f"{result.exact_avg_visited_cells:0.1f}",
             fmt_pct(result.overflow_query_rate),
             f"{result.dense_update_cells_per_event:0.1f}",
+            f"{result.candidate_update_cells_per_event:0.1f}",
+            fmt_pct(result.candidate_cache_hit_rate) if label == "online" else "-",
             f"{result.avg_cells_per_event:0.1f}",
             fmt_bytes(result.total_memory_bytes),
         ]
@@ -65,7 +72,7 @@ def main() -> None:
     print()
     print("Interpretation:")
     print("- Induction uses the exact sparse associative lane.")
-    print("- Topic@k uses the compressed dense-context sketch over a candidate pool.")
+    print("- Static Topic@k uses an oracle-built candidate pool; online uses the candidate cache.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
 
 

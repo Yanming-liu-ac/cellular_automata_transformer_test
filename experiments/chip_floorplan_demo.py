@@ -28,7 +28,7 @@ def fmt_rate(value: float) -> str:
 
 
 def main() -> None:
-    synthetic_config = SyntheticLMConfig(dense_width=2048)
+    synthetic_config = SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")
     synthetic = DualPathSyntheticLM(synthetic_config, seed=31).run()
 
     moe_config = CellularMoEConfig(

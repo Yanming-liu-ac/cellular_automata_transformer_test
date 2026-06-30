@@ -325,9 +325,13 @@ Current deterministic trial:
 - 8k topic events and 4k key-query events;
 - 65k vocabulary and a 512-token candidate shortlist for dense prediction;
 - exact induction next-token accuracy: 100%;
-- topic candidate top-k hit rate: about 62%;
-- average local cells touched per mixed event: about 27;
-- combined memory: about 166KB to 171KB depending on dense sketch width.
+- static-oracle topic candidate top-k hit rate: about 62%;
+- online-cache topic candidate top-k hit rate: about 61%;
+- online candidate-cache update hit rate: about 79%;
+- average local cells touched per mixed event: about 27 with static candidates
+  and about 34 with online candidates;
+- combined memory: about 166KB with the static shortlist and about 168KB with
+  the online candidate cache.
 
 The correct conclusion is narrow:
 
@@ -359,6 +363,29 @@ than scan the whole vocabulary.
 This is not free. The candidate generator must be accurate enough that quality
 does not collapse, and the shortlist machinery itself must remain local.
 
+## Online Candidate Cache
+
+The first candidate generator removes the static hot-token oracle. It uses a
+fixed-size set-associative cache:
+
+```text
+observed token -> 2 hash routes -> 4 ways each
+resident entry -> token id + low-bit score + valid bit
+periodic decay -> integer right shift
+top-k readout  -> scan resident cache entries, not the full vocabulary
+```
+
+With 512 entries, 4-bit scores, 2 routes, 4 ways, and a 65k vocabulary, the
+cache uses about 1.31KB. On the current topic/noise stream it reaches about 69%
+top-64 hit rate after warmup while scanning zero full-vocabulary entries. When
+plugged into the synthetic next-token benchmark, it keeps topic@64 close to the
+static candidate pool, but adds about 6.6 local cache-cell touches per mixed
+event.
+
+This is still not a learned output policy. Its value is that candidate
+generation now has a hardware-shaped cost model instead of being treated as
+free.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:
@@ -368,13 +395,14 @@ event traffic =
     exact sparse-memory reads
   + dense sketch counter updates
   + sparse Cellular-MoE rule-bank local reads/writes
+  + online candidate-cache updates
   + candidate output-head scoring
 ```
 
-With 4 Cellular-MoE ticks per synthetic decode event, the current deterministic
-profile estimates about 51KB of local on-chip byte movement per event. The
-paired tiny Transformer KV-cache reference reads about 384MB per token at 16k
-context.
+With online candidate generation and 4 Cellular-MoE ticks per synthetic decode
+event, the current deterministic profile estimates about 51.39KB of local
+on-chip byte movement per event. The paired tiny Transformer KV-cache reference
+reads about 384MB per token at 16k context.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
@@ -391,9 +419,10 @@ tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
 At 4 Cellular-MoE ticks per synthetic event, the current event profile needs
-about 51KB of local traffic and about 182KB of on-chip state. With a 32-tile
-fabric under the proxy assumptions, this state occupies about 36% of local SRAM
-and a 1M events/s target consumes about 5% of aggregate local byte bandwidth.
+about 51.39KB of local traffic and about 183.8KB of on-chip state. With a
+32-tile fabric under the proxy assumptions, this state occupies about 35.9% of
+local SRAM and a 1M events/s target consumes about 5.1% of aggregate local byte
+bandwidth.
 
 This is not area/timing closure. It is the first explicit chip budget:
 
