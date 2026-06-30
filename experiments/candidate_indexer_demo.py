@@ -10,7 +10,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from cellular_transformer.candidate_indexer import run_candidate_indexer_trial
+from cellular_transformer.candidate_indexer import (
+    run_candidate_indexer_trial,
+    run_candidate_tensor_diagnostic,
+)
 from cellular_transformer.hardware import format_bytes
 
 
@@ -68,6 +71,38 @@ def main() -> None:
     print("- Topic/cache/source features are useful; the learner and objective need work.")
     print("- Ceiling estimates the best possible top-k hit from these features if learned perfectly.")
     print("- The current strongest synthetic path remains admission-gated dense scoring.")
+    print()
+    print("Full tuple tensor diagnostic")
+    headers = [
+        "case",
+        "observed",
+        "state",
+        "resident",
+        "ceiling",
+        "topic_cache",
+        "tensor_log",
+        "tensor_rate",
+    ]
+    print(" | ".join(f"{h:>12}" for h in headers))
+    print("-" * 112)
+    for label, admission_threshold in (("online", 0), ("gated", 1)):
+        result = run_candidate_tensor_diagnostic(admission_threshold=admission_threshold)
+        row = [
+            label,
+            f"{result.observed_tuples}",
+            format_bytes(result.tensor_state_bytes),
+            fmt_pct(result.resident_hit_rate),
+            fmt_pct(result.feature_ceiling_hit_rate),
+            fmt_pct(result.topic_cache_hit_rate),
+            fmt_pct(result.tensor_logodds_hit_rate),
+            fmt_pct(result.tensor_rate_hit_rate),
+        ]
+        print(" | ".join(f"{cell:>12}" for cell in row))
+
+    print()
+    print("Tensor interpretation:")
+    print("- A dense 5D LUT is large and sparse; observed tuples cover a tiny fraction.")
+    print("- More LUT capacity alone does not solve ranking without better supervision/generalization.")
 
 
 if __name__ == "__main__":

@@ -230,6 +230,15 @@ average positive bucket size falls to about 3.6. This suggests the noisy online
 path needs more local state, while the gated path mostly needs a better ranking
 rule.
 
+A full 5D tuple LUT is also measured as a diagnostic, not as a recommended
+default. At 4 bits per entry it would use about 512KB of local state. The current
+training stream observes only 893 online tuples and 2878 gated tuples, so the
+table is extremely sparse. It performs poorly in online mode, about 39.0%
+topic@64 with log-odds and 35.0% with rate scoring. In gated mode, rate scoring
+reaches about 66.4%, close to topic-cache but still below gated dense scoring.
+The metric says dense tensor capacity is not the bottleneck to add next;
+generalization and ranking supervision are.
+
 ## Output-Head Metrics
 
 For output scoring, track:

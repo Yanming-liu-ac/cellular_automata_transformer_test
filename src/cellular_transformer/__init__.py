@@ -10,9 +10,11 @@ from .candidate_cache import (
 )
 from .candidate_indexer import (
     CandidateIndexerTrialResult,
+    CandidateTensorDiagnosticResult,
     LowBitAdditiveCandidateIndexer,
     LowBitLinearCandidateIndexer,
     run_candidate_indexer_trial,
+    run_candidate_tensor_diagnostic,
     train_additive_candidate_indexer,
     train_linear_candidate_indexer,
 )
@@ -71,6 +73,7 @@ __all__ = [
     "CellularMoEConfig",
     "CandidateCacheConfig",
     "CandidateIndexerTrialResult",
+    "CandidateTensorDiagnosticResult",
     "CandidateCacheTrialResult",
     "CandidateCacheUpdate",
     "CandidateScorerTrialResult",
@@ -117,6 +120,7 @@ __all__ = [
     "run_dense_context_trial",
     "run_candidate_cache_trial",
     "run_candidate_indexer_trial",
+    "run_candidate_tensor_diagnostic",
     "run_candidate_scorer_trial",
     "run_learned_admission_trial",
     "run_memory_task",

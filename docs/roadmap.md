@@ -220,6 +220,11 @@ finer local state such as shorter-horizon recency, age deltas, or a finer source
 phase. Gated mode has almost no resident/feature-ceiling gap, so it needs better
 ranking supervision rather than more scalar features.
 
+The full 5D tensor LUT diagnostic rules out a naive dense tensor as the next
+move. The table is large, sparse, and does not beat the hand baseline. The next
+experiment should use pairwise distillation or a shared/factorized tensor that
+can generalize across sparse feature tuples.
+
 Second trainable target:
 
 ```text

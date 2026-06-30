@@ -382,6 +382,9 @@ capacity, the system must know whether its local state actually separates the
 right candidates. Age helps but does not close the online gap. This is the
 CA-chip analog of measuring sparse-index recall before optimizing the attention
 kernel.
+The full tuple LUT diagnostic reinforces the point: a large sparse table is not
+a system design. Like sparse attention, the indexer needs sharing and a good
+teacher signal, not just a bigger lookup.
 
 ## Revised HARC-CA Design Principle
 

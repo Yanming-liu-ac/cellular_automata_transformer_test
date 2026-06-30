@@ -466,6 +466,16 @@ means admission gating is already doing most of the noise separation; the next
 scorer should add finer recency or pairwise state mainly for the noisy online
 path, while the gated path needs a better ranking objective.
 
+The full tuple tensor diagnostic tests the opposite extreme: a dense 5D LUT over
+all five 4-bit features. This table would use about 512KB at 4 bits per entry,
+but the current training stream observes only 893 feature tuples in online mode
+and 2878 in gated mode. It does not solve ranking. Online tensor scoring drops
+to about 39.0% with log-odds and about 35.0% with rate scoring; gated tensor
+rate scoring reaches about 66.4%, still below gated dense scoring. The next
+indexer should therefore not be a naive dense tensor. It needs either a smaller
+pairwise/tensor factorization with better sharing, or pairwise distillation from
+a stronger oracle.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:

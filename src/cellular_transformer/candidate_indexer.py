@@ -111,6 +111,20 @@ class CandidateIndexerTrialResult:
     topic_score_update_cells_per_event: float
 
 
+@dataclass(frozen=True)
+class CandidateTensorDiagnosticResult:
+    """Full feature-tuple LUT diagnostic metrics."""
+
+    admission_threshold: int
+    observed_tuples: int
+    tensor_state_bytes: float
+    resident_hit_rate: float
+    feature_ceiling_hit_rate: float
+    topic_cache_hit_rate: float
+    tensor_logodds_hit_rate: float
+    tensor_rate_hit_rate: float
+
+
 def train_linear_candidate_indexer(
     train_seed: int = 100,
     admission_threshold: int = 0,
@@ -215,6 +229,43 @@ def run_candidate_indexer_trial(
         learned_hit_rate=metrics["learned"],
         learned_score_cells_per_event=metrics["score_cells"],
         topic_score_update_cells_per_event=metrics["score_updates"],
+    )
+
+
+def run_candidate_tensor_diagnostic(
+    train_seed: int = 100,
+    eval_seed: int = 31,
+    admission_threshold: int = 0,
+    score_bits: int = 4,
+) -> CandidateTensorDiagnosticResult:
+    """Train/evaluate a full 5D tuple LUT to test sparsity and generalization."""
+
+    positive, observed = _collect_tuple_statistics(
+        seed=train_seed,
+        admission_threshold=admission_threshold,
+    )
+    logodds_lut = _make_tuple_lut(positive, observed, score_bits=score_bits, mode="logodds")
+    rate_lut = _make_tuple_lut(positive, observed, score_bits=score_bits, mode="rate")
+    logodds_metrics = _evaluate_tuple_lut(
+        logodds_lut,
+        seed=eval_seed,
+        admission_threshold=admission_threshold,
+    )
+    rate_metrics = _evaluate_tuple_lut(
+        rate_lut,
+        seed=eval_seed,
+        admission_threshold=admission_threshold,
+    )
+    tuple_count = 16 ** len(FEATURE_NAMES)
+    return CandidateTensorDiagnosticResult(
+        admission_threshold=admission_threshold,
+        observed_tuples=int(np.count_nonzero(observed)),
+        tensor_state_bytes=tuple_count * score_bits / 8,
+        resident_hit_rate=logodds_metrics["resident"],
+        feature_ceiling_hit_rate=logodds_metrics["feature_ceiling"],
+        topic_cache_hit_rate=logodds_metrics["topic_cache"],
+        tensor_logodds_hit_rate=logodds_metrics["tensor"],
+        tensor_rate_hit_rate=rate_metrics["tensor"],
     )
 
 
@@ -401,6 +452,172 @@ def _collect_additive_statistics(
         lm.dense.update(expected)
 
     return positive, observed
+
+
+def _collect_tuple_statistics(
+    seed: int,
+    admission_threshold: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    shape = (16,) * len(FEATURE_NAMES)
+    positive = np.zeros(shape, dtype=np.uint16)
+    observed = np.zeros(shape, dtype=np.uint16)
+    config = SyntheticLMConfig(
+        dense_width=2048,
+        candidate_strategy="online_cache",
+        candidate_admission_threshold=admission_threshold,
+        candidate_score_source="topic_phase",
+    )
+    lm = DualPathSyntheticLM(config, seed=seed)
+    lm.prefill()
+    _install_age_cache(lm)
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=lm.config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * lm.config.topic_events + ["query"] * lm.config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    query_cursor = 0
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(lm.config, lm.rng)
+            entries = lm.candidate_cache.resident_feature_entries()
+            entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
+                : lm.config.candidate_pool_size
+            ]
+            if entries:
+                candidates = np.array([candidate for candidate, _, _ in entries], dtype=np.int32)
+                cache_scores = np.array([score for _, score, _ in entries], dtype=np.int32)
+                age_scores = np.array([age for _, _, age in entries], dtype=np.int32)
+                features = np.clip(_candidate_features(lm, candidates, cache_scores, age_scores), 0, 15)
+                labels = (candidates == int(token)).astype(np.uint16)
+                indices = tuple(features[:, feature_index] for feature_index in range(len(FEATURE_NAMES)))
+                np.add.at(observed, indices, 1)
+                np.add.at(positive, indices, labels)
+
+            admit = True
+            if admission_threshold > 0:
+                admit = lm.dense.estimate(token) >= admission_threshold
+            lm.dense.update(token)
+            if lm.candidate_score_dense is None:
+                raise RuntimeError("topic-phase score state is not initialized")
+            lm.candidate_score_dense.update(token)
+            if admit:
+                lm.candidate_cache.observe(token)
+            continue
+
+        key, expected = lm.facts[int(query_indices[query_cursor])]
+        query_cursor += 1
+        lm.exact.lookup(key)
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    return positive, observed
+
+
+def _make_tuple_lut(
+    positive: np.ndarray,
+    observed: np.ndarray,
+    score_bits: int,
+    mode: str,
+) -> np.ndarray:
+    if mode not in ("logodds", "rate"):
+        raise ValueError("mode must be 'logodds' or 'rate'")
+    max_score = (1 << (score_bits - 1)) - 1
+    min_score = -(1 << (score_bits - 1))
+    if mode == "rate":
+        lut = np.zeros_like(positive, dtype=np.int8)
+        mask = observed > 0
+        lut[mask] = np.rint(positive[mask] / observed[mask] * max_score).astype(np.int8)
+        return lut
+
+    negative = observed.astype(np.float32) - positive.astype(np.float32)
+    raw = np.log2((positive.astype(np.float32) + 1) / (negative + 1))
+    max_abs = float(np.max(np.abs(raw)))
+    if max_abs == 0.0:
+        return np.zeros_like(positive, dtype=np.int8)
+    return np.clip(np.rint(raw / max_abs * max_score), min_score, max_score).astype(np.int8)
+
+
+def _evaluate_tuple_lut(
+    lut: np.ndarray,
+    seed: int,
+    admission_threshold: int,
+) -> dict[str, float]:
+    config = SyntheticLMConfig(
+        dense_width=2048,
+        candidate_strategy="online_cache",
+        candidate_admission_threshold=admission_threshold,
+        candidate_score_source="topic_phase",
+    )
+    lm = DualPathSyntheticLM(config, seed=seed)
+    lm.prefill()
+    _install_age_cache(lm)
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=lm.config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * lm.config.topic_events + ["query"] * lm.config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    hits = {"resident": 0, "topic_cache": 0, "tensor": 0}
+    feature_ceiling = 0.0
+    topic_events = 0
+    query_cursor = 0
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(lm.config, lm.rng)
+            topic_events += 1
+            entries = lm.candidate_cache.resident_feature_entries()
+            entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
+                : lm.config.candidate_pool_size
+            ]
+            if entries:
+                candidates = np.array([candidate for candidate, _, _ in entries], dtype=np.int32)
+                cache_scores = np.array([score for _, score, _ in entries], dtype=np.int32)
+                age_scores = np.array([age for _, _, age in entries], dtype=np.int32)
+                features = np.clip(_candidate_features(lm, candidates, cache_scores, age_scores), 0, 15)
+                top_k = min(lm.config.topic_top_k, len(candidates))
+                token_matches = candidates == int(token)
+                hits["resident"] += int(bool(token_matches.any()))
+                if bool(token_matches.any()):
+                    positive_index = int(np.flatnonzero(token_matches)[0])
+                    feature_ceiling += min(1.0, top_k / _feature_bucket_size(features, positive_index))
+                topic_cache_scores = 2 * features[:, 1] + features[:, 2]
+                hits["topic_cache"] += _topk_hit(topic_cache_scores, candidates, token, top_k)
+                indices = tuple(features[:, feature_index] for feature_index in range(len(FEATURE_NAMES)))
+                hits["tensor"] += _topk_hit(lut[indices], candidates, token, top_k)
+
+            admit = True
+            if admission_threshold > 0:
+                admit = lm.dense.estimate(token) >= admission_threshold
+            lm.dense.update(token)
+            if lm.candidate_score_dense is None:
+                raise RuntimeError("topic-phase score state is not initialized")
+            lm.candidate_score_dense.update(token)
+            if admit:
+                lm.candidate_cache.observe(token)
+            continue
+
+        key, expected = lm.facts[int(query_indices[query_cursor])]
+        query_cursor += 1
+        lm.exact.lookup(key)
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    denominator = topic_events if topic_events else 1
+    return {
+        "resident": hits["resident"] / denominator,
+        "feature_ceiling": feature_ceiling / denominator,
+        "topic_cache": hits["topic_cache"] / denominator,
+        "tensor": hits["tensor"] / denominator,
+    }
 
 
 def _candidate_features(

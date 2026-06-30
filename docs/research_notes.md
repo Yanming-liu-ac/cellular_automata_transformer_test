@@ -332,6 +332,16 @@ mode, resident recall is about 69.2% and the feature ceiling is also about
 two problems: online mode needs additional local state to reduce feature
 collisions, while gated mode mostly needs a stronger ranking/training objective.
 
+The seventeenth sweep tested a full 5D tuple LUT over the same age-augmented
+feature tuple. This is intentionally the high-capacity extreme: a dense 4-bit
+table over five 16-bin features would use about 512KB. It is not useful yet.
+The training stream observes only 893 online tuples and 2878 gated tuples, so
+the table is mostly empty. Online tensor scoring collapses to about 39.0%
+topic@64 with log-odds and about 35.0% with rate scoring. Gated tensor rate
+scoring reaches about 66.4%, close to topic-cache but still below gated dense
+scoring. This says the next indexer should not simply add dense tensor capacity;
+it needs better sharing or distillation.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
