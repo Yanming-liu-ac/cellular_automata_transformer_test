@@ -207,17 +207,18 @@ target more specific: learn a local indexer over `(dense score, topic score,
 cache score, gate estimate, recency/contamination counters)` instead of
 hand-selecting one score formula.
 
-The first learned versions of that target are now a 2.5-byte signed 4-bit
-linear indexer and a 32.5-byte additive feature LUT over `(dense, topic, cache,
-contamination)`. They nearly match the fixed topic-cache formula but do not beat
-it. The next version should use a richer objective, pairwise distillation from
-an oracle scorer, or a less factorized pairwise/tensor LUT rather than only a
-linear or additive update.
+The first learned versions of that target are now a 3.0-byte signed 4-bit
+linear indexer and a 40.5-byte additive feature LUT over `(dense, topic, cache,
+contamination, age)`. They are hardware-small but do not beat the fixed
+topic-cache formula. The next version should use a richer objective, pairwise
+distillation from an oracle scorer, or a less factorized pairwise/tensor LUT
+rather than only a linear or additive update.
 
 The feature-collision ceiling narrows that next step. Online always-admit has a
-large resident/feature-ceiling gap, so it needs new local state such as recency,
-age, or a finer source phase. Gated mode has almost no resident/feature-ceiling
-gap, so it needs better ranking supervision rather than more scalar features.
+large resident/feature-ceiling gap even after adding 4-bit age, so it needs
+finer local state such as shorter-horizon recency, age deltas, or a finer source
+phase. Gated mode has almost no resident/feature-ceiling gap, so it needs better
+ranking supervision rather than more scalar features.
 
 Second trainable target:
 

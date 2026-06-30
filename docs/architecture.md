@@ -442,27 +442,29 @@ therefore remains gated dense scoring, but source/phase/cache signals are now
 measured local features for the next learned indexer.
 
 The first trainable multi-feature indexers use signed 4-bit rules over `dense`,
-`topic`, `cache`, and `contamination=max(dense-topic, 0)`. The linear rule has
-only 2.5 bytes of state including bias. In the current deterministic trial it
-learns weights `(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)` for the
-gated path. A factorized additive LUT uses 32.5 bytes across four 16-bin feature
-tables. These rules are close to the best hand formula but not better: online
-linear topic@64 is about 65.4% and additive is about 65.2%, versus about 65.8%
-for `topic_cache`; gated linear and additive are both about 66.6%, versus about
-67.1% for the current gated dense baseline. This is still useful because it
-confirms that tiny local rules can absorb source/cache features, but the learner
-needs a better objective or a less factorized state before it can replace the
-hand-written gate/scorer.
+`topic`, `cache`, `contamination=max(dense-topic, 0)`, and a 4-bit resident
+`age` bucket. The linear rule has only 3.0 bytes of state including bias. In the
+current deterministic trial it learns weights `(3, 7, 7, 2, -4)` for online
+always-admit and `(-1, 7, 6, 2, -5)` for the gated path. A factorized additive
+LUT uses 40.5 bytes across five 16-bin feature tables. These rules are close to
+the best hand formula but not better: online linear topic@64 is about 63.4% and
+additive is about 64.7%, versus about 65.8% for `topic_cache`; gated linear is
+about 66.7% and additive is about 66.6%, versus about 67.1% for the current
+gated dense baseline. This is still useful because it confirms that tiny local
+rules can absorb source/cache/age features, but the learner needs a better
+objective or a less factorized state before it can replace the hand-written
+gate/scorer.
 
 The feature-collision diagnostic shows where the next capacity should go. In
 online always-admit mode, the resident-token ceiling is about 79.0%, but the
-current feature tuple has an optimistic top-k ceiling of only about 69.5%; the
-positive candidate shares its exact feature bucket with about 61.6 candidates on
-average. In gated mode, the feature ceiling is about 69.2%, essentially the
-same as the resident-token ceiling, and the mean positive bucket falls to about
-3.9. This means admission gating is already doing most of the noise separation;
-the next scorer should add finer recency or pairwise state mainly for the noisy
-online path, while the gated path needs a better ranking objective.
+current feature tuple has an optimistic top-k ceiling of only about 70.9%; the
+positive candidate shares its exact feature bucket with about 47.7 candidates on
+average. This is better than the no-age tuple, but still leaves a large gap. In
+gated mode, the feature ceiling is about 69.2%, essentially the same as the
+resident-token ceiling, and the mean positive bucket falls to about 3.6. This
+means admission gating is already doing most of the noise separation; the next
+scorer should add finer recency or pairwise state mainly for the noisy online
+path, while the gated path needs a better ranking objective.
 
 ## Event-Level Efficiency Profile
 

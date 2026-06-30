@@ -210,24 +210,25 @@ path. `dense_topic_sum` reaches about 67.0% on the static candidate pool, but
 doubles candidate score reads from about 1365 to about 2731 cells/event. In the
 current gated path, neither combination beats gated dense scoring.
 
-The first trainable multi-feature indexers use signed 4-bit rules over four
-local features: dense score, topic-phase score, candidate-cache score, and
-contamination. The linear rule has only 2.5 bytes including bias. It learns
-`(2, 7, 7, 0)` for online always-admit and `(-1, 6, 7, 0)` for the gated path. A
-factorized additive LUT uses 32.5 bytes across four 16-bin tables. These are
-compact rules, but not yet wins: online topic@64 is about 65.4% for linear and
-65.2% for additive, versus about 65.8% for the fixed topic-cache formula. Gated
-topic@64 is about 66.6% for both learned rules, versus about 67.1% for gated
-dense scoring.
+The first trainable multi-feature indexers use signed 4-bit rules over five
+local features: dense score, topic-phase score, candidate-cache score,
+contamination, and resident age. The linear rule has only 3.0 bytes including
+bias. It learns `(3, 7, 7, 2, -4)` for online always-admit and
+`(-1, 7, 6, 2, -5)` for the gated path. A factorized additive LUT uses 40.5
+bytes across five 16-bin tables. These are compact rules, but not yet wins:
+online topic@64 is about 63.4% for linear and 64.7% for additive, versus about
+65.8% for the fixed topic-cache formula. Gated topic@64 is about 66.7% for
+linear and 66.6% for additive, versus about 67.1% for gated dense scoring.
 
 The current feature-collision diagnostic reports two additional hardware-facing
 numbers: optimistic feature ceiling and positive bucket size. In online
-always-admit mode, resident recall is about 79.0%, but the four-feature tuple
-only supports about 69.5% optimistic top-k recall because the positive token
-shares its exact low-bit feature bucket with about 61.6 resident candidates on
-average. In gated mode, the feature ceiling is about 69.2% and the average
-positive bucket size falls to about 3.9. This suggests the noisy online path
-needs more local state, while the gated path mostly needs a better ranking rule.
+always-admit mode, resident recall is about 79.0%, but the age-augmented feature
+tuple only supports about 70.9% optimistic top-k recall because the positive
+token still shares its exact low-bit feature bucket with about 47.7 resident
+candidates on average. In gated mode, the feature ceiling is about 69.2% and the
+average positive bucket size falls to about 3.6. This suggests the noisy online
+path needs more local state, while the gated path mostly needs a better ranking
+rule.
 
 ## Output-Head Metrics
 

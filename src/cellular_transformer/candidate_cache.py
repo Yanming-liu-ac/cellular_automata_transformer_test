@@ -31,6 +31,8 @@ class CandidateCacheConfig:
     decay_shift: int = 1
     insertion_score: int = 1
     evict_zero_scores: bool = False
+    age_bits: int = 0
+    age_bucket_interval: int = 16
 
     def __post_init__(self) -> None:
         if self.vocab_size <= 0:
@@ -45,6 +47,10 @@ class CandidateCacheConfig:
             raise ValueError("routes must be positive")
         if self.score_bits not in (2, 4, 8):
             raise ValueError("score_bits must be one of 2, 4, 8")
+        if self.age_bits not in (0, 2, 4, 8):
+            raise ValueError("age_bits must be one of 0, 2, 4, 8")
+        if self.age_bucket_interval <= 0:
+            raise ValueError("age_bucket_interval must be positive")
         if self.token_bits <= 0:
             raise ValueError("token_bits must be positive")
         if self.decay_interval <= 0:
@@ -67,7 +73,7 @@ class CandidateCacheConfig:
     @property
     def state_bytes(self) -> float:
         valid_bits = 1
-        return self.capacity * (self.token_bits + self.score_bits + valid_bits) / 8
+        return self.capacity * (self.token_bits + self.score_bits + self.age_bits + valid_bits) / 8
 
 
 @dataclass(frozen=True)
@@ -122,6 +128,7 @@ class LowBitCandidateCache:
         shape = (config.buckets, config.ways)
         self.tokens = np.zeros(shape, dtype=np.uint32)
         self.scores = np.zeros(shape, dtype=np.uint8)
+        self.last_seen = np.zeros(shape, dtype=np.uint32)
         self.valid = np.zeros(shape, dtype=bool)
         self.steps = 0
         self.update_hits = 0
@@ -159,6 +166,7 @@ class LowBitCandidateCache:
                 score = int(self.scores[bucket, way])
                 if score < self.config.max_score:
                     self.scores[bucket, way] = score + 1
+                self.last_seen[bucket, way] = self.steps
                 self.update_hits += 1
                 decay_touched = self._maybe_decay()
                 return CandidateCacheUpdate(
@@ -192,6 +200,7 @@ class LowBitCandidateCache:
 
         self.tokens[target_bucket, target_way] = token
         self.scores[target_bucket, target_way] = self.config.insertion_score
+        self.last_seen[target_bucket, target_way] = self.steps
         self.valid[target_bucket, target_way] = True
         decay_touched = self._maybe_decay()
         return CandidateCacheUpdate(
@@ -254,6 +263,27 @@ class LowBitCandidateCache:
         for bucket, way in np.argwhere(self.valid):
             entries.append((int(self.tokens[bucket, way]), int(self.scores[bucket, way])))
         return entries
+
+    def resident_feature_entries(self) -> List[Tuple[int, int, int]]:
+        """Return resident ``(token, score, age_bucket)`` triples."""
+
+        entries: List[Tuple[int, int, int]] = []
+        for bucket, way in np.argwhere(self.valid):
+            entries.append(
+                (
+                    int(self.tokens[bucket, way]),
+                    int(self.scores[bucket, way]),
+                    self._age_bucket(int(self.last_seen[bucket, way])),
+                )
+            )
+        return entries
+
+    def _age_bucket(self, last_seen: int) -> int:
+        if self.config.age_bits == 0:
+            return 0
+        max_age = (1 << self.config.age_bits) - 1
+        raw_age = max(0, self.steps - int(last_seen))
+        return min(raw_age // self.config.age_bucket_interval, max_age)
 
     def resident_count(self) -> int:
         return int(self.valid.sum())

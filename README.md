@@ -76,7 +76,8 @@ The first experiments compare:
   residual indexer, plus explicit scoring-read budget;
 - source/phase/cache candidate scoring sketches for testing dense-state
   contamination and local indexer features;
-- trainable low-bit multi-feature candidate indexer benchmark;
+- trainable low-bit multi-feature candidate indexer benchmark with age/feature
+  collision diagnostics;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;

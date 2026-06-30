@@ -308,25 +308,27 @@ suggests source/phase/cache signals should feed a learned local indexer, but
 they are not yet a better hand-written replacement for the current gate.
 
 The fifteenth sweep trained the first multi-feature local indexers. The first
-rule is a signed 4-bit linear scorer over `(dense, topic, cache, contamination)`
-and has only 2.5 bytes of parameter state including bias. A top-k
-perceptron-style training pass learns `(2, 7, 7, 0)` for online always-admit and
-`(-1, 6, 7, 0)` for the gated path. The second rule is a factorized additive LUT
-with four 16-bin feature tables and 32.5 bytes of state. Both nearly match the
-hand-written topic-cache rule but do not beat it: online topic@64 is about 65.4%
-for linear and 65.2% for additive, versus about 65.8% for topic-cache. Gated
-topic@64 is about 66.6% for both learned rules, versus about 67.1% for gated
-dense scoring. This is a useful boundary result. The feature interface is
-reasonable, but the current learners are too weak, too factorized, or trained
-against the wrong objective.
+rule is a signed 4-bit linear scorer over `(dense, topic, cache, contamination,
+age)` and has only 3.0 bytes of parameter state including bias. A top-k
+perceptron-style training pass learns `(3, 7, 7, 2, -4)` for online always-admit
+and `(-1, 7, 6, 2, -5)` for the gated path. The second rule is a factorized
+additive LUT with five 16-bin feature tables and 40.5 bytes of state. Both are
+small enough for local hardware, but they still do not beat the hand-written
+topic-cache rule: online topic@64 is about 63.4% for linear and 64.7% for
+additive, versus about 65.8% for topic-cache. Gated topic@64 is about 66.7% for
+linear and 66.6% for additive, versus about 67.1% for gated dense scoring. This
+is a useful boundary result. The feature interface is reasonable, but the
+current learners are too weak, too factorized, or trained against the wrong
+objective.
 
 The sixteenth sweep added a feature-collision ceiling. This asks whether a
 perfect scorer over the existing low-bit feature tuple could separate the true
-resident token from other residents. In online always-admit mode, resident recall
-is about 79.0%, but the optimistic feature ceiling is only about 69.5%; the true
-token shares its exact feature bucket with about 61.6 candidates on average. In
-gated mode, resident recall is about 69.2% and the feature ceiling is also about
-69.2%, with an average positive bucket of about 3.9 candidates. This separates
+resident token from other residents. Adding 4-bit resident age helps but does
+not close the online gap: in online always-admit mode, resident recall is about
+79.0%, but the optimistic feature ceiling is only about 70.9%; the true token
+shares its exact feature bucket with about 47.7 candidates on average. In gated
+mode, resident recall is about 69.2% and the feature ceiling is also about
+69.2%, with an average positive bucket of about 3.6 candidates. This separates
 two problems: online mode needs additional local state to reduce feature
 collisions, while gated mode mostly needs a stronger ranking/training objective.
 

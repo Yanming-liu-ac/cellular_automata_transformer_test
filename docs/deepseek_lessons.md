@@ -373,13 +373,15 @@ beat the gated dense baseline, so the DeepSeek-style takeaway remains
 systems-level: compression, cache state, routing gate, and scorer state must be
 trained and evaluated together.
 The first learned linear and additive-LUT versions are small enough for hardware,
-but they only match the hand-written direction and do not beat it. That mirrors
-the DeepSeek lesson again: the win comes from the full training/inference
-system, not from replacing a formula with any learned low-bit rule.
+even after adding a 4-bit age feature, but they only match the hand-written
+direction and do not beat it. That mirrors the DeepSeek lesson again: the win
+comes from the full training/inference system, not from replacing a formula with
+any learned low-bit rule.
 The feature-collision diagnostic makes that concrete: before adding more LUT
 capacity, the system must know whether its local state actually separates the
-right candidates. This is the CA-chip analog of measuring sparse-index recall
-before optimizing the attention kernel.
+right candidates. Age helps but does not close the online gap. This is the
+CA-chip analog of measuring sparse-index recall before optimizing the attention
+kernel.
 
 ## Revised HARC-CA Design Principle
 

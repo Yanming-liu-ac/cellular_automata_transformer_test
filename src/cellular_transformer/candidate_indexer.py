@@ -12,10 +12,11 @@ from typing import Tuple
 
 import numpy as np
 
+from .candidate_cache import CandidateCacheConfig, LowBitCandidateCache
 from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, sample_topic_token
 
 
-FEATURE_NAMES: Tuple[str, ...] = ("dense", "topic", "cache", "contamination")
+FEATURE_NAMES: Tuple[str, ...] = ("dense", "topic", "cache", "contamination", "age")
 
 
 @dataclass(frozen=True)
@@ -235,6 +236,7 @@ def _replay_candidate_stream(
     )
     lm = DualPathSyntheticLM(config, seed=seed)
     lm.prefill()
+    _install_age_cache(lm)
 
     query_indices = lm.rng.choice(
         len(lm.facts),
@@ -263,14 +265,15 @@ def _replay_candidate_stream(
         if event_type == "topic":
             token = sample_topic_token(lm.config, lm.rng)
             topic_events += 1
-            entries = lm.candidate_cache.resident_entries()
+            entries = lm.candidate_cache.resident_feature_entries()
             entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
                 : lm.config.candidate_pool_size
             ]
             if entries:
-                candidates = np.array([candidate for candidate, _ in entries], dtype=np.int32)
-                cache_scores = np.array([score for _, score in entries], dtype=np.int32)
-                features = _candidate_features(lm, candidates, cache_scores)
+                candidates = np.array([candidate for candidate, _, _ in entries], dtype=np.int32)
+                cache_scores = np.array([score for _, score, _ in entries], dtype=np.int32)
+                age_scores = np.array([age for _, _, age in entries], dtype=np.int32)
+                features = _candidate_features(lm, candidates, cache_scores, age_scores)
                 top_k = min(lm.config.topic_top_k, len(candidates))
                 token_matches = candidates == int(token)
                 hits["resident"] += int(bool(token_matches.any()))
@@ -351,6 +354,7 @@ def _collect_additive_statistics(
     )
     lm = DualPathSyntheticLM(config, seed=seed)
     lm.prefill()
+    _install_age_cache(lm)
     query_indices = lm.rng.choice(
         len(lm.facts),
         size=lm.config.query_events,
@@ -365,14 +369,15 @@ def _collect_additive_statistics(
     for event_type in event_types:
         if event_type == "topic":
             token = sample_topic_token(lm.config, lm.rng)
-            entries = lm.candidate_cache.resident_entries()
+            entries = lm.candidate_cache.resident_feature_entries()
             entries = sorted(entries, key=lambda item: (-item[1], item[0]))[
                 : lm.config.candidate_pool_size
             ]
             if entries:
-                candidates = np.array([candidate for candidate, _ in entries], dtype=np.int32)
-                cache_scores = np.array([score for _, score in entries], dtype=np.int32)
-                features = np.clip(_candidate_features(lm, candidates, cache_scores), 0, 15)
+                candidates = np.array([candidate for candidate, _, _ in entries], dtype=np.int32)
+                cache_scores = np.array([score for _, score, _ in entries], dtype=np.int32)
+                age_scores = np.array([age for _, _, age in entries], dtype=np.int32)
+                features = np.clip(_candidate_features(lm, candidates, cache_scores, age_scores), 0, 15)
                 labels = (candidates == int(token)).astype(np.int64)
                 for feature_index in range(len(FEATURE_NAMES)):
                     np.add.at(observed[feature_index], features[:, feature_index], 1)
@@ -402,6 +407,7 @@ def _candidate_features(
     lm: DualPathSyntheticLM,
     candidates: np.ndarray,
     cache_scores: np.ndarray,
+    age_scores: np.ndarray,
 ) -> np.ndarray:
     if lm.candidate_score_dense is None:
         raise RuntimeError("topic-phase score state is not initialized")
@@ -411,8 +417,31 @@ def _candidate_features(
     topic_scores = lm.candidate_score_dense.counters[bank_indices, candidate_slots].min(axis=0).astype(np.int32)
     contamination = np.maximum(dense_scores - topic_scores, 0)
     return np.stack(
-        [dense_scores, topic_scores, cache_scores.astype(np.int32), contamination],
+        [
+            dense_scores,
+            topic_scores,
+            cache_scores.astype(np.int32),
+            contamination,
+            age_scores.astype(np.int32),
+        ],
         axis=1,
+    )
+
+
+def _install_age_cache(lm: DualPathSyntheticLM) -> None:
+    lm.candidate_cache = LowBitCandidateCache(
+        CandidateCacheConfig(
+            vocab_size=lm.config.vocab_size,
+            capacity=lm.config.candidate_pool_size,
+            ways=lm.config.candidate_cache_ways,
+            routes=lm.config.candidate_cache_routes,
+            score_bits=lm.config.candidate_cache_score_bits,
+            token_bits=max(1, (lm.config.vocab_size - 1).bit_length()),
+            decay_interval=lm.config.candidate_cache_decay_interval,
+            decay_shift=lm.config.candidate_cache_decay_shift,
+            age_bits=4,
+            age_bucket_interval=16,
+        )
     )
 
 

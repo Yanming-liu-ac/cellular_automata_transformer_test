@@ -20,7 +20,7 @@ def fmt_pct(value: float) -> str:
 
 def main() -> None:
     print("Trainable low-bit candidate indexer")
-    print("features: dense, topic-phase, candidate-cache, contamination")
+    print("features: dense, topic-phase, candidate-cache, contamination, age")
     print()
     headers = [
         "case",
