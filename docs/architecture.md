@@ -163,6 +163,36 @@ context integration.
 This is the CA analog of DeepSeek-V4's sparse/dense split: CSA-like sparse
 retrieval for exact details, HCA-like compressed recurrence for dense history.
 
+## Compressed Dense Context
+
+The first compressed dense-context prototype is a low-bit decayed count-sketch.
+Each token updates a few hash-routed counters, and the counters decay
+periodically. This is not a language model and not exact memory; it tests whether
+a small CA-local state can preserve coarse topic and recency distribution.
+
+Prototype behavior:
+
+```text
+token -> 4 hash-routed low-bit counter updates
+periodic integer decay
+readout -> approximate topic / recency distribution
+```
+
+On a 65k-vocabulary topic stream with 65k context, a 4-bit sketch with
+`banks=4` and `width=2048` uses 4KB of state and recovers the exact top-64
+decayed topic tokens in the current deterministic trial. A denser exact 4-bit
+counter table for the whole vocabulary would use 32KB. This is an 8x state
+reduction for this narrow dense-context task.
+
+The correct interpretation is:
+
+```text
+compressed sketch = fuzzy dense background
+associative lane  = exact rare details
+```
+
+The sketch alone cannot preserve names, numbers, or code symbols reliably.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software
@@ -245,6 +275,14 @@ increases only from about 32 visited cells to about 34 visited cells because
 only about 8% of queries touch overflow.
 
 This is a CA-native cache hierarchy: no full-context scan fallback is used.
+
+Combined with the 4KB compressed dense-context sketch, the current dual-path
+prototype uses about 166.5KB for:
+
+- 100% exact induction recall on the deterministic 16k trial;
+- 100% top-64 dense-topic recall on the deterministic 65k-vocabulary trial;
+- about 34 visited cells per exact query;
+- four low-bit counter updates per dense-context token.
 
 ## Immediate Falsification Tests
 

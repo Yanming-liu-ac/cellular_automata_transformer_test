@@ -1,6 +1,12 @@
 """Cellular Transformer research prototypes."""
 
 from .benchmarks import MemoryTaskResult, run_memory_task, sweep_memory_tasks
+from .dense_context import (
+    DenseContextConfig,
+    DenseContextResult,
+    LowBitDenseContext,
+    run_dense_context_trial,
+)
 from .propagation import (
     PropagationResult,
     harc_ca_edges,
@@ -23,8 +29,11 @@ from .retrieval import (
 __all__ = [
     "HashRouteCAM",
     "HashRouteCAMConfig",
+    "DenseContextConfig",
+    "DenseContextResult",
     "InsertResult",
     "LookupResult",
+    "LowBitDenseContext",
     "MemoryTaskResult",
     "PropagationResult",
     "RecallTrialResult",
@@ -34,6 +43,7 @@ __all__ = [
     "harc_ca_edges",
     "line_edges",
     "propagation_distances",
+    "run_dense_context_trial",
     "run_memory_task",
     "run_recall_trial",
     "shortest_propagation_steps",

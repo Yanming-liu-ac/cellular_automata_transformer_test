@@ -164,6 +164,23 @@ overflow associative lane  -> bucket-pressure victims
 compressed CA field        -> fuzzy dense context
 ```
 
+The fourth sweep added the compressed dense context path. A 4-bit decayed
+count-sketch with `banks=4` and `width=2048` used 4KB of state for a
+65k-vocabulary topic stream and recovered the exact top-64 decayed topic tokens
+in the current deterministic 65k-context trial. The exact 4-bit dense counter
+table would use 32KB. This supports the dense-path role as a compact context
+distribution tracker, not as exact memory.
+
+The current dual-path demo combines:
+
+- tiered associative memory: 162.5KB, 100% induction recall on the deterministic
+  16k full-context trial;
+- compressed dense sketch: 4KB, 100% top-64 topic recall on the deterministic
+  65k-vocabulary trial.
+
+This is still a memory-system prototype, not an LLM. The next hard step is to
+connect these paths to a trainable recurrent CA rule and a prediction head.
+
 Current interpretation:
 
 ```text

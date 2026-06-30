@@ -59,6 +59,21 @@ Overflow-tier result:
   checked only after primary misses; about 8% of queries touch overflow in the
   current trial.
 
+Compressed dense-context result:
+
+- A 4-bit decayed count-sketch with `banks=4`, `width=2048`, and four updates
+  per token uses 4KB of state.
+- On the current deterministic 65k-vocabulary topic stream, it recovers 100% of
+  the exact top-64 decayed topic tokens at 8x lower state than a full 4-bit
+  dense counter table.
+- This validates only fuzzy dense context compression, not exact recall.
+
+Dual-path result:
+
+- Tiered exact lane plus dense sketch uses about 166.5KB in the current demo.
+- Exact lane handles deterministic 16k induction recall.
+- Dense sketch handles deterministic 65k-vocabulary topic/recency distribution.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;

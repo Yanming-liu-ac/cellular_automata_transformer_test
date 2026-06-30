@@ -90,3 +90,26 @@ The first useful overflow gate is:
 Adding a small overflow tier should recover exact recall without turning the
 query into a full scan or doubling average visited cells.
 ```
+
+## Dense-Context Metrics
+
+For compressed dense context, track:
+
+- state bytes;
+- bits per counter/channel;
+- update cells per token;
+- decay interval and decay cost;
+- top-k topic/recency recall;
+- mean absolute count error;
+- compression ratio against exact dense state;
+- whether the exact-memory lane is still needed for rare facts.
+
+The key distinction is:
+
+```text
+Dense context measures distribution preservation.
+Associative memory measures exact fact preservation.
+```
+
+Do not use top-k dense-topic recall as evidence that exact names, numbers, or
+code symbols are preserved.

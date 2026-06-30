@@ -307,6 +307,12 @@ lane. Queries touch overflow only after a primary miss or tag collision. This
 recovers exact recall in the current 16k full-context trial with a small average
 visited-cell increase.
 
+The first compressed dense-context experiment is the minimal HCA-like analog:
+a low-bit decayed sketch tracks topic/recency distribution with a few local
+counter updates per token. It is intentionally separate from exact sparse recall.
+This reinforces the V4 lesson that sparse and dense memory paths should be
+optimized independently.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:
