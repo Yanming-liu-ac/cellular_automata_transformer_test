@@ -336,6 +336,11 @@ before adding learned rules. This is the CA-chip analog of treating cache,
 communication, and kernels as part of the model design rather than deployment
 afterthoughts.
 
+The first output-head budget adds another systems lesson: solving attention/KV
+traffic is not enough if the logits path becomes the dominant kernel. HARC-CA
+needs exact-token bypass and candidate scoring so the output head stays within
+the same local budget as the CA memory and rule fabric.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

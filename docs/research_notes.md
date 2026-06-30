@@ -227,6 +227,13 @@ The warning remains important: this is not area, power, timing, or model quality
 It is a bookkeeping tool to prevent future experiments from silently consuming
 the locality advantage.
 
+The ninth sweep added an output-head budget. This is a critical risk: the
+current HARC-CA event profile is about 51KB/event before output scoring, while a
+65k full-vocabulary output head with 128 hidden channels costs about
+4.13MB/event and 8.39M MACs/event. A 512-token candidate head with exact-query
+bypass costs about 22KB/event. This makes candidate generation and exact bypass
+mandatory parts of the architecture, not optional optimizations.
+
 Current interpretation:
 
 ```text

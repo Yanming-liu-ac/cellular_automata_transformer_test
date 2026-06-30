@@ -336,6 +336,29 @@ The dual-path memory system can be wired into a next-token interface.
 It is not yet a trainable language model.
 ```
 
+## Output Head Constraint
+
+The output head can erase CA-local savings. With a 65k vocabulary, 128 hidden
+channels, 4-bit weights, 4-bit activations, and 16-bit logits, a full-vocabulary
+projection reads/writes about 4.13MB per event and performs about 8.39M MACs.
+That is far larger than the current 51KB HARC-CA local event profile.
+
+The first output-head proxy shows:
+
+```text
+full vocab head:               about 4.13MB/event
+512-token candidate head:      about 33KB/event
+512-token head + exact bypass: about 22KB/event
+```
+
+The architecture therefore needs candidate generation and exact-memory bypass as
+first-class hardware paths. Exact associative hits should directly produce value
+tokens when possible; dense context should rank a small candidate pool rather
+than scan the whole vocabulary.
+
+This is not free. The candidate generator must be accurate enough that quality
+does not collapse, and the shortlist machinery itself must remain local.
+
 ## Event-Level Efficiency Profile
 
 The current prototype can be profiled as a decode event:
@@ -345,6 +368,7 @@ event traffic =
     exact sparse-memory reads
   + dense sketch counter updates
   + sparse Cellular-MoE rule-bank local reads/writes
+  + candidate output-head scoring
 ```
 
 With 4 Cellular-MoE ticks per synthetic decode event, the current deterministic

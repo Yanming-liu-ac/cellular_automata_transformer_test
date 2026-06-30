@@ -132,6 +132,35 @@ The first benchmark intentionally uses a candidate shortlist instead of scanning
 the whole vocabulary. A CA-first chip should make candidate generation explicit;
 otherwise the output head can erase memory-system savings.
 
+## Output-Head Metrics
+
+For output scoring, track:
+
+- vocabulary size;
+- candidate pool size;
+- exact-bypass fraction;
+- hidden channels;
+- activation bits;
+- output weight bits;
+- logit bits;
+- resident output weight bytes;
+- bytes per event;
+- MACs per event;
+- reduction versus full-vocabulary scoring.
+
+The current proxy uses a 65k vocabulary, 128 hidden channels, 4-bit activations,
+4-bit output weights, and 16-bit logits:
+
+```text
+full vocabulary head: about 4.13MB/event and 8.39M MACs/event
+512-candidate head: about 33KB/event and 65.5K MACs/event
+512-candidate + exact bypass: about 22KB/event and 43.7K MACs/event
+```
+
+The output head is a separate bottleneck from KV cache. A CA-first model must
+avoid full-vocabulary scoring on every event unless the rest of the architecture
+has enough local budget to pay for it.
+
 ## Cellular-MoE Metrics
 
 For sparse rule-bank execution, track:
@@ -181,6 +210,10 @@ HARC-CA local bytes/event: about 51 KB
 Transformer KV read/token: about 384 MB
 On-chip HARC-CA state: about 182 KB
 ```
+
+With a 512-token candidate output head and exact-query bypass, output scoring
+adds about 22KB/event in the current synthetic setup. A full-vocabulary head
+would add about 4.13MB/event, dominating the current HARC-CA local-event budget.
 
 This is not a measured energy claim. Local on-chip bytes and KV-cache read bytes
 are physically different costs, and the current HARC-CA prototype is not quality

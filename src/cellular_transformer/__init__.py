@@ -10,6 +10,13 @@ from .dense_context import (
     run_dense_context_trial,
 )
 from .efficiency import EfficiencyComparison, HarcEventEfficiency, compare_to_transformer_kv
+from .output_head import (
+    OutputHeadComparison,
+    OutputHeadConfig,
+    OutputHeadMetrics,
+    compare_output_heads,
+    estimate_output_head,
+)
 from .propagation import (
     PropagationResult,
     harc_ca_edges,
@@ -48,6 +55,9 @@ __all__ = [
     "MoERolloutResult",
     "MoEStepStats",
     "MemoryTaskResult",
+    "OutputHeadComparison",
+    "OutputHeadConfig",
+    "OutputHeadMetrics",
     "PropagationResult",
     "RecallTrialResult",
     "SyntheticLMConfig",
@@ -61,6 +71,8 @@ __all__ = [
     "profile_chip",
     "propagation_distances",
     "compare_to_transformer_kv",
+    "compare_output_heads",
+    "estimate_output_head",
     "run_dense_context_trial",
     "run_memory_task",
     "run_recall_trial",

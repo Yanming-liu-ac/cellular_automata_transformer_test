@@ -112,6 +112,15 @@ Tile/floorplan profile:
 - This defines a budget for learned rules and richer output heads; it is not
   physical design closure.
 
+Output-head profile:
+
+- A 65k full-vocabulary output head costs about 4.13MB/event and 8.39M
+  MACs/event under the current proxy assumptions.
+- A 512-token candidate head costs about 33KB/event.
+- A 512-token candidate head with exact-query bypass costs about 22KB/event.
+- Candidate generation must be learned and accurate; otherwise the output layer
+  becomes the new global bottleneck.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;
@@ -144,6 +153,9 @@ First trainable target:
 Learn the routing decision and candidate scoring currently hand-coded in the
 synthetic next-token benchmark.
 ```
+
+This target now includes learning a candidate output policy that avoids
+full-vocabulary scoring for most events.
 
 Second trainable target:
 
