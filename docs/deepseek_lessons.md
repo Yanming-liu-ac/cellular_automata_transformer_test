@@ -348,6 +348,11 @@ is the CA analog of making the indexer/cache part of the model system rather
 than assuming the expensive scoring kernel receives a perfect shortlist for
 free.
 
+The follow-up admission gate reuses the compressed dense-context sketch to
+reject low-evidence noise tokens before they write into the candidate cache.
+This mirrors the CSA/HCA systems lesson more closely: a cheap recurrent/index
+path narrows the work before the more expensive candidate scoring path runs.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

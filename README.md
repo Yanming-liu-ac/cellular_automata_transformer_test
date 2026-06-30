@@ -66,7 +66,8 @@ The first experiments compare:
 - overflow-tier associative memory for exact-recall reliability;
 - low-bit compressed dense-context sketching;
 - combined sparse-exact plus dense-compressed memory path;
-- online low-bit candidate-cache generation without full-vocabulary scans;
+- online low-bit candidate-cache generation with admission gating and no
+  full-vocabulary scans;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;

@@ -13,6 +13,7 @@ from typing import Iterable, List
 
 import numpy as np
 
+from .dense_context import DenseContextConfig, LowBitDenseContext
 from .retrieval import keyed_hash
 
 
@@ -96,12 +97,18 @@ class CandidateCacheTrialResult:
     ways: int
     routes: int
     score_bits: int
+    admission_threshold: int
     state_bytes: float
+    gate_state_bytes: float
+    total_state_bytes: float
     topk_hit_rate: float
+    admission_rate: float
     cache_update_hit_rate: float
+    avg_gate_cells: float
     avg_local_update_cells: float
     avg_decay_cells: float
     avg_total_update_cells: float
+    admission_skips: int
     replacements: int
     resident_tokens: int
     full_vocab_scan_tokens: int = 0
@@ -281,6 +288,11 @@ def run_candidate_cache_trial(
     routes: int = 2,
     score_bits: int = 4,
     decay_interval: int = 256,
+    admission_threshold: int = 0,
+    gate_banks: int = 4,
+    gate_width: int = 2048,
+    gate_bits: int = 4,
+    gate_decay_interval: int = 256,
     topic_probability: float = 0.85,
     zipf_exponent: float = 1.15,
     seed: int = 0,
@@ -297,6 +309,8 @@ def run_candidate_cache_trial(
         raise ValueError("top_k must be in (0, capacity]")
     if not 0.0 <= topic_probability <= 1.0:
         raise ValueError("topic_probability must be in [0, 1]")
+    if admission_threshold < 0:
+        raise ValueError("admission_threshold must be non-negative")
 
     config = CandidateCacheConfig(
         vocab_size=vocab_size,
@@ -307,10 +321,24 @@ def run_candidate_cache_trial(
         decay_interval=decay_interval,
     )
     cache = LowBitCandidateCache(config)
+    gate: LowBitDenseContext | None = None
+    if admission_threshold > 0:
+        gate = LowBitDenseContext(
+            DenseContextConfig(
+                vocab_size=vocab_size,
+                banks=gate_banks,
+                width=gate_width,
+                bits=gate_bits,
+                decay_interval=gate_decay_interval,
+            )
+        )
     rng = np.random.default_rng(seed)
 
     hits = 0
     eval_events = 0
+    admitted = 0
+    skipped = 0
+    gate_touched = 0
     for step in range(context_length):
         token = sample_zipf_topic_token(
             vocab_size=vocab_size,
@@ -322,7 +350,21 @@ def run_candidate_cache_trial(
         if step >= warmup_events:
             eval_events += 1
             hits += int(token in cache.topk_set(top_k))
-        cache.observe(token)
+
+        admit = True
+        if gate is not None:
+            gate_touched += gate.config.banks
+            admit = gate.estimate(token) >= admission_threshold
+            gate_touched += gate.update(token)
+
+        if admit:
+            admitted += 1
+            cache.observe(token)
+        else:
+            skipped += 1
+
+    gate_state_bytes = gate.memory_bytes() if gate is not None else 0.0
+    total_updates = admitted + skipped
 
     return CandidateCacheTrialResult(
         context_length=context_length,
@@ -334,15 +376,21 @@ def run_candidate_cache_trial(
         ways=ways,
         routes=routes,
         score_bits=score_bits,
+        admission_threshold=admission_threshold,
         state_bytes=cache.memory_bytes(),
+        gate_state_bytes=gate_state_bytes,
+        total_state_bytes=cache.memory_bytes() + gate_state_bytes,
         topk_hit_rate=hits / eval_events if eval_events else 0.0,
+        admission_rate=admitted / total_updates if total_updates else 0.0,
         cache_update_hit_rate=cache.cache_update_hit_rate(),
+        avg_gate_cells=gate_touched / context_length,
         avg_local_update_cells=cache.local_touched_cells / context_length,
         avg_decay_cells=cache.decay_touched_cells / context_length,
         avg_total_update_cells=(
-            cache.local_touched_cells + cache.decay_touched_cells
+            gate_touched + cache.local_touched_cells + cache.decay_touched_cells
         )
         / context_length,
+        admission_skips=skipped,
         replacements=cache.replacements,
         resident_tokens=cache.resident_count(),
     )

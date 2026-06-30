@@ -327,9 +327,10 @@ Current deterministic trial:
 - exact induction next-token accuracy: 100%;
 - static-oracle topic candidate top-k hit rate: about 62%;
 - online-cache topic candidate top-k hit rate: about 61%;
+- gated online-cache topic candidate top-k hit rate: about 67%;
 - online candidate-cache update hit rate: about 79%;
 - average local cells touched per mixed event: about 27 with static candidates
-  and about 34 with online candidates;
+  and about 34 with online or gated candidates;
 - combined memory: about 166KB with the static shortlist and about 168KB with
   the online candidate cache.
 
@@ -372,6 +373,7 @@ fixed-size set-associative cache:
 observed token -> 2 hash routes -> 4 ways each
 resident entry -> token id + low-bit score + valid bit
 periodic decay -> integer right shift
+admission gate -> optional dense-sketch threshold before cache write
 top-k readout  -> scan resident cache entries, not the full vocabulary
 ```
 
@@ -381,6 +383,13 @@ top-64 hit rate after warmup while scanning zero full-vocabulary entries. When
 plugged into the synthetic next-token benchmark, it keeps topic@64 close to the
 static candidate pool, but adds about 6.6 local cache-cell touches per mixed
 event.
+
+Adding a threshold-1 dense-sketch admission gate improves the current synthetic
+LM topic@64 to about 67%. The gate reuses the existing dense-context sketch,
+admits about 61% of topic observations, raises cache-update hit rate to about
+98%, and reduces candidate-cache touches to about 4.0 cells/event plus about
+2.7 dense gate reads/event. This is a better chip shape: fewer noisy writes,
+fewer replacements, and no full-vocabulary scan.
 
 This is still not a learned output policy. Its value is that candidate
 generation now has a hardware-shaped cost model instead of being treated as
@@ -395,12 +404,12 @@ event traffic =
     exact sparse-memory reads
   + dense sketch counter updates
   + sparse Cellular-MoE rule-bank local reads/writes
-  + online candidate-cache updates
+  + online candidate-cache updates and admission-gate reads
   + candidate output-head scoring
 ```
 
-With online candidate generation and 4 Cellular-MoE ticks per synthetic decode
-event, the current deterministic profile estimates about 51.39KB of local
+With gated online candidate generation and 4 Cellular-MoE ticks per synthetic
+decode event, the current deterministic profile estimates about 51.38KB of local
 on-chip byte movement per event. The paired tiny Transformer KV-cache reference
 reads about 384MB per token at 16k context.
 
@@ -419,7 +428,7 @@ tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
 At 4 Cellular-MoE ticks per synthetic event, the current event profile needs
-about 51.39KB of local traffic and about 183.8KB of on-chip state. With a
+about 51.38KB of local traffic and about 183.8KB of on-chip state. With a
 32-tile fabric under the proxy assumptions, this state occupies about 35.9% of
 local SRAM and a 1M events/s target consumes about 5.1% of aggregate local byte
 bandwidth.

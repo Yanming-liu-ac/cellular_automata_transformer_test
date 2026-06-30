@@ -206,10 +206,10 @@ be needed.
 The seventh sweep added a unified event-level efficiency proxy. It combines the
 synthetic dual-path next-token benchmark with Cellular-MoE execution and compares
 the resulting local byte movement with a tiny Transformer KV-cache read volume.
-With 4 Cellular-MoE ticks per event and online candidate generation, the current
-HARC-CA profile moves about 51.39KB of local on-chip bytes per event and keeps
-about 183.8KB of on-chip state. The tiny Transformer KV reference reads about
-384MB per token at 16k context.
+With 4 Cellular-MoE ticks per event and gated online candidate generation, the
+current HARC-CA profile moves about 51.38KB of local on-chip bytes per event and
+keeps about 183.8KB of on-chip state. The tiny Transformer KV reference reads
+about 384MB per token at 16k context.
 
 This ratio is intentionally not treated as a win. The HARC-CA prototype is not a
 quality-equivalent model, and local SRAM/register traffic is not the same as
@@ -242,6 +242,15 @@ and performs zero full-vocabulary scans. On the standalone topic/noise stream it
 reaches about 69% top-64 hit rate after warmup. Plugged into the synthetic LM,
 it gives about 61.4% topic@64 versus about 62.1% for the static candidate pool,
 with about 6.6 extra candidate-cache cell touches per mixed event.
+
+The same sweep then added a threshold-1 admission gate that reuses the dense
+context sketch. This gate prevents low-evidence noise tokens from writing into
+the candidate cache. In the standalone topic/noise stream, top-64 hit rate rises
+to about 70.8% and replacements drop to zero for a 512-entry cache. In the mixed
+synthetic LM, gated online candidates reach about 67.1% topic@64, admit about
+60.5% of topic observations, and raise cache-update hit rate to about 98%. The
+cache-write cost falls to about 4.0 cells/event, with about 2.7 dense gate
+reads/event.
 
 This is an important correction to the research accounting: candidate
 generation is no longer assumed to be free. It is still not learned and not

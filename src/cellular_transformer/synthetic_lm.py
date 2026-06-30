@@ -36,6 +36,7 @@ class SyntheticLMConfig:
     candidate_cache_score_bits: int = 4
     candidate_cache_decay_interval: int = 256
     candidate_cache_decay_shift: int = 1
+    candidate_admission_threshold: int = 0
     fact_count: int = 16384
     topic_events: int = 8192
     query_events: int = 4096
@@ -71,6 +72,8 @@ class SyntheticLMConfig:
                 raise ValueError("candidate_pool_size must be divisible by candidate_cache_ways")
             if self.candidate_cache_routes <= 0:
                 raise ValueError("candidate_cache_routes must be positive")
+            if self.candidate_admission_threshold < 0:
+                raise ValueError("candidate_admission_threshold must be non-negative")
         if self.fact_count <= 0:
             raise ValueError("fact_count must be positive")
         if self.topic_events <= 0:
@@ -98,6 +101,9 @@ class SyntheticLMResult:
     overflow_query_rate: float
     dense_update_cells_per_event: float
     candidate_update_cells_per_event: float
+    candidate_gate_cells_per_event: float
+    candidate_admission_rate: float
+    candidate_admission_skips: int
     candidate_cache_hit_rate: float
     candidate_cache_replacements: int
     candidate_cache_resident_tokens: int
@@ -258,6 +264,9 @@ class DualPathSyntheticLM:
         correct_queries = 0
         topic_hits = 0
         candidate_touched = 0
+        candidate_gate_touched = 0
+        candidate_admitted = 0
+        candidate_skipped = 0
 
         query_indices = self.rng.choice(
             len(self.facts),
@@ -274,9 +283,22 @@ class DualPathSyntheticLM:
             if event_type == "topic":
                 token = sample_topic_token(self.config, self.rng)
                 topic_hits += int(token in self.predict_topic_topk())
+                admit_candidate = True
+                if (
+                    self.candidate_cache is not None
+                    and self.config.candidate_admission_threshold > 0
+                ):
+                    candidate_gate_touched += self.config.dense_banks
+                    admit_candidate = (
+                        self.dense.estimate(token) >= self.config.candidate_admission_threshold
+                    )
                 dense_touched += self.dense.update(token)
                 if self.candidate_cache is not None:
-                    candidate_touched += self.candidate_cache.observe(token).total_touched_cells
+                    if admit_candidate:
+                        candidate_admitted += 1
+                        candidate_touched += self.candidate_cache.observe(token).total_touched_cells
+                    else:
+                        candidate_skipped += 1
                 continue
 
             key, expected = self.facts[int(query_indices[query_cursor])]
@@ -303,6 +325,10 @@ class DualPathSyntheticLM:
         candidate_cache_resident = (
             self.candidate_cache.resident_count() if self.candidate_cache is not None else 0
         )
+        candidate_observations = candidate_admitted + candidate_skipped
+        candidate_admission_rate = (
+            candidate_admitted / candidate_observations if candidate_observations else 0.0
+        )
         return SyntheticLMResult(
             vocab_size=self.config.vocab_size,
             fact_count=self.config.fact_count,
@@ -317,10 +343,16 @@ class DualPathSyntheticLM:
             overflow_query_rate=overflow_queries / self.config.query_events,
             dense_update_cells_per_event=dense_touched / (total_events + 2 * self.config.fact_count),
             candidate_update_cells_per_event=candidate_touched / total_events,
+            candidate_gate_cells_per_event=candidate_gate_touched / total_events,
+            candidate_admission_rate=candidate_admission_rate,
+            candidate_admission_skips=candidate_skipped,
             candidate_cache_hit_rate=candidate_cache_hit_rate,
             candidate_cache_replacements=candidate_cache_replacements,
             candidate_cache_resident_tokens=candidate_cache_resident,
-            avg_cells_per_event=(dense_touched + exact_visited + candidate_touched) / total_events,
+            avg_cells_per_event=(
+                dense_touched + exact_visited + candidate_touched + candidate_gate_touched
+            )
+            / total_events,
             exact_memory_bytes=exact_memory,
             dense_memory_bytes=dense_memory,
             candidate_memory_bytes=candidate_memory,

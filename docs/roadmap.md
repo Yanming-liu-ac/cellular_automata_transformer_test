@@ -88,11 +88,15 @@ Online candidate-cache result:
 
 - A 512-entry low-bit set-associative cache now generates candidate shortlists
   without a hot-token oracle or full-vocabulary scan.
-- Standalone topic/noise top-64 hit rate is about 69% after warmup.
-- Plugged into the synthetic LM, online topic@64 is about 61.4% versus about
-  62.1% for the static candidate pool.
-- The online cache adds about 1.31KB of state and about 6.6 candidate-cache cell
-  touches per mixed event.
+- Always-admit standalone topic/noise top-64 hit rate is about 69% after warmup.
+- A threshold-1 dense-sketch admission gate raises standalone top-64 hit rate to
+  about 70.8% and removes almost all 512-entry cache replacements.
+- Plugged into the synthetic LM, gated online topic@64 is about 67.1% versus
+  about 62.1% for the static candidate pool and about 61.4% for always-admit
+  online cache.
+- The gated path adds about 1.31KB of cache state, admits about 60.5% of topic
+  observations, touches about 4.0 candidate-cache cells/event, and reads about
+  2.7 dense gate cells/event.
 
 Cellular-MoE execution result:
 
@@ -108,7 +112,7 @@ Unified efficiency profile:
 - The current event-level proxy combines exact memory, dense sketch updates, and
   Cellular-MoE rule execution.
 - With 4 rule ticks per event, estimated local on-chip traffic is about
-  51.39KB per synthetic event including online candidate-cache updates.
+  51.38KB per synthetic event including gated online candidate-cache updates.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 

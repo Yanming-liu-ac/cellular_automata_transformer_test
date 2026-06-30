@@ -33,6 +33,14 @@ def main() -> None:
         ("static", SyntheticLMConfig(dense_width=2048)),
         ("static", SyntheticLMConfig(dense_width=4096)),
         ("online", SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")),
+        (
+            "gated",
+            SyntheticLMConfig(
+                dense_width=2048,
+                candidate_strategy="online_cache",
+                candidate_admission_threshold=1,
+            ),
+        ),
     ]
 
     headers = [
@@ -44,6 +52,8 @@ def main() -> None:
         "overflow_q",
         "dense_upd",
         "cand_upd",
+        "gate_upd",
+        "admit_r",
         "cand_hit",
         "avg_cells",
         "memory",
@@ -63,7 +73,9 @@ def main() -> None:
             fmt_pct(result.overflow_query_rate),
             f"{result.dense_update_cells_per_event:0.1f}",
             f"{result.candidate_update_cells_per_event:0.1f}",
-            fmt_pct(result.candidate_cache_hit_rate) if label == "online" else "-",
+            f"{result.candidate_gate_cells_per_event:0.1f}",
+            fmt_pct(result.candidate_admission_rate) if label != "static" else "-",
+            fmt_pct(result.candidate_cache_hit_rate) if label != "static" else "-",
             f"{result.avg_cells_per_event:0.1f}",
             fmt_bytes(result.total_memory_bytes),
         ]
@@ -72,7 +84,8 @@ def main() -> None:
     print()
     print("Interpretation:")
     print("- Induction uses the exact sparse associative lane.")
-    print("- Static Topic@k uses an oracle-built candidate pool; online uses the candidate cache.")
+    print("- Static Topic@k uses an oracle-built candidate pool.")
+    print("- Online/gated variants generate candidates from the low-bit cache.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
 
 

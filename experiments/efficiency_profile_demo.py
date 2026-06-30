@@ -17,7 +17,11 @@ from cellular_transformer.synthetic_lm import DualPathSyntheticLM, SyntheticLMCo
 
 
 def main() -> None:
-    synthetic_config = SyntheticLMConfig(dense_width=2048, candidate_strategy="online_cache")
+    synthetic_config = SyntheticLMConfig(
+        dense_width=2048,
+        candidate_strategy="online_cache",
+        candidate_admission_threshold=1,
+    )
     synthetic = DualPathSyntheticLM(synthetic_config, seed=31).run()
 
     moe_config = CellularMoEConfig(
@@ -88,6 +92,7 @@ def main() -> None:
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
     print(f"  dense_update_cells_per_event={harc.dense_update_cells_per_event:0.1f}")
     print(f"  candidate_update_cells_per_event={harc.candidate_update_cells_per_event:0.1f}")
+    print(f"  candidate_gate_cells_per_event={harc.candidate_gate_cells_per_event:0.1f}")
     print(f"  moe_sparse_rule_updates/event={harc.moe_sparse_rule_updates_per_event:0.1f}")
     print(f"  moe_dense_equiv_rule_updates/event={harc.moe_dense_equivalent_rule_updates_per_event:0.1f}")
     print(f"  moe_update_reduction={harc.moe_update_reduction:0.1f}x")

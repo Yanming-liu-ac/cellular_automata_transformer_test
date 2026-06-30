@@ -125,6 +125,8 @@ For the dual-path next-token interface, track:
 - overflow query rate;
 - dense update cells per event;
 - candidate-cache update cells per event;
+- candidate admission-gate cells per event;
+- candidate admission rate;
 - candidate-cache update hit rate;
 - candidate-cache replacement count;
 - average local cells touched per event;
@@ -146,18 +148,22 @@ For online candidate shortlists, track:
 - top-k hit rate after warmup;
 - cache update hit rate;
 - replacements;
+- admission threshold;
+- admission rate;
+- gate read cells;
 - resident token count;
 - local cells touched per observed token;
 - full-vocabulary scan count.
 
 The first online candidate cache uses 512 entries, 4-bit scores, 2 hash routes,
-4 ways, and a 65k vocabulary. It stores about 1.31KB of state, touches about 10
-cache cells per topic-token update including amortized decay, and performs zero
-full-vocabulary scans. On the standalone topic/noise stream it reaches about 69%
-top-64 hit rate after warmup. In the mixed synthetic LM benchmark, online
-candidate generation keeps topic@64 at about 61% versus about 62% with the
-static hot-token oracle, while adding about 6.6 candidate-cache cell touches per
-mixed event.
+4 ways, and a 65k vocabulary. It stores about 1.31KB of state and performs zero
+full-vocabulary scans. Always-admit mode reaches about 69% standalone top-64 hit
+rate and about 61% topic@64 in the mixed synthetic LM. A threshold-1 admission
+gate reusing the dense-context sketch reaches about 71% standalone top-64 hit
+rate and about 67% mixed synthetic topic@64. In the mixed benchmark, the gated
+path admits about 61% of topic observations, reaches about 98% cache-update hit
+rate, and costs about 4.0 candidate-cache cells/event plus about 2.7 dense gate
+reads/event.
 
 ## Output-Head Metrics
 
@@ -217,7 +223,7 @@ The project now includes a unified per-event proxy that combines:
 
 - exact sparse-memory local reads;
 - compressed dense-context counter updates;
-- online candidate-cache updates;
+- online candidate-cache updates and admission-gate reads;
 - Cellular-MoE sparse rule-bank local reads/writes;
 - on-chip state bytes;
 - Transformer KV-cache read volume as a reference.
@@ -227,7 +233,7 @@ The current deterministic profile uses:
 - 16k exact facts;
 - a synthetic mixed decode stream;
 - 4-bit dense sketch state;
-- 512-entry online candidate cache with 4-bit scores;
+- 512-entry online candidate cache with 4-bit scores and threshold-1 admission;
 - Cellular-MoE with 20% active cells, top-1 routing, and 4 rule ticks per event;
 - a tiny Transformer KV reference with 12 layers, 8 heads, 64 head dimension,
   and 16-bit KV cache.
@@ -235,7 +241,7 @@ The current deterministic profile uses:
 Current proxy result:
 
 ```text
-HARC-CA local bytes/event: about 51.39 KB
+HARC-CA local bytes/event: about 51.38 KB
 Transformer KV read/token: about 384 MB
 On-chip HARC-CA state: about 183.8 KB
 ```
@@ -272,7 +278,7 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the current 183.8KB HARC-CA state and 51.39KB local
+bytes/cycle/tile. With the current 183.8KB HARC-CA state and 51.38KB local
 bytes/event, a 32-tile configuration has:
 
 ```text
