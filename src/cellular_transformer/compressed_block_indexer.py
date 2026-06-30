@@ -308,6 +308,20 @@ class HcaLazyDecayResult:
     explicit_decay_cells_per_token: float
 
 
+@dataclass(frozen=True)
+class HcaLazyMetadataSweepResult:
+    """Sweep of lazy-decay epoch metadata widths and decay intervals."""
+
+    context_length: int
+    vocab_size: int
+    hot_tokens: int
+    global_width: int
+    bits: int
+    threshold: int
+    queries: int
+    points: Tuple[HcaLazyDecayResult, ...]
+
+
 class LowBitCompressedBlockIndex:
     """Per-block low-bit count-min summaries for candidate block routing."""
 
@@ -1036,6 +1050,7 @@ def run_hca_lazy_decay_trial(
         raise ValueError("decay_interval must be positive")
     if threshold <= 0:
         raise ValueError("threshold must be positive")
+    _validate_epoch_capacity(context_length, decay_interval, epoch_bits)
     config = CompressedBlockIndexConfig(context_length=context_length, queries=queries)
     stream = _make_zipf_topic_stream(config, seed=seed)
     query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
@@ -1104,8 +1119,70 @@ def run_hca_lazy_decay_trial(
     )
 
 
+def run_hca_lazy_metadata_sweep(
+    global_width: int = 2048,
+    candidates: Tuple[Tuple[int, int], ...] = (
+        (8, 256),
+        (8, 512),
+        (8, 1024),
+        (4, 4096),
+        (4, 8192),
+        (16, 256),
+    ),
+    threshold: int = 2,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> HcaLazyMetadataSweepResult:
+    """Compare lazy epoch metadata sizes that avoid per-counter epoch wrap."""
+
+    if len(candidates) == 0:
+        raise ValueError("candidates must not be empty")
+    points = []
+    for epoch_bits, decay_interval in candidates:
+        points.append(
+            run_hca_lazy_decay_trial(
+                global_width=global_width,
+                decay_interval=int(decay_interval),
+                threshold=threshold,
+                epoch_bits=int(epoch_bits),
+                context_length=context_length,
+                queries=queries,
+                seed=seed,
+            )
+        )
+
+    config = CompressedBlockIndexConfig(context_length=context_length, queries=queries)
+    return HcaLazyMetadataSweepResult(
+        context_length=config.context_length,
+        vocab_size=config.vocab_size,
+        hot_tokens=config.hot_tokens,
+        global_width=global_width,
+        bits=config.bits,
+        threshold=threshold,
+        queries=config.queries,
+        points=tuple(points),
+    )
+
+
 def _safe_divide(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
+
+
+def _validate_epoch_capacity(
+    context_length: int,
+    decay_interval: int,
+    epoch_bits: int,
+) -> None:
+    if context_length <= 0:
+        raise ValueError("context_length must be positive")
+    if decay_interval <= 0:
+        raise ValueError("decay_interval must be positive")
+    if epoch_bits not in (4, 8, 16):
+        raise ValueError("epoch_bits must be one of 4, 8, 16")
+    max_stored_epoch = (context_length - 1) // decay_interval
+    if max_stored_epoch >= (1 << epoch_bits):
+        raise ValueError("epoch_bits cannot represent stored per-counter epochs")
 
 
 def _make_zipf_topic_stream(

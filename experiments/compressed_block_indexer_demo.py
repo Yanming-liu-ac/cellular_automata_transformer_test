@@ -15,7 +15,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
     run_hca_decay_quality_sweep,
-    run_hca_lazy_decay_trial,
+    run_hca_lazy_metadata_sweep,
     run_hca_summary_quality_sweep,
 )
 from cellular_transformer.hardware import format_bytes
@@ -269,15 +269,13 @@ def main() -> None:
     print("- The next HCA state should make decay and threshold/scale trainable rather than fixed.")
     print()
 
-    lazy = run_hca_lazy_decay_trial(global_width=2048, decay_interval=256, threshold=2)
+    lazy = run_hca_lazy_metadata_sweep(global_width=2048, threshold=2)
     print("Lazy HCA decay with per-counter epoch metadata")
     headers = [
-        "width",
-        "state",
         "epoch",
-        "read",
-        "update",
         "decay",
+        "state",
+        "read",
         "saved",
         "top64",
         "top256",
@@ -286,25 +284,24 @@ def main() -> None:
     ]
     print(" | ".join(f"{header:>10}" for header in headers))
     print("-" * 132)
-    row = [
-        f"{lazy.global_width}",
-        format_bytes(lazy.state_bytes),
-        f"{lazy.epoch_bits}",
-        format_bytes(lazy.read_bytes_per_query),
-        f"{lazy.avg_update_cells_per_token:0.1f}",
-        f"{lazy.avg_decay_cells_per_token:0.1f}",
-        f"{lazy.explicit_decay_cells_per_token:0.1f}",
-        fmt_pct(lazy.top64_recall),
-        fmt_pct(lazy.top256_recall),
-        fmt_pct(lazy.query_route_accuracy),
-        fmt_pct(lazy.query_false_hca_rate),
-    ]
-    print(" | ".join(f"{cell:>10}" for cell in row))
+    for point in lazy.points:
+        row = [
+            f"{point.epoch_bits}",
+            f"{point.decay_interval}",
+            format_bytes(point.state_bytes),
+            format_bytes(point.read_bytes_per_query),
+            f"{point.explicit_decay_cells_per_token:0.1f}",
+            fmt_pct(point.top64_recall),
+            fmt_pct(point.top256_recall),
+            fmt_pct(point.query_route_accuracy),
+            fmt_pct(point.query_false_hca_rate),
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
 
     print()
     print("Lazy interpretation:")
-    print("- Lazy epoch decay preserves the explicit decayed target without global sweeps.")
-    print("- It trades 16-bit epoch metadata for removing synchronous decay-cell traffic.")
+    print("- 8-bit epochs are enough for 65k context at decay >= 256 in this trial.")
+    print("- 4-bit epochs require longer decay intervals and lose some dense-topic quality.")
     print("- This is closer to a chip-realistic HCA state than full-array periodic decay.")
 
 

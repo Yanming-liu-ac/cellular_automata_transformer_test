@@ -417,6 +417,17 @@ but increases state from 4KB to about 20KB and read traffic from 2B/query to
 10B/query. This is a cleaner HCA hardware tradeoff: local SRAM metadata versus
 global maintenance waves.
 
+The twenty-fourth sweep compressed that metadata. Eight-bit per-counter epochs
+are enough for the current 65k-token window at decay interval 256: state falls
+from 20KB to 12KB, read traffic falls from 10B/query to 6B/query, and top-64,
+top-256, and route accuracy remain 100%. The same 8-bit metadata also works at
+decay 512, while decay 1024 gives about 98.4% top-64 and 99.6% top-256 recall.
+Four-bit epochs reduce state to 8KB and reads to 4B/query, but require longer
+decay intervals and begin to damage dense-topic quality: at decay 4096 top-256
+recall falls to about 81.2%, and at decay 8192 top-64 recall falls to about
+84.4%. The current best hand setting is therefore 4-bit counters plus 8-bit lazy
+epoch metadata.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

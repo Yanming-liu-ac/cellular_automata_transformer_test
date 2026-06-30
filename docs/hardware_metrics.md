@@ -367,6 +367,22 @@ The metric exposes a chip design tradeoff: epoch metadata increases SRAM and
 read width, but removes global maintenance traffic and preserves the decayed
 HCA target exactly enough for the current benchmark.
 
+The first metadata-width sweep improves that tradeoff:
+
+```text
+epoch=8   decay=256   state=12KB  read=6B/query   top64=100.0%  top256=100.0%  route acc=100.0%
+epoch=8   decay=512   state=12KB  read=6B/query   top64=100.0%  top256=100.0%  route acc=100.0%
+epoch=8   decay=1024  state=12KB  read=6B/query   top64=98.4%   top256=99.6%   route acc=100.0%
+epoch=4   decay=4096  state=8KB   read=4B/query   top64=98.4%   top256=81.2%   route acc=99.8%
+epoch=4   decay=8192  state=8KB   read=4B/query   top64=84.4%   top256=93.8%   route acc=99.9%
+epoch=16  decay=256   state=20KB  read=10B/query  top64=100.0%  top256=100.0%  route acc=100.0%
+```
+
+The best current HCA summary point is 8-bit epoch metadata at decay 256 or 512:
+it keeps perfect measured quality while using 40% less state and read width than
+the 16-bit epoch baseline. Four-bit epochs are possible only with longer decay
+windows and show measurable dense-topic degradation.
+
 ## Output-Head Metrics
 
 For output scoring, track:

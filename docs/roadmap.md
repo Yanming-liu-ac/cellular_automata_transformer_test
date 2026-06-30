@@ -107,6 +107,11 @@ Compressed block-index result:
   of 4KB and reads about 10B/query instead of 2B/query, while preserving 100%
   top-64/top-256 decayed-topic recall and 100% route accuracy in the current
   trial.
+- The lazy epoch metadata can be reduced to 8 bits for this 65k-token window:
+  at decay interval 256, state is about 12KB, read width is about 6B/query, and
+  top-64/top-256 recall plus route accuracy remain 100%. Four-bit epoch metadata
+  reaches 8KB and 4B/query but loses dense-topic quality at the longer decay
+  intervals needed to avoid epoch wrap.
 
 Dual-path result:
 
@@ -208,6 +213,8 @@ Next retrieval work:
   event profile.
 - compress lazy-decay metadata, for example 8-bit epochs at longer intervals,
   per-tile shared epochs, or group scale/offset state.
+- promote 8-bit lazy epoch HCA summary to the default HCA baseline for the next
+  unified event-profile update.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

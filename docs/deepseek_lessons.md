@@ -422,6 +422,12 @@ without global sweeps by storing per-counter epoch metadata. The cost moves from
 periodic maintenance traffic into local SRAM and slightly wider reads. This is
 the CA-chip analog of treating FP4 scales and offsets as first-class state
 rather than post-hoc quantization.
+The metadata-width sweep improves the design point: 8-bit epochs keep the same
+measured quality as 16-bit epochs in the current 65k-token window while reducing
+state from about 20KB to 12KB. Four-bit epochs are smaller but start losing
+dense-topic quality because they require slower decay. This is the practical
+shape of low-bit design: counters, epochs, scales, and update schedule must be
+co-optimized.
 
 ## Revised HARC-CA Design Principle
 

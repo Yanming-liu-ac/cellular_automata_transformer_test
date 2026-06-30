@@ -288,6 +288,14 @@ token while preserving 100% top-64/top-256 decayed-topic recall and 100% route
 accuracy in the current deterministic trial. This is a plausible CA-chip
 tradeoff: spend local SRAM metadata to avoid global maintenance waves.
 
+The metadata can be compressed. An 8-bit epoch is enough for the current
+65k-token window at decay interval 256, reducing the lazy HCA state from 20KB to
+12KB and read traffic from 10B/query to 6B/query while preserving 100%
+top-64/top-256 decayed-topic recall and 100% route accuracy. A 4-bit epoch can
+cut the state to 8KB, but it requires longer decay intervals and starts losing
+dense-topic quality. The current best hand point is therefore 4-bit counters
+plus 8-bit lazy epoch metadata, not the earlier 16-bit metadata baseline.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software
