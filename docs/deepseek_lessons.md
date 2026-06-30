@@ -111,6 +111,12 @@ Hardware implication:
 - routing must be low-bit and bounded to a small physical neighborhood;
 - active cell fraction becomes as important as parameter count.
 
+The first HARC-CA Cellular-MoE prototype now tests this execution pattern. It
+routes only active cells to one low-bit local rule bank per tick and uses a
+DeepSeek-style bias control loop to reduce load imbalance without a loss term.
+The current rollout shows about 30x fewer rule updates than dense all-rule
+execution at 20% active cells.
+
 ### 3. Auxiliary-Loss-Free Balancing -> Bias-Controlled CA Routing
 
 DeepSeek avoids letting load-balancing loss dominate modeling quality by

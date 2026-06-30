@@ -1,6 +1,7 @@
 """Cellular Transformer research prototypes."""
 
 from .benchmarks import MemoryTaskResult, run_memory_task, sweep_memory_tasks
+from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
 from .dense_context import (
     DenseContextConfig,
     DenseContextResult,
@@ -28,6 +29,8 @@ from .retrieval import (
 from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, SyntheticLMResult, run_synthetic_lm_trial
 
 __all__ = [
+    "CellularMoE",
+    "CellularMoEConfig",
     "DualPathSyntheticLM",
     "HashRouteCAM",
     "HashRouteCAMConfig",
@@ -36,6 +39,8 @@ __all__ = [
     "InsertResult",
     "LookupResult",
     "LowBitDenseContext",
+    "MoERolloutResult",
+    "MoEStepStats",
     "MemoryTaskResult",
     "PropagationResult",
     "RecallTrialResult",

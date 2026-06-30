@@ -194,6 +194,15 @@ This is a useful bridge because it exposes the output-interface problem:
 - fuzzy topic tokens still need candidate generation/ranking;
 - a future trainable CA must learn when to use each path.
 
+The sixth sweep added a Cellular-MoE execution prototype. It addresses a
+different bottleneck: if every cell runs every rule every tick, CA loses its chip
+advantage. The prototype routes only active cells to one of six local low-bit
+rule banks and adjusts routing bias from observed load. In the current rollout,
+20% active cells and top-1 routing reduce rule-update count by about 30x versus
+dense all-rule execution. Bias control reduces load imbalance but does not fully
+solve it, which means learned routing or stronger hardware scheduling will still
+be needed.
+
 Current interpretation:
 
 ```text

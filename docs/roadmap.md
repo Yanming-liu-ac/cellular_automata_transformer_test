@@ -84,6 +84,15 @@ Synthetic next-token result:
 - The mixed stream touches about 27 local cells per event.
 - This is a bridge benchmark, not a language-model quality result.
 
+Cellular-MoE execution result:
+
+- A low-bit CA rule-bank prototype routes active cells to one of six local rules.
+- With 20% active cells and top-1 routing, sparse execution uses about 30x fewer
+  rule updates than dense all-cell/all-rule execution.
+- Bias-controlled routing reduces rule-load CV from about 1.23 to about 0.74 in
+  the current deterministic rollout.
+- This validates the execution shape, not trained model quality.
+
 Next retrieval work:
 
 - learned or content-aware routing instead of pure hashing;
@@ -115,6 +124,13 @@ First trainable target:
 ```text
 Learn the routing decision and candidate scoring currently hand-coded in the
 synthetic next-token benchmark.
+```
+
+Second trainable target:
+
+```text
+Replace hand-written Cellular-MoE rule banks with learned local rules while
+preserving sparse top-k routing and load-bias control.
 ```
 
 Success criterion:

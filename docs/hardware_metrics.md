@@ -131,3 +131,26 @@ For the dual-path next-token interface, track:
 The first benchmark intentionally uses a candidate shortlist instead of scanning
 the whole vocabulary. A CA-first chip should make candidate generation explicit;
 otherwise the output head can erase memory-system savings.
+
+## Cellular-MoE Metrics
+
+For sparse rule-bank execution, track:
+
+- active cell fraction;
+- selected rule banks per active cell;
+- sparse rule updates per tick;
+- dense-equivalent rule updates per tick;
+- update reduction ratio;
+- rule-load coefficient of variation;
+- routing-bias range;
+- saturation fraction;
+- checksum or task score after rollout.
+
+The first execution gate is:
+
+```text
+Sparse routed rule execution should reduce local rule updates by an order of
+magnitude without routing all traffic into one overloaded rule bank.
+```
+
+This is a chip metric, not a language quality metric.

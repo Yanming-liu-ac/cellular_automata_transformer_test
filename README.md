@@ -49,6 +49,7 @@ python experiments/overflow_benchmark_demo.py
 python experiments/dense_context_demo.py
 python experiments/dual_path_demo.py
 python experiments/synthetic_lm_demo.py
+python experiments/cellular_moe_demo.py
 python experiments/hardware_estimate_demo.py
 python experiments/lowbit_demo.py
 ```
@@ -62,5 +63,6 @@ The first experiments compare:
 - low-bit compressed dense-context sketching;
 - combined sparse-exact plus dense-compressed memory path;
 - synthetic next-token prediction over the dual memory path;
+- sparse low-bit Cellular-MoE rule-bank execution;
 - rough local-message traffic versus Transformer KV-cache traffic;
 - integer-only low-bit state rollout.

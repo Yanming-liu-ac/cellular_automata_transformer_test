@@ -112,6 +112,25 @@ The rule banks remain local and low-bit. The router must be bounded and
 load-balanced, with routing bias separated from content score so load control
 does not erase modeling quality.
 
+The first Cellular-MoE prototype uses six hand-written integer rule banks:
+
+- preserve;
+- decay;
+- diffuse;
+- sharpen;
+- copy from left;
+- copy from right.
+
+Only active cells route to one rule bank per tick. A bias-control loop adjusts
+rule scores from observed load, mirroring DeepSeek's auxiliary-loss-free load
+balancing idea at CA execution level. In the current deterministic rollout,
+updating 20% of cells with one selected rule gives about 30x fewer rule updates
+than executing all six rules on every cell. Bias control reduces rule-load
+coefficient of variation from about 1.23 to about 0.74.
+
+This is an execution-shape result, not a learned model result. The next step is
+to learn the router and rule banks while preserving the sparse low-bit schedule.
+
 ## Fast Information Propagation
 
 HARC-CA gets fast propagation from the hierarchy:
