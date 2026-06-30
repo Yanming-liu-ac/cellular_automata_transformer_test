@@ -17,6 +17,13 @@ from .dense_context import (
     run_dense_context_trial,
 )
 from .efficiency import EfficiencyComparison, HarcEventEfficiency, compare_to_transformer_kv
+from .admission_policy import (
+    LearnedAdmissionResult,
+    LowBitAdmissionLUT,
+    future_repeat_labels,
+    run_learned_admission_trial,
+    train_repeat_admission_lut,
+)
 from .output_head import (
     OutputHeadComparison,
     OutputHeadConfig,
@@ -60,7 +67,9 @@ __all__ = [
     "EfficiencyComparison",
     "InsertResult",
     "HarcEventEfficiency",
+    "LearnedAdmissionResult",
     "LookupResult",
+    "LowBitAdmissionLUT",
     "LowBitDenseContext",
     "LowBitCandidateCache",
     "MoERolloutResult",
@@ -84,11 +93,14 @@ __all__ = [
     "compare_to_transformer_kv",
     "compare_output_heads",
     "estimate_output_head",
+    "future_repeat_labels",
     "run_dense_context_trial",
     "run_candidate_cache_trial",
+    "run_learned_admission_trial",
     "run_memory_task",
     "run_recall_trial",
     "run_synthetic_lm_trial",
     "shortest_propagation_steps",
     "sweep_memory_tasks",
+    "train_repeat_admission_lut",
 ]

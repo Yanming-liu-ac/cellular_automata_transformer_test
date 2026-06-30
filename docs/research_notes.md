@@ -252,9 +252,21 @@ synthetic LM, gated online candidates reach about 67.1% topic@64, admit about
 cache-write cost falls to about 4.0 cells/event, with about 2.7 dense gate
 reads/event.
 
+The next step replaced the hand-set threshold with a learned low-bit LUT. The
+training label is self-supervised: whether the token repeats within a future
+horizon of 256 events. The deployed LUT only reads the dense-sketch estimate and
+does not inspect token identity or future labels. In the current deterministic
+trial it learns `(-8, 7, ..., 7)`, an 8-byte policy equivalent to threshold-1.
+It reaches about 70.8% standalone top-64 hit rate and about 67.1% synthetic-LM
+topic@64, with zero full-vocabulary scans.
+
+This is a small but important transition: candidate admission is now a trained
+low-bit rule in the prototype, not only a hand-selected constant. It still does
+not prove real language-model routing quality.
+
 This is an important correction to the research accounting: candidate
-generation is no longer assumed to be free. It is still not learned and not
-sufficient for real LLM quality.
+generation is no longer assumed to be free. The first learned version is only a
+tiny LUT and is not sufficient for real LLM quality.
 
 Current interpretation:
 

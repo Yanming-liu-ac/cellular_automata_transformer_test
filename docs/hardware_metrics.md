@@ -149,6 +149,9 @@ For online candidate shortlists, track:
 - cache update hit rate;
 - replacements;
 - admission threshold;
+- learned admission LUT bytes;
+- admission training label;
+- admission precision and recall;
 - admission rate;
 - gate read cells;
 - resident token count;
@@ -164,6 +167,18 @@ rate and about 67% mixed synthetic topic@64. In the mixed benchmark, the gated
 path admits about 61% of topic observations, reaches about 98% cache-update hit
 rate, and costs about 4.0 candidate-cache cells/event plus about 2.7 dense gate
 reads/event.
+
+The first learned admission policy trains a 16-entry signed 4-bit LUT from a
+self-supervised future-repeat label. The trained LUT uses 8 bytes and recovers
+the threshold-1 behavior on the current deterministic stream:
+
+```text
+scores: (-8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7)
+standalone top-64 hit: about 70.8%
+admission precision / recall against repeat label: about 91% / 92%
+synthetic-LM topic@64: about 67.1%
+full-vocabulary scans: 0
+```
 
 ## Output-Head Metrics
 

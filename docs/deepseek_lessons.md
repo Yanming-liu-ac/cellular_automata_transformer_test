@@ -352,6 +352,10 @@ The follow-up admission gate reuses the compressed dense-context sketch to
 reject low-evidence noise tokens before they write into the candidate cache.
 This mirrors the CSA/HCA systems lesson more closely: a cheap recurrent/index
 path narrows the work before the more expensive candidate scoring path runs.
+The first learned version trains an 8-byte signed 4-bit LUT from future-repeat
+labels and recovers the same behavior as the hand-set threshold gate. That is
+the first concrete step from manual indexing policy toward learned low-bit CA
+routing.
 
 ## Revised HARC-CA Design Principle
 

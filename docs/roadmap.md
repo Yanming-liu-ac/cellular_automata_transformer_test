@@ -97,6 +97,10 @@ Online candidate-cache result:
 - The gated path adds about 1.31KB of cache state, admits about 60.5% of topic
   observations, touches about 4.0 candidate-cache cells/event, and reads about
   2.7 dense gate cells/event.
+- A self-supervised learned admission LUT now recovers the same gate from a
+  future-repeat label. The LUT has 16 signed 4-bit entries, uses 8 bytes, reaches
+  about 70.8% standalone top-64 hit rate, and keeps synthetic-LM topic@64 at
+  about 67.1%.
 
 Cellular-MoE execution result:
 
@@ -171,6 +175,10 @@ synthetic next-token benchmark.
 
 This target now includes learning a candidate output policy that avoids
 full-vocabulary scoring for most events.
+
+The first NumPy version of this target is the learned admission LUT. It is not a
+neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
+trainable low-bit rule.
 
 Second trainable target:
 

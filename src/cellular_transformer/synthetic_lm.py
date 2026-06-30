@@ -37,6 +37,7 @@ class SyntheticLMConfig:
     candidate_cache_decay_interval: int = 256
     candidate_cache_decay_shift: int = 1
     candidate_admission_threshold: int = 0
+    candidate_admission_lut: Tuple[int, ...] | None = None
     fact_count: int = 16384
     topic_events: int = 8192
     query_events: int = 4096
@@ -74,6 +75,8 @@ class SyntheticLMConfig:
                 raise ValueError("candidate_cache_routes must be positive")
             if self.candidate_admission_threshold < 0:
                 raise ValueError("candidate_admission_threshold must be non-negative")
+            if self.candidate_admission_lut is not None and len(self.candidate_admission_lut) == 0:
+                raise ValueError("candidate_admission_lut must not be empty")
         if self.fact_count <= 0:
             raise ValueError("fact_count must be positive")
         if self.topic_events <= 0:
@@ -95,6 +98,7 @@ class SyntheticLMResult:
     topic_top_k: int
     candidate_pool_size: int
     candidate_strategy: str
+    candidate_admission_mode: str
     induction_accuracy: float
     topic_topk_hit_rate: float
     exact_avg_visited_cells: float
@@ -284,14 +288,18 @@ class DualPathSyntheticLM:
                 token = sample_topic_token(self.config, self.rng)
                 topic_hits += int(token in self.predict_topic_topk())
                 admit_candidate = True
-                if (
-                    self.candidate_cache is not None
-                    and self.config.candidate_admission_threshold > 0
-                ):
+                needs_admission_gate = self.candidate_cache is not None and (
+                    self.config.candidate_admission_lut is not None
+                    or self.config.candidate_admission_threshold > 0
+                )
+                if needs_admission_gate:
                     candidate_gate_touched += self.config.dense_banks
-                    admit_candidate = (
-                        self.dense.estimate(token) >= self.config.candidate_admission_threshold
-                    )
+                    estimate = self.dense.estimate(token)
+                    if self.config.candidate_admission_lut is not None:
+                        index = min(estimate, len(self.config.candidate_admission_lut) - 1)
+                        admit_candidate = self.config.candidate_admission_lut[index] >= 0
+                    else:
+                        admit_candidate = estimate >= self.config.candidate_admission_threshold
                 dense_touched += self.dense.update(token)
                 if self.candidate_cache is not None:
                     if admit_candidate:
@@ -337,6 +345,7 @@ class DualPathSyntheticLM:
             topic_top_k=self.config.topic_top_k,
             candidate_pool_size=self.config.candidate_pool_size,
             candidate_strategy=self.config.candidate_strategy,
+            candidate_admission_mode=self._candidate_admission_mode(),
             induction_accuracy=correct_queries / self.config.query_events,
             topic_topk_hit_rate=topic_hits / self.config.topic_events,
             exact_avg_visited_cells=exact_visited / self.config.query_events,
@@ -358,6 +367,15 @@ class DualPathSyntheticLM:
             candidate_memory_bytes=candidate_memory,
             total_memory_bytes=exact_memory + dense_memory + candidate_memory,
         )
+
+    def _candidate_admission_mode(self) -> str:
+        if self.config.candidate_strategy != "online_cache":
+            return "none"
+        if self.config.candidate_admission_lut is not None:
+            return "learned_lut"
+        if self.config.candidate_admission_threshold > 0:
+            return f"threshold_{self.config.candidate_admission_threshold}"
+        return "always"
 
 
 def run_synthetic_lm_trial(seed: int = 0, config: SyntheticLMConfig | None = None) -> SyntheticLMResult:

@@ -49,6 +49,7 @@ python experiments/overflow_benchmark_demo.py
 python experiments/dense_context_demo.py
 python experiments/dual_path_demo.py
 python experiments/candidate_cache_demo.py
+python experiments/learned_admission_demo.py
 python experiments/synthetic_lm_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
@@ -68,6 +69,7 @@ The first experiments compare:
 - combined sparse-exact plus dense-compressed memory path;
 - online low-bit candidate-cache generation with admission gating and no
   full-vocabulary scans;
+- learned low-bit candidate admission from self-supervised repeat labels;
 - synthetic next-token prediction over the dual memory path;
 - sparse low-bit Cellular-MoE rule-bank execution;
 - unified HARC-CA local-traffic proxy versus Transformer KV-cache read volume;

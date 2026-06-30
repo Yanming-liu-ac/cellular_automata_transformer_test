@@ -391,9 +391,20 @@ admits about 61% of topic observations, raises cache-update hit rate to about
 2.7 dense gate reads/event. This is a better chip shape: fewer noisy writes,
 fewer replacements, and no full-vocabulary scan.
 
-This is still not a learned output policy. Its value is that candidate
-generation now has a hardware-shaped cost model instead of being treated as
-free.
+The first learned admission policy replaces the hand-set threshold with a
+16-entry signed 4-bit LUT indexed by the dense-sketch estimate. It is trained
+from a self-supervised repeat label: admit a token when it is likely to reappear
+within a future horizon. In the current deterministic trial, the learned LUT is:
+
+```text
+(-8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7)
+```
+
+It uses 8 bytes of state and recovers the same behavior as the threshold-1 gate:
+about 70.8% standalone top-64 hit rate and about 67.1% synthetic-LM topic@64.
+This is not yet a full language-model router, but it shows the candidate policy
+can be represented as a tiny trainable low-bit rule instead of a hand-written
+constant.
 
 ## Event-Level Efficiency Profile
 
