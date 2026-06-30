@@ -299,6 +299,14 @@ false-HCA routes and recovers 100% coverage, at the cost of one small directory
 probe per query. The cheaper default remains `threshold=15` without the guard;
 the guard is the higher-recall mode for exact-sensitive workloads.
 
+The final hand-policy diagnostic separates stored fanout from read fanout. A
+directory can store up to six block ids for a repeated rare name but read only
+two when the token metadata says it is compact. This saves reads, but if applied
+blindly to repeated names it drops coverage to about 68%. Reading all six
+recovers about 99-100% coverage. So the real policy should not be a fixed
+`dir_k`: it should choose HCA threshold, guard, and directory read fanout from
+small per-token metadata.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

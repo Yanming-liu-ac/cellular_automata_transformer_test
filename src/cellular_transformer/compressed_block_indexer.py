@@ -305,6 +305,7 @@ class CsaHcaRareDirectoryStressPoint:
     scenario: str
     directory_guard: bool
     directory_blocks_per_token: int
+    directory_read_blocks_per_token: int
     stress_token_count: int
     directory_entries: int
     directory_state_bytes: float
@@ -347,6 +348,39 @@ class CsaHcaRareDirectoryStressResult:
     global_summary_state_bytes: float
     global_summary_read_bytes_per_query: float
     points: Tuple[CsaHcaRareDirectoryStressPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryPolicyPoint:
+    """One admission/fanout policy on a rare-directory stress scenario."""
+
+    policy: str
+    scenario: str
+    hca_threshold: int
+    directory_guard: bool
+    directory_blocks_per_token: int
+    directory_read_blocks_per_token: int
+    directory_state_bytes: float
+    rare_false_hca_rate: float
+    repaired_relevant_hit_rate: float
+    repaired_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryPolicyResult:
+    """Policy comparison for rare-directory admission and fanout."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    queries: int
+    points: Tuple[CsaHcaRareDirectoryPolicyPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -1275,6 +1309,7 @@ def run_csa_hca_rare_directory_stress_sweep(
         "collision_noise",
     ),
     directory_blocks: Tuple[int, ...] = (0, 2, 4, 6),
+    directory_read_blocks: Tuple[int, ...] | None = None,
     block_size: int = 128,
     summary_width: int = 128,
     csa_blocks: int = 4,
@@ -1294,6 +1329,8 @@ def run_csa_hca_rare_directory_stress_sweep(
         raise ValueError("directory_blocks must not be empty")
     if any(int(blocks) < 0 for blocks in directory_blocks):
         raise ValueError("directory block counts must be non-negative")
+    if directory_read_blocks is not None and len(directory_read_blocks) != len(directory_blocks):
+        raise ValueError("directory_read_blocks must match directory_blocks length")
     if hca_threshold <= 0:
         raise ValueError("hca_threshold must be positive")
 
@@ -1329,7 +1366,15 @@ def run_csa_hca_rare_directory_stress_sweep(
 
         exact_counts = _build_exact_block_counts(stream, config.block_size)
         recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
-        for directory_blocks_per_token in tuple(sorted({int(blocks) for blocks in directory_blocks})):
+        directory_pairs = []
+        if directory_read_blocks is None:
+            directory_pairs = [(int(blocks), None) for blocks in directory_blocks]
+        else:
+            directory_pairs = [
+                (int(blocks), int(read_blocks))
+                for blocks, read_blocks in zip(directory_blocks, directory_read_blocks)
+            ]
+        for directory_blocks_per_token, directory_read_blocks_per_token in sorted(set(directory_pairs)):
             directory = _build_rare_block_directory(
                 exact_counts=exact_counts,
                 hca_threshold=hca_threshold,
@@ -1351,6 +1396,7 @@ def run_csa_hca_rare_directory_stress_sweep(
                     directory_state_bytes=directory_state_bytes,
                     hca_threshold=hca_threshold,
                     directory_guard=directory_guard,
+                    directory_read_blocks_per_token=directory_read_blocks_per_token,
                     recent_blocks=recent_blocks,
                     query_tokens=query_tokens,
                     stress_token_count=stress_token_count,
@@ -1380,6 +1426,81 @@ def run_csa_hca_rare_directory_stress_sweep(
         ).summary_state_bytes,
         global_summary_state_bytes=global_config.state_bytes,
         global_summary_read_bytes_per_query=config.banks * config.bits / 8,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_policy_sweep(
+    scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    policies: Tuple[Tuple[str, int, bool, int, int], ...] = (
+        ("cheap_t15_read6", 15, False, 6, 6),
+        ("guard_t8_read6", 8, True, 6, 6),
+        ("guard_t8_read2", 8, True, 6, 2),
+        ("cheap_t15_read2", 15, False, 6, 2),
+    ),
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    seed: int = 37,
+) -> CsaHcaRareDirectoryPolicyResult:
+    """Compare hand policy points for rare-directory admission and fanout."""
+
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+    points = []
+    for policy, threshold, guard, stored_blocks, read_blocks in policies:
+        result = run_csa_hca_rare_directory_stress_sweep(
+            scenarios=scenarios,
+            directory_blocks=(int(stored_blocks),),
+            directory_read_blocks=(int(read_blocks),),
+            block_size=block_size,
+            summary_width=summary_width,
+            csa_blocks=csa_blocks,
+            global_width=global_width,
+            hca_threshold=int(threshold),
+            directory_guard=bool(guard),
+            tail_blocks=tail_blocks,
+            context_length=context_length,
+            queries=queries,
+            seed=seed,
+        )
+        for point in result.points:
+            points.append(
+                CsaHcaRareDirectoryPolicyPoint(
+                    policy=policy,
+                    scenario=point.scenario,
+                    hca_threshold=int(threshold),
+                    directory_guard=bool(guard),
+                    directory_blocks_per_token=point.directory_blocks_per_token,
+                    directory_read_blocks_per_token=point.directory_read_blocks_per_token,
+                    directory_state_bytes=point.directory_state_bytes,
+                    rare_false_hca_rate=point.rare_false_hca_rate,
+                    repaired_relevant_hit_rate=point.repaired_relevant_hit_rate,
+                    repaired_relevant_coverage=point.repaired_relevant_coverage,
+                    directory_read_bytes_per_query=point.directory_read_bytes_per_query,
+                    token_reads_per_query=point.token_reads_per_query,
+                    token_read_reduction=point.token_read_reduction,
+                )
+            )
+
+    return CsaHcaRareDirectoryPolicyResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        queries=queries,
         points=tuple(points),
     )
 
@@ -1808,6 +1929,7 @@ def _evaluate_rare_directory_stress_point(
     directory_state_bytes: float,
     hca_threshold: int,
     directory_guard: bool,
+    directory_read_blocks_per_token: int | None,
     recent_blocks: np.ndarray,
     query_tokens: np.ndarray,
     stress_token_count: int,
@@ -1830,6 +1952,12 @@ def _evaluate_rare_directory_stress_point(
     repaired_csa_coverage = 0.0
     token_reads = 0.0
     directory_read_bytes = 0.0
+    read_limit = (
+        directory_blocks_per_token
+        if directory_read_blocks_per_token is None
+        else max(0, int(directory_read_blocks_per_token))
+    )
+    read_limit = min(directory_blocks_per_token, read_limit)
 
     for token in query_tokens:
         token = int(token)
@@ -1852,13 +1980,20 @@ def _evaluate_rare_directory_stress_point(
         else:
             scores = index.estimate_blocks(token)
             base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
-            selected = np.union1d(base_selected, directory_blocks)
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
             csa_queries += 1
-            if directory_blocks_per_token > 0:
+            if directory_blocks_per_token > 0 and (directory_guard or read_limit > 0):
                 if directory_guard:
-                    directory_read_bytes += directory_entry_bytes * max(0, len(directory_blocks) - 1)
+                    directory_read_bytes += directory_entry_bytes * max(
+                        0,
+                        len(readable_directory_blocks) - 1,
+                    )
                 else:
-                    directory_read_bytes += directory_entry_bytes * max(1, len(directory_blocks))
+                    directory_read_bytes += directory_entry_bytes * max(
+                        1,
+                        len(readable_directory_blocks),
+                    )
             if len(directory_blocks) > 0:
                 directory_queries += 1
 
@@ -1895,6 +2030,7 @@ def _evaluate_rare_directory_stress_point(
         scenario=scenario,
         directory_guard=directory_guard,
         directory_blocks_per_token=directory_blocks_per_token,
+        directory_read_blocks_per_token=read_limit,
         stress_token_count=stress_token_count,
         directory_entries=sum(len(blocks) for blocks in directory.values()),
         directory_state_bytes=directory_state_bytes,

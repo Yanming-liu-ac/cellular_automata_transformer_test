@@ -381,6 +381,20 @@ On the reference stream, `t8_guard` adds about one 3.25B directory probe per
 query without changing token reads. This is small in the average profile but
 should be a policy mode, not always-on hidden behavior.
 
+Separating stored fanout from read fanout gives the first explicit policy table:
+
+```text
+cheap_t15_read6   reference      false-HCA=0.0%  coverage=2.5%    dir read=0.5B/query   reduction=195.6x
+cheap_t15_read6   repeated_name  false-HCA=0.8%  coverage=99.2%   dir read=19.4B/query  reduction=52.2x
+guard_t8_read6    repeated_name  false-HCA=0.0%  coverage=100.0%  dir read=19.5B/query  reduction=51.9x
+guard_t8_read2    repeated_name  false-HCA=0.0%  coverage=68.0%   dir read=6.5B/query   reduction=64.4x
+cheap_t15_read2   repeated_name  false-HCA=0.8%  coverage=67.4%   dir read=6.5B/query   reduction=64.8x
+```
+
+The directory should therefore store enough block ids for repeated rare names,
+but read fanout should be chosen from metadata. A learned policy can spend
+`read6` only when the rare token is spread across many blocks.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

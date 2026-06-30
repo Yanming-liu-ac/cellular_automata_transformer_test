@@ -439,6 +439,11 @@ passive. The exact rare directory can override HCA admission when a token is
 known to be rare and exact-sensitive. That costs a tiny directory probe, but it
 turns the exact lane into a control signal for the memory hierarchy, not just a
 fallback store.
+The fanout policy sweep adds the next systems detail: storing enough rare block
+ids is not the same as reading them every time. Metadata should control fanout
+so compact rare tokens stay cheap and spread-out repeated names spend more
+local reads. This is the same style of design discipline as CSA/HCA/FP4 systems
+work: the metadata is part of the model architecture.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

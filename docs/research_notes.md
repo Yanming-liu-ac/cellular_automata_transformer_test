@@ -496,6 +496,17 @@ gets about 99.2% repeated-name coverage with less average directory traffic, but
 the guard is a useful exact-recall mode for names, code symbols, or other
 sensitive rare tokens.
 
+The thirtieth sweep separated directory storage fanout from directory read
+fanout. Keeping six stored block ids is cheap in SRAM because most rare tokens
+do not use all six slots. The question is how many to read per query. On
+repeated-name stress, storing six but reading only two drops coverage to about
+68%, whether the gate is threshold-15 no-guard or threshold-8 guard. Reading all
+six recovers about 99.2% coverage for the cheap threshold-15 policy and 100%
+coverage for the guarded threshold-8 policy. This says the architecture needs a
+small learned or metadata-driven fanout predictor: compact rare tokens should
+read one or two block ids, while repeated names and code symbols spread across
+many blocks should read more.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

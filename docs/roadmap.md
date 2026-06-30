@@ -112,6 +112,10 @@ Compressed block-index result:
   threshold 8 without the guard gives 75% false-HCA and 25% coverage; threshold
   8 with the guard gives 0% false-HCA and 100% coverage, at the cost of an extra
   directory probe.
+- Separating stored fanout from read fanout shows that storing 6 rare block ids
+  is not enough by itself. Reading only 2 saves traffic but leaves repeated-name
+  coverage around 68%; reading 6 recovers about 99-100% coverage. Fanout needs a
+  metadata-driven or learned predictor.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -249,6 +253,8 @@ Next retrieval work:
 - replace the hand-set threshold-15 HCA gate, fixed `dir_k=6` directory fanout,
   and always-off guard with learned or metadata-driven admission/fanout/guard
   policies, then re-run the bursty rare-token and repeated-name stress tests.
+- add per-token spread metadata or a small learned LUT that predicts directory
+  read fanout from rare-token block count, recency, and query context.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
+    run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
     run_compressed_block_budget_sweep,
@@ -369,6 +370,46 @@ def main() -> None:
     print("- directory_guard makes the exact rare directory an admission override before HCA.")
     print("- t8_guard removes rare false-HCA routes but adds one directory probe per query.")
     print("- t15_no_guard is cheaper on average; t8_guard is the more conservative exact-recall mode.")
+    print()
+
+    policy = run_csa_hca_rare_directory_policy_sweep()
+    print("Rare-directory admission/fanout policy sweep")
+    headers = [
+        "policy",
+        "scenario",
+        "thr",
+        "guard",
+        "stored",
+        "read",
+        "false_hca",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 154)
+    for point in policy.points:
+        if point.scenario not in ("zipf_reference", "repeated_name"):
+            continue
+        row = [
+            point.policy,
+            point.scenario,
+            f"{point.hca_threshold}",
+            "yes" if point.directory_guard else "no",
+            f"{point.directory_blocks_per_token}",
+            f"{point.directory_read_blocks_per_token}",
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Policy interpretation:")
+    print("- Storing 6 directory blocks but reading only 2 saves reads and loses repeated-name coverage.")
+    print("- Metadata-driven fanout should read more blocks only for spread-out rare tokens.")
+    print("- The next trainable policy should choose threshold, guard, and fanout per token.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)
