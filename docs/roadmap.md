@@ -102,6 +102,11 @@ Compressed block-index result:
   is adjusted to 2. Decay every 256 tokens costs about 32 decay-cell touches per
   token if counted synchronously, so the next step is not just quality but
   maintenance scheduling or scale metadata.
+- Lazy epoch decay removes that synchronous maintenance traffic. A 4-bit
+  `width=2048` summary with 16-bit per-counter epochs uses about 20KB instead
+  of 4KB and reads about 10B/query instead of 2B/query, while preserving 100%
+  top-64/top-256 decayed-topic recall and 100% route accuracy in the current
+  trial.
 
 Dual-path result:
 
@@ -201,6 +206,8 @@ Next retrieval work:
 - replace hand-set HCA decay/threshold with learned or metadata-driven
   scale/decay control and account for maintenance traffic in the unified
   event profile.
+- compress lazy-decay metadata, for example 8-bit epochs at longer intervals,
+  per-tile shared epochs, or group scale/offset state.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

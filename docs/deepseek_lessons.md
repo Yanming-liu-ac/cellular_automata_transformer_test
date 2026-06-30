@@ -417,6 +417,11 @@ state dynamics keep it out of saturation. A 4KB decayed global summary recovers
 100% top-64/top-256 decayed-topic recall in the current stream. The hardware
 lesson is that decay or scale metadata is part of the model, not an
 implementation detail; otherwise maintenance traffic can erase the gain.
+Lazy epoch decay makes that lesson concrete. It preserves the decayed HCA target
+without global sweeps by storing per-counter epoch metadata. The cost moves from
+periodic maintenance traffic into local SRAM and slightly wider reads. This is
+the CA-chip analog of treating FP4 scales and offsets as first-class state
+rather than post-hoc quantization.
 
 ## Revised HARC-CA Design Principle
 

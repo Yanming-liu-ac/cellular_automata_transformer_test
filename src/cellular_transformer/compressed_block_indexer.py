@@ -279,6 +279,35 @@ class HcaDecayQualityResult:
     points: Tuple[HcaDecayQualityPoint, ...]
 
 
+@dataclass(frozen=True)
+class HcaLazyDecayResult:
+    """Quality/cost for lazy epoch-based HCA decay."""
+
+    context_length: int
+    vocab_size: int
+    hot_tokens: int
+    global_width: int
+    bits: int
+    epoch_bits: int
+    decay_interval: int
+    threshold: int
+    queries: int
+    state_bytes: float
+    read_bytes_per_query: float
+    avg_update_cells_per_token: float
+    avg_decay_cells_per_token: float
+    saturation_rate: float
+    clipped_mean_abs_error: float
+    top64_recall: float
+    top256_recall: float
+    threshold_precision: float
+    threshold_recall: float
+    query_route_accuracy: float
+    query_false_hca_rate: float
+    query_missed_hca_rate: float
+    explicit_decay_cells_per_token: float
+
+
 class LowBitCompressedBlockIndex:
     """Per-block low-bit count-min summaries for candidate block routing."""
 
@@ -326,6 +355,113 @@ class LowBitCompressedBlockIndex:
     @property
     def state_bytes(self) -> float:
         return self.config.summary_state_bytes
+
+
+class LazyDecayedDenseSummary:
+    """Count-min dense summary with per-counter lazy epoch decay."""
+
+    def __init__(
+        self,
+        vocab_size: int,
+        banks: int,
+        width: int,
+        bits: int,
+        decay_interval: int,
+        decay_shift: int = 1,
+        epoch_bits: int = 16,
+    ) -> None:
+        if vocab_size <= 0:
+            raise ValueError("vocab_size must be positive")
+        if banks <= 0:
+            raise ValueError("banks must be positive")
+        if width <= 0:
+            raise ValueError("width must be positive")
+        if bits not in (2, 4, 8):
+            raise ValueError("bits must be one of 2, 4, 8")
+        if decay_interval <= 0:
+            raise ValueError("decay_interval must be positive")
+        if decay_shift <= 0:
+            raise ValueError("decay_shift must be positive")
+        if epoch_bits not in (4, 8, 16):
+            raise ValueError("epoch_bits must be one of 4, 8, 16")
+        self.vocab_size = vocab_size
+        self.banks = banks
+        self.width = width
+        self.bits = bits
+        self.decay_interval = decay_interval
+        self.decay_shift = decay_shift
+        self.epoch_bits = epoch_bits
+        self.max_value = (1 << bits) - 1
+        self.counters = np.zeros((banks, width), dtype=np.uint8)
+        self.epochs = np.zeros((banks, width), dtype=np.uint16)
+        self.steps = 0
+        self.touched_update_cells = 0
+
+    @property
+    def current_epoch(self) -> int:
+        return self.steps // self.decay_interval
+
+    @property
+    def state_bytes(self) -> float:
+        return self.banks * self.width * (self.bits + self.epoch_bits) / 8
+
+    @property
+    def read_bytes_per_query(self) -> float:
+        return self.banks * (self.bits + self.epoch_bits) / 8
+
+    def _slots(self, token: int) -> list[int]:
+        return [
+            keyed_hash(int(token), 1000 + bank) % self.width
+            for bank in range(self.banks)
+        ]
+
+    def _decay_delta(self, stored_epoch: int, current_epoch: int) -> int:
+        return max(0, current_epoch - int(stored_epoch))
+
+    def _effective_value(self, bank: int, slot: int, current_epoch: int) -> int:
+        value = int(self.counters[bank, slot])
+        delta = self._decay_delta(int(self.epochs[bank, slot]), current_epoch)
+        shift = delta * self.decay_shift
+        if shift >= self.bits:
+            return 0
+        return value >> shift
+
+    def update(self, token: int) -> int:
+        if not 0 <= int(token) < self.vocab_size:
+            raise ValueError("token outside vocab")
+        current_epoch = self.current_epoch
+        for bank, slot in enumerate(self._slots(token)):
+            value = self._effective_value(bank, slot, current_epoch)
+            if value < self.max_value:
+                value += 1
+            self.counters[bank, slot] = value
+            self.epochs[bank, slot] = current_epoch
+        self.steps += 1
+        self.touched_update_cells += self.banks
+        return self.banks
+
+    def estimate(self, token: int) -> int:
+        if not 0 <= int(token) < self.vocab_size:
+            raise ValueError("token outside vocab")
+        current_epoch = self.current_epoch
+        return min(
+            self._effective_value(bank, slot, current_epoch)
+            for bank, slot in enumerate(self._slots(token))
+        )
+
+    def estimate_all(self) -> np.ndarray:
+        estimates = np.zeros(self.vocab_size, dtype=np.uint16)
+        for token in range(self.vocab_size):
+            estimates[token] = self.estimate(token)
+        return estimates
+
+    def effective_counters(self) -> np.ndarray:
+        current_epoch = self.current_epoch
+        effective = np.zeros_like(self.counters, dtype=np.uint8)
+        for bank in range(self.banks):
+            for slot in range(self.width):
+                effective[bank, slot] = self._effective_value(bank, slot, current_epoch)
+        return effective
 
 
 def run_compressed_block_index_trial(
@@ -880,6 +1016,91 @@ def run_hca_decay_quality_sweep(
         threshold=threshold,
         queries=config.queries,
         points=tuple(points),
+    )
+
+
+def run_hca_lazy_decay_trial(
+    global_width: int = 2048,
+    decay_interval: int = 256,
+    threshold: int = 2,
+    epoch_bits: int = 16,
+    context_length: int = 65536,
+    queries: int = 4096,
+    seed: int = 37,
+) -> HcaLazyDecayResult:
+    """Evaluate per-counter epoch metadata as low-maintenance HCA decay."""
+
+    if global_width <= 0:
+        raise ValueError("global_width must be positive")
+    if decay_interval <= 0:
+        raise ValueError("decay_interval must be positive")
+    if threshold <= 0:
+        raise ValueError("threshold must be positive")
+    config = CompressedBlockIndexConfig(context_length=context_length, queries=queries)
+    stream = _make_zipf_topic_stream(config, seed=seed)
+    query_tokens = _make_zipf_topic_stream(config, seed=seed + 1, length=config.queries)
+    summary = LazyDecayedDenseSummary(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=decay_interval,
+        epoch_bits=epoch_bits,
+    )
+    touched = 0
+    for token in stream:
+        touched += summary.update(int(token))
+
+    explicit_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=decay_interval,
+    )
+    exact = exact_decayed_counts(stream, explicit_config).astype(np.int32)
+    estimates = summary.estimate_all().astype(np.int32)
+    exact_frequent = exact >= threshold
+    estimated_frequent = estimates >= threshold
+    exact_query_hca = exact_frequent[query_tokens]
+    query_estimated_hca = estimated_frequent[query_tokens]
+
+    true_positive = int(np.count_nonzero(exact_frequent & estimated_frequent))
+    predicted_positive = int(np.count_nonzero(estimated_frequent))
+    actual_positive = int(np.count_nonzero(exact_frequent))
+    query_correct = int(np.count_nonzero(query_estimated_hca == exact_query_hca))
+    query_false_hca = int(np.count_nonzero(query_estimated_hca & ~exact_query_hca))
+    query_missed_hca = int(np.count_nonzero(~query_estimated_hca & exact_query_hca))
+    query_actual_cold = int(np.count_nonzero(~exact_query_hca))
+    query_actual_hot = int(np.count_nonzero(exact_query_hca))
+    decay_events = config.context_length // decay_interval
+    explicit_decay_cells = decay_events * config.banks * global_width
+    effective = summary.effective_counters()
+
+    return HcaLazyDecayResult(
+        context_length=config.context_length,
+        vocab_size=config.vocab_size,
+        hot_tokens=config.hot_tokens,
+        global_width=global_width,
+        bits=config.bits,
+        epoch_bits=epoch_bits,
+        decay_interval=decay_interval,
+        threshold=threshold,
+        queries=config.queries,
+        state_bytes=summary.state_bytes,
+        read_bytes_per_query=summary.read_bytes_per_query,
+        avg_update_cells_per_token=touched / config.context_length,
+        avg_decay_cells_per_token=0.0,
+        saturation_rate=float(np.count_nonzero(effective == summary.max_value) / effective.size),
+        clipped_mean_abs_error=float(np.mean(np.abs(estimates - exact))),
+        top64_recall=_topk_recall(estimates, exact, 64),
+        top256_recall=_topk_recall(estimates, exact, 256),
+        threshold_precision=_safe_divide(true_positive, predicted_positive),
+        threshold_recall=_safe_divide(true_positive, actual_positive),
+        query_route_accuracy=query_correct / config.queries,
+        query_false_hca_rate=_safe_divide(query_false_hca, query_actual_cold),
+        query_missed_hca_rate=_safe_divide(query_missed_hca, query_actual_hot),
+        explicit_decay_cells_per_token=explicit_decay_cells / config.context_length,
     )
 
 

@@ -279,6 +279,15 @@ looks like the right HCA direction: low-bit recurrent state should be decayed or
 scaled, but the decay interval and routing threshold should become learned or
 metadata-driven rather than hand fixed.
 
+The next implementation removes the synchronous sweep. A lazy-decay HCA summary
+stores a small epoch next to each low-bit counter and applies the right shift
+only when that counter is read or updated. On the same 4KB-counter, 256-token
+decay setting, 16-bit epoch metadata raises summary state to about 20KB and read
+traffic to about 10B/query. In exchange it removes the 32 decay-cell touches per
+token while preserving 100% top-64/top-256 decayed-topic recall and 100% route
+accuracy in the current deterministic trial. This is a plausible CA-chip
+tradeoff: spend local SRAM metadata to avoid global maintenance waves.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software

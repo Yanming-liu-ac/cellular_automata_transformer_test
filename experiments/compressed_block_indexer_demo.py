@@ -15,6 +15,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
     run_hca_decay_quality_sweep,
+    run_hca_lazy_decay_trial,
     run_hca_summary_quality_sweep,
 )
 from cellular_transformer.hardware import format_bytes
@@ -266,6 +267,45 @@ def main() -> None:
     print("- Decay fixes saturation and recovers top-k dense-topic order for this stream.")
     print("- Decayed state needs its own lower threshold or learned scale metadata.")
     print("- The next HCA state should make decay and threshold/scale trainable rather than fixed.")
+    print()
+
+    lazy = run_hca_lazy_decay_trial(global_width=2048, decay_interval=256, threshold=2)
+    print("Lazy HCA decay with per-counter epoch metadata")
+    headers = [
+        "width",
+        "state",
+        "epoch",
+        "read",
+        "update",
+        "decay",
+        "saved",
+        "top64",
+        "top256",
+        "q_acc",
+        "false_hca",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 132)
+    row = [
+        f"{lazy.global_width}",
+        format_bytes(lazy.state_bytes),
+        f"{lazy.epoch_bits}",
+        format_bytes(lazy.read_bytes_per_query),
+        f"{lazy.avg_update_cells_per_token:0.1f}",
+        f"{lazy.avg_decay_cells_per_token:0.1f}",
+        f"{lazy.explicit_decay_cells_per_token:0.1f}",
+        fmt_pct(lazy.top64_recall),
+        fmt_pct(lazy.top256_recall),
+        fmt_pct(lazy.query_route_accuracy),
+        fmt_pct(lazy.query_false_hca_rate),
+    ]
+    print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("Lazy interpretation:")
+    print("- Lazy epoch decay preserves the explicit decayed target without global sweeps.")
+    print("- It trades 16-bit epoch metadata for removing synchronous decay-cell traffic.")
+    print("- This is closer to a chip-realistic HCA state than full-array periodic decay.")
 
 
 if __name__ == "__main__":

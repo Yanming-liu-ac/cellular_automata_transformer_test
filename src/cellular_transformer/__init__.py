@@ -36,6 +36,7 @@ from .compressed_block_indexer import (
     CsaHcaPolicyResult,
     HcaDecayQualityPoint,
     HcaDecayQualityResult,
+    HcaLazyDecayResult,
     HcaSummaryQualityPoint,
     HcaSummaryQualityResult,
     LowBitCompressedBlockIndex,
@@ -43,6 +44,7 @@ from .compressed_block_indexer import (
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
     run_hca_decay_quality_sweep,
+    run_hca_lazy_decay_trial,
     run_hca_summary_quality_sweep,
 )
 from .dense_context import (
@@ -105,6 +107,7 @@ __all__ = [
     "CsaHcaPolicyResult",
     "HcaDecayQualityPoint",
     "HcaDecayQualityResult",
+    "HcaLazyDecayResult",
     "HcaSummaryQualityPoint",
     "HcaSummaryQualityResult",
     "DualPathSyntheticLM",
@@ -155,6 +158,7 @@ __all__ = [
     "run_compressed_block_index_trial",
     "run_csa_hca_policy_trial",
     "run_hca_decay_quality_sweep",
+    "run_hca_lazy_decay_trial",
     "run_hca_summary_quality_sweep",
     "run_learned_admission_trial",
     "run_memory_task",

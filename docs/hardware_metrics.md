@@ -349,6 +349,24 @@ topic/noise stream. It also exposes the maintenance cost: synchronous all-cell
 decay can dominate the 4-counter update cost unless it is scheduled as a
 background tile operation, amortized, or replaced by scale metadata.
 
+Lazy epoch decay is the first replacement for synchronous all-cell decay. Each
+counter stores epoch metadata and applies the decay shift only when read or
+updated:
+
+```text
+width=2048, counter_bits=4, epoch_bits=16
+state: 20KB instead of 4KB
+read bytes/query: 10B instead of 2B
+update cells/token: 4.0
+synchronous decay cells/token: 0.0 instead of 32.0 at decay=256
+top64/top256 recall: 100.0% / 100.0%
+route accuracy: 100.0%
+```
+
+The metric exposes a chip design tradeoff: epoch metadata increases SRAM and
+read width, but removes global maintenance traffic and preserves the decayed
+HCA target exactly enough for the current benchmark.
+
 ## Output-Head Metrics
 
 For output scoring, track:

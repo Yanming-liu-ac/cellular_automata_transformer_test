@@ -407,6 +407,16 @@ decay every 256 tokens costs about 32 decay-cell touches per token if counted
 synchronously. This should become a scheduled/background tile operation or a
 learned scale/threshold mechanism.
 
+The twenty-third sweep replaced synchronous decay with lazy epoch metadata. Each
+global-summary counter stores a small epoch and is shifted only when read or
+updated. With `width=2048`, 4-bit counters, 16-bit epochs, decay interval 256,
+and threshold 2, the lazy summary matches the decayed target in the current
+trial: 100% top-64/top-256 recall, 100% route accuracy, and no false HCA routes.
+It removes the 32 decay-cell touches per token from the explicit decay sweep,
+but increases state from 4KB to about 20KB and read traffic from 2B/query to
+10B/query. This is a cleaner HCA hardware tradeoff: local SRAM metadata versus
+global maintenance waves.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
