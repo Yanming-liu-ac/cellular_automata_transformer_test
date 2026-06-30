@@ -340,10 +340,12 @@ The CSA/HCA-aware profile tightens that lesson. The lazy HCA summary barely
 changes event traffic, while CSA block-summary geometry controls whether a small
 tile fabric fits. The earlier 512KB wide64 index pushed the 32-tile proxy over
 its SRAM budget. The compact128 point brings current state down to about
-451.8KB, so 32 tiles fit at about 88.2% utilization. This is the CA-chip version
-of cache hierarchy pressure: sparse attention-style indexing saves reads, but
-the index itself must be tiered, compressed, and co-designed with the routing
-policy.
+451.8KB. The rare128 point goes further by replacing half of the block-summary
+state with a small exact rare-token directory, bringing current state to about
+354.5KB and 32-tile utilization to about 69.2%. This is the CA-chip version of
+cache hierarchy pressure: sparse attention-style indexing saves reads, but the
+index itself must be tiered, compressed, and co-designed with the routing
+policy and exact-memory lane.
 
 The first output-head budget adds another systems lesson: solving attention/KV
 traffic is not enough if the logits path becomes the dominant kernel. HARC-CA
@@ -423,6 +425,12 @@ in the deterministic stream. The cost shifts into larger selected token blocks,
 about 331 positions/query instead of 165. That is the right kind of trade:
 SRAM, bandwidth, and route quality are co-designed rather than optimized in
 isolation.
+The rare-directory sweep sharpens the split. A lower-width 128-token CSA summary
+uses only 128KB but misses too many cold blocks by itself. Adding about 30.7KB
+of exact rare-token block ids restores measured routed-CSA hit and coverage to
+100%. This mirrors the CSA/HCA systems lesson more closely than a single larger
+index: dense recurrent state, sparse compressed routing, and exact rare-detail
+state should be separate cooperating structures.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

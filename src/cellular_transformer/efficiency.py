@@ -19,15 +19,21 @@ class ContextSummaryBudget:
     """CSA/HCA context-summary state and per-event local traffic budget."""
 
     block_summary_state_bytes: float = 0.0
+    csa_directory_state_bytes: float = 0.0
     hca_summary_state_bytes: float = 0.0
     hca_summary_read_bytes_per_event: float = 0.0
     hca_summary_update_bytes_per_event: float = 0.0
     csa_block_score_bytes_per_event: float = 0.0
+    csa_directory_read_bytes_per_event: float = 0.0
     csa_token_read_bytes_per_event: float = 0.0
 
     @property
     def state_bytes(self) -> float:
-        return self.block_summary_state_bytes + self.hca_summary_state_bytes
+        return (
+            self.block_summary_state_bytes
+            + self.csa_directory_state_bytes
+            + self.hca_summary_state_bytes
+        )
 
     @property
     def local_bytes_per_event(self) -> float:
@@ -35,6 +41,7 @@ class ContextSummaryBudget:
             self.hca_summary_read_bytes_per_event
             + self.hca_summary_update_bytes_per_event
             + self.csa_block_score_bytes_per_event
+            + self.csa_directory_read_bytes_per_event
             + self.csa_token_read_bytes_per_event
         )
 
@@ -60,6 +67,7 @@ class HarcEventEfficiency:
     context_summary_state_bytes: float
     hca_summary_state_bytes: float
     csa_block_summary_state_bytes: float
+    csa_directory_state_bytes: float
     moe_state_bytes: float
     exact_query_fraction: float
     exact_avg_visited_cells: float
@@ -72,6 +80,7 @@ class HarcEventEfficiency:
     hca_summary_read_bytes_per_event: float
     hca_summary_update_bytes_per_event: float
     csa_block_score_bytes_per_event: float
+    csa_directory_read_bytes_per_event: float
     csa_token_read_bytes_per_event: float
     moe_sparse_rule_updates_per_event: float
     moe_dense_equivalent_rule_updates_per_event: float
@@ -171,6 +180,7 @@ def estimate_harc_event_efficiency(
         context_summary_state_bytes=context_budget.state_bytes,
         hca_summary_state_bytes=context_budget.hca_summary_state_bytes,
         csa_block_summary_state_bytes=context_budget.block_summary_state_bytes,
+        csa_directory_state_bytes=context_budget.csa_directory_state_bytes,
         moe_state_bytes=moe_state_bytes,
         exact_query_fraction=query_fraction,
         exact_avg_visited_cells=synthetic.exact_avg_visited_cells,
@@ -183,6 +193,7 @@ def estimate_harc_event_efficiency(
         hca_summary_read_bytes_per_event=context_budget.hca_summary_read_bytes_per_event,
         hca_summary_update_bytes_per_event=context_budget.hca_summary_update_bytes_per_event,
         csa_block_score_bytes_per_event=context_budget.csa_block_score_bytes_per_event,
+        csa_directory_read_bytes_per_event=context_budget.csa_directory_read_bytes_per_event,
         csa_token_read_bytes_per_event=context_budget.csa_token_read_bytes_per_event,
         moe_sparse_rule_updates_per_event=sparse_rule_updates_per_event,
         moe_dense_equivalent_rule_updates_per_event=dense_equiv_updates_per_event,
@@ -249,7 +260,7 @@ def wide_csa_hca_context_budget() -> ContextSummaryBudget:
 
 
 def compact_csa_hca_context_budget() -> ContextSummaryBudget:
-    """Current compact CSA/HCA context-summary budget for the synthetic profile.
+    """Compact block-only CSA/HCA budget for comparison.
 
     This uses the block-state sweep's measured compact setting: 128-token
     blocks, 512 block summaries, 4-bit counters, ``summary_width=256``, the
@@ -272,7 +283,37 @@ def compact_csa_hca_context_budget() -> ContextSummaryBudget:
     )
 
 
+def rare_directory_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Current rare-directory CSA/HCA context-summary budget.
+
+    This uses the measured low-state point from ``run_csa_hca_rare_directory_sweep``:
+    128-token blocks, ``summary_width=128``, two exact rare-token directory
+    blocks per token, an 8-bit lazy-epoch HCA summary, and threshold-routed
+    CSA/HCA reads.
+    """
+
+    block_summary_state = 512 * 4 * 128 * 4 / 8
+    directory_entry_bytes = (16 + 9 + 1) / 8
+    directory_state = 9662 * directory_entry_bytes
+    hca_state = 4 * 2048 * (4 + 8) / 8
+    hca_read = 4 * (4 + 8) / 8
+    hca_update = 4 * (4 + 8) / 8 * 2
+    csa_block_score = 150.0
+    csa_directory_read = 0.48
+    csa_token_read = 331.6 * 16 / 8
+    return ContextSummaryBudget(
+        block_summary_state_bytes=block_summary_state,
+        csa_directory_state_bytes=directory_state,
+        hca_summary_state_bytes=hca_state,
+        hca_summary_read_bytes_per_event=hca_read,
+        hca_summary_update_bytes_per_event=hca_update,
+        csa_block_score_bytes_per_event=csa_block_score,
+        csa_directory_read_bytes_per_event=csa_directory_read,
+        csa_token_read_bytes_per_event=csa_token_read,
+    )
+
+
 def current_csa_hca_context_budget() -> ContextSummaryBudget:
     """Current recommended CSA/HCA context-summary budget."""
 
-    return compact_csa_hca_context_budget()
+    return rare_directory_csa_hca_context_budget()

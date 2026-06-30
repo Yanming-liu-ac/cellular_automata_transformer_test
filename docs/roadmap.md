@@ -96,6 +96,11 @@ Compressed block-index result:
   state from 512KB to 256KB while preserving 100% measured CSA-path hit and
   coverage on routed relevant queries. Token block reads rise to about
   331/query, but the full-context token-read reduction remains about 198x.
+- A rare-token block directory improves that point again. With `block_size=128`,
+  `summary_width=128`, and two exact directory block ids per rare token, CSA
+  state is about 158.7KB instead of 256KB and the routed CSA subset still
+  reaches 100% measured hit and coverage. The directory read cost is only about
+  0.48B/query in the current trial.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -176,8 +181,10 @@ Unified efficiency profile:
   and candidate scoring reads.
 - The wide64 CSA/HCA profile raises this to about 52.10KB/event and about
   707.8KB of on-chip state.
-- The current compact128 CSA/HCA profile raises local traffic to about
+- The compact128 CSA/HCA profile raises local traffic to about
   52.28KB/event but lowers on-chip state to about 451.8KB.
+- The current rare128 CSA/HCA profile keeps local traffic about 52.28KB/event
+  and lowers on-chip state further to about 354.5KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -185,9 +192,9 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- With the current compact128 CSA/HCA-aware state, a 32-tile fabric now fits at
-  about 88.2% SRAM utilization and requires 29 16KB state tiles.
-- A 64-tile fabric stores the same state in about 44.1% of local SRAM.
+- With the current rare128 CSA/HCA-aware state, a 32-tile fabric now fits at
+  about 69.2% SRAM utilization and requires 23 16KB state tiles.
+- A 64-tile fabric stores the same state in about 34.6% of local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
   about 5.2% on 32 tiles and about 2.6% on 64 tiles under the proxy assumptions.
 - This defines a budget for learned rules and richer output heads; it is not
@@ -226,8 +233,11 @@ Next retrieval work:
 - promote 8-bit lazy epoch HCA summary to the default HCA baseline for the next
   unified event-profile update.
 - continue compressing or tiering the CSA block-summary index beyond the current
-  compact128 point, because learned rules and richer states still need SRAM
+  rare128 point, because learned rules and richer states still need SRAM
   headroom.
+- stress-test the rare-token block directory on bursty rare tokens, repeated
+  names, and adversarial collisions before treating it as a stable hardware
+  primitive.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

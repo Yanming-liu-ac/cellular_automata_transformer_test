@@ -69,7 +69,7 @@ The first experiments compare:
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;
 - low-bit compressed dense-context sketching;
-- CSA-shaped compressed block indexing over context cells;
+- CSA-shaped compressed block indexing plus rare-token block-directory repair;
 - combined sparse-exact plus dense-compressed memory path;
 - online low-bit candidate-cache generation with admission gating and no
   full-vocabulary scans;

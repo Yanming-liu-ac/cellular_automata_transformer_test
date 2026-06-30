@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
+    run_csa_hca_rare_directory_sweep,
     run_compressed_block_budget_sweep,
     run_compressed_block_index_trial,
     run_hca_decay_quality_sweep,
@@ -224,6 +225,57 @@ def main() -> None:
     print("- block=128,width=256 halves CSA state to 256KB while preserving measured CSA hit/coverage.")
     print("- block=64,width=128 also uses 256KB but weakens cold-query reliability.")
     print("- block=256,width=256 reaches 128KB but loses too much cold exact recall in this trial.")
+    print()
+
+    rare = run_csa_hca_rare_directory_sweep(global_width=2048, hca_threshold=8)
+    print("Rare-token block directory repair")
+    print(
+        f"fixed HCA: width={rare.global_width}, "
+        f"threshold={rare.hca_threshold}, "
+        f"global_rd={format_bytes(rare.global_summary_read_bytes_per_query)}/query"
+    )
+    headers = [
+        "block",
+        "width",
+        "dir_k",
+        "blk_state",
+        "dir_state",
+        "combined",
+        "base_hit",
+        "rep_hit",
+        "repair",
+        "base_cov",
+        "rep_cov",
+        "dir_rd",
+        "kv_read",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 168)
+    for point in rare.points:
+        row = [
+            f"{point.block_size}",
+            f"{point.summary_width}",
+            f"{point.directory_blocks_per_token}",
+            format_bytes(point.block_summary_state_bytes),
+            format_bytes(point.directory_state_bytes),
+            format_bytes(point.block_plus_directory_state_bytes),
+            fmt_pct(point.base_csa_relevant_hit_rate),
+            fmt_pct(point.repaired_csa_relevant_hit_rate),
+            fmt_pct(point.directory_repair_rate),
+            fmt_pct(point.base_csa_relevant_coverage),
+            fmt_pct(point.repaired_csa_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_reads_per_query:0.1f}",
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>10}" for cell in row))
+
+    print()
+    print("Rare-directory interpretation:")
+    print("- A small exact directory repairs low-width CSA misses for rare/cold tokens.")
+    print("- block=128,width=128,dir_k=2 uses about 159KB and restores measured coverage.")
+    print("- This is the cleaner CA split: HCA for frequent context, exact directory for rare block ids.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

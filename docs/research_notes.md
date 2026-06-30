@@ -455,6 +455,23 @@ falls to about 451.8KB. The 32-tile, 16KB/tile floorplan now fits at about
 SRAM/bandwidth tradeoff that moves the design back toward a smaller CA chip
 without breaking the current synthetic routing quality.
 
+The twenty-seventh sweep adds a tiny exact rare-token block directory. This
+uses the exact sparse lane to repair low-width CSA misses instead of widening
+every block summary. With `block_size=128`, `summary_width=128`, and no
+directory, the routed CSA subset has only about 68.9% hit and coverage. Adding
+one exact block id per rare token raises hit to 100% and coverage to about
+99.3%, using about 28.6KB of directory state. Adding two block ids raises
+coverage to 100% while using about 30.7KB. The combined CSA state is then
+128KB of block summaries plus 30.7KB of directory entries, about 158.7KB total.
+Average selected token reads stay about 331.6 positions/query, directory read
+traffic is only about 0.48B/query, and the full-context token-read reduction
+stays about 198x. In the unified event profile this rare128 point keeps local
+traffic about 52.28KB/event but lowers on-chip state to about 354.5KB. Under the
+same 32-tile, 16KB/tile floorplan, state utilization falls from compact128's
+88.2% to about 69.2%, requiring 23 state tiles. This is a better CA-chip split:
+frequent distributed evidence belongs in HCA, fuzzy block proposals belong in
+CSA, and rare exact location hints belong in a small associative directory.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

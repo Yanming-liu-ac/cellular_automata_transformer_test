@@ -328,10 +328,26 @@ block=256  width=128  state=64KB   score=75B/query   csa hit/cov=40.5% / 40.5%  
 block=256  width=256  state=128KB  score=75B/query   csa hit/cov=90.5% / 89.2%   token reads=661.6  reduction=99.1x
 ```
 
-The best current SRAM tradeoff is `block_size=128`, `summary_width=256`: it
+The best block-only SRAM tradeoff is `block_size=128`, `summary_width=256`: it
 halves CSA block-summary state to 256KB and preserves measured CSA-path
 reliability in this stream. The cost is doubled selected-token traffic versus
 64-token blocks, but the full-context read reduction remains about 198x.
+
+The rare-token block directory then repairs a lower-width CSA point with a
+small exact sparse structure:
+
+```text
+block=128  width=128  dir_k=0  block=128KB  dir=0KB     combined=128KB    hit/cov=68.9% / 68.9%    token reads=330.8
+block=128  width=128  dir_k=1  block=128KB  dir=28.6KB  combined=156.6KB  hit/cov=100% / 99.3%     token reads=331.6
+block=128  width=128  dir_k=2  block=128KB  dir=30.7KB  combined=158.7KB  hit/cov=100% / 100%      token reads=331.6
+block=256  width=256  dir_k=1  block=128KB  dir=27.5KB  combined=155.5KB  hit/cov=100% / 100%      token reads=662.1
+```
+
+The best current point is `block_size=128`, `summary_width=128`, `dir_k=2`.
+It uses about 158.7KB for CSA block summaries plus exact rare-token block ids,
+restores measured routed-CSA hit and coverage to 100%, and adds only about
+0.48B/query of directory read traffic. This shifts rare exact location recall
+out of the compressed block summary and into the exact sparse lane.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 
@@ -481,26 +497,30 @@ Current proxy result:
 legacy local bytes/event: about 51.46 KB
 wide64 CSA/HCA local bytes/event: about 52.10 KB
 compact128 CSA/HCA local bytes/event: about 52.28 KB
+rare128 CSA/HCA local bytes/event: about 52.28 KB
 Transformer KV read/token: about 384 MB
 legacy on-chip HARC-CA state: about 183.8 KB
 wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
 compact128 CSA/HCA on-chip HARC-CA state: about 451.8 KB
+rare128 CSA/HCA on-chip HARC-CA state: about 354.5 KB
 ```
 
-The compact128 CSA/HCA-aware profile adds about 829.8B/event over the legacy
+The rare128 CSA/HCA-aware profile adds about 831.7B/event over the legacy
 profile:
 
 ```text
 HCA lazy summary read: about 6B/event
 HCA lazy summary update: about 12B/event
 CSA block-summary score reads: about 150B/event
-CSA selected token-cell reads: about 661.8B/event
+CSA rare-directory read: about 0.48B/event
+CSA selected token-cell reads: about 663.2B/event
 ```
 
 The wide64 baseline spends less selected-token traffic, about 648B/event total
-context traffic, but it needs about 512KB of CSA block summaries. The current
-compact128 point uses about 256KB of block summaries plus 12KB of lazy HCA
-summary metadata/counters.
+context traffic, but it needs about 512KB of CSA block summaries. The
+compact128 point uses about 256KB of block summaries. The current rare128 point
+uses about 128KB of block summaries, about 30.7KB of rare-token directory state,
+and 12KB of lazy HCA summary metadata/counters.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -534,14 +554,14 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the compact128 CSA/HCA-aware 451.8KB HARC-CA state and
-52.28KB local bytes/event, a 32-tile configuration fits but leaves limited SRAM
+bytes/cycle/tile. With the rare128 CSA/HCA-aware 354.5KB HARC-CA state and
+52.28KB local bytes/event, a 32-tile configuration now has meaningful SRAM
 headroom:
 
 ```text
-32 tiles: 512KB SRAM, 88.2% state utilization, 29 state tiles required, 5.2% bandwidth utilization
-64 tiles: 1MB SRAM, 44.1% state utilization, 29 state tiles required, 2.6% bandwidth utilization
-128 tiles: 2MB SRAM, 22.1% state utilization, 29 state tiles required, 1.3% bandwidth utilization
+32 tiles: 512KB SRAM, 69.2% state utilization, 23 state tiles required, 5.2% bandwidth utilization
+64 tiles: 1MB SRAM, 34.6% state utilization, 23 state tiles required, 2.6% bandwidth utilization
+128 tiles: 2MB SRAM, 17.3% state utilization, 23 state tiles required, 1.3% bandwidth utilization
 ```
 
 These are design-budget numbers. They do not prove timing, routing, area, yield,
