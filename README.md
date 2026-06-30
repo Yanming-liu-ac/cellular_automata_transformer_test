@@ -47,6 +47,7 @@ python experiments/retrieval_demo.py
 python experiments/task_benchmark_demo.py
 python experiments/overflow_benchmark_demo.py
 python experiments/dense_context_demo.py
+python experiments/compressed_block_indexer_demo.py
 python experiments/dual_path_demo.py
 python experiments/candidate_cache_demo.py
 python experiments/learned_admission_demo.py
@@ -68,6 +69,7 @@ The first experiments compare:
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;
 - low-bit compressed dense-context sketching;
+- CSA-shaped compressed block indexing over context cells;
 - combined sparse-exact plus dense-compressed memory path;
 - online low-bit candidate-cache generation with admission gating and no
   full-vocabulary scans;

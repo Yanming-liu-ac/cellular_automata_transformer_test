@@ -212,6 +212,34 @@ associative lane  = exact rare details
 
 The sketch alone cannot preserve names, numbers, or code symbols reliably.
 
+## Compressed Block Indexing
+
+The CSA-like sparse context path is now modeled explicitly. The context is split
+into fixed-size blocks, and each block-cell stores only a low-bit count-min
+summary. A query token is broadcast to the block cells; each block computes a
+local match score from its summary; only the top-scoring blocks are read as
+token/KV blocks.
+
+Prototype behavior:
+
+```text
+context token -> update 4 local summary counters inside its block
+query token   -> every block scores itself from 4 low-bit counters
+selector      -> read top-k blocks plus a short exact tail window
+```
+
+On the current 65k-context topic/noise stream with 64-token blocks, a 4-bit
+block index with `banks=4`, `summary_width=256`, and 8 selected blocks uses
+about 512KB of block-summary state. It reaches 100% block-hit rate on relevant
+queries in the deterministic trial, including the measured cold-token subset,
+while reading about 640 token positions instead of all 65,536 positions. That is
+about a 102x token-read reduction before considering Transformer KV width.
+
+This is not an attention-quality result. It shows that a CA fabric can cheaply
+route to plausible context blocks. The occurrence coverage is only about 8.4%,
+so downstream attention, exact associative recall, or repeated query waves still
+need to decide which details matter inside and across the selected blocks.
+
 ## Training Stability
 
 A recurrent CA can become chaotic, die out, or converge too early. The software

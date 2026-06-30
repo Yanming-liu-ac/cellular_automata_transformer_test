@@ -68,6 +68,20 @@ Compressed dense-context result:
   dense counter table.
 - This validates only fuzzy dense context compression, not exact recall.
 
+Compressed block-index result:
+
+- A CSA-shaped context-block index now splits 65k context into 1024 blocks of
+  64 tokens and stores a 4-bit count-min summary in each block cell.
+- With 4 banks, `summary_width=256`, 8 selected blocks, and 2 exact tail blocks,
+  it uses about 512KB of block-summary state and scores about 2KB of summary
+  counters per query.
+- On the deterministic topic/noise trial it reaches 100% relevant block-hit rate
+  while reading about 640 token positions instead of all 65,536, about a 102x
+  token-read reduction.
+- Occurrence coverage is only about 8.4%, close to the oracle top-block coverage
+  at the same block budget. This validates sparse block routing, not full
+  attention replacement.
+
 Dual-path result:
 
 - Tiered exact lane plus dense sketch uses about 166.5KB in the current demo.
@@ -154,6 +168,9 @@ Next retrieval work:
 - degradation tests with repeated keys and conflicting induction patterns.
 - separate metrics for exact sparse recall versus compressed dense context,
   following the DeepSeek-V4 CSA/HCA split.
+- within-block and repeated-read scoring after compressed block routing, because
+  the first block-index result finds relevant blocks but covers only a small
+  fraction of repeated occurrences.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

@@ -27,6 +27,12 @@ from .candidate_scorer import (
 )
 from .cellular_moe import CellularMoE, CellularMoEConfig, MoERolloutResult, MoEStepStats
 from .chip_model import ChipConfig, ChipProfile, TileConfig, profile_chip
+from .compressed_block_indexer import (
+    CompressedBlockIndexConfig,
+    CompressedBlockIndexResult,
+    LowBitCompressedBlockIndex,
+    run_compressed_block_index_trial,
+)
 from .dense_context import (
     DenseContextConfig,
     DenseContextResult,
@@ -79,6 +85,8 @@ __all__ = [
     "CandidateScorerTrialResult",
     "ChipConfig",
     "ChipProfile",
+    "CompressedBlockIndexConfig",
+    "CompressedBlockIndexResult",
     "DualPathSyntheticLM",
     "HashRouteCAM",
     "HashRouteCAMConfig",
@@ -92,6 +100,7 @@ __all__ = [
     "LowBitAdmissionLUT",
     "LowBitAdditiveCandidateIndexer",
     "LowBitLinearCandidateIndexer",
+    "LowBitCompressedBlockIndex",
     "LowBitCandidateScorerLUT",
     "LowBitDenseContext",
     "LowBitCandidateCache",
@@ -122,6 +131,7 @@ __all__ = [
     "run_candidate_indexer_trial",
     "run_candidate_tensor_diagnostic",
     "run_candidate_scorer_trial",
+    "run_compressed_block_index_trial",
     "run_learned_admission_trial",
     "run_memory_task",
     "run_recall_trial",

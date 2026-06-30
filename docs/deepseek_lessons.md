@@ -386,6 +386,15 @@ The full tuple LUT diagnostic reinforces the point: a large sparse table is not
 a system design. Like sparse attention, the indexer needs sharing and a good
 teacher signal, not just a bigger lookup.
 
+The first compressed block-index experiment is a cleaner CSA analog than the
+candidate scorer. It makes context blocks into CA cells, stores a 4-bit
+compressed summary per block, and routes a query to only a few blocks. At
+65k context, the `summary_width=256`, 8-block setting reaches 100% relevant
+block-hit rate in the deterministic topic/noise trial while reducing token reads
+from 65,536 to about 640 positions. The caution is equally important:
+occurrence coverage is only about 8.4%, so CSA-like block routing is a front-end
+for later scoring and exact memory, not a complete substitute for attention.
+
 ## Revised HARC-CA Design Principle
 
 The CA chip should not be "a big CA that tries to think everywhere." It should be:

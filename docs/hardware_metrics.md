@@ -239,6 +239,43 @@ reaches about 66.4%, close to topic-cache but still below gated dense scoring.
 The metric says dense tensor capacity is not the bottleneck to add next;
 generalization and ranking supervision are.
 
+## Compressed Block-Index Metrics
+
+For CSA-shaped context routing, track:
+
+- context length;
+- block size and block count;
+- selected block count;
+- exact tail block count;
+- per-block summary banks, width, and bits;
+- block-summary state bytes;
+- global recurrent-summary bytes;
+- score cells and score bytes per query;
+- relevant-query rate;
+- hot-token and cold-token block-hit rates;
+- occurrence coverage versus oracle coverage;
+- token reads per query after block selection;
+- token-read reduction versus full-context reads.
+
+The first compressed block-index benchmark splits a 65,536-token context into
+1024 blocks of 64 tokens. Each block keeps a low-bit count-min summary. With
+4-bit summaries, 4 banks, `summary_width=256`, 8 selected blocks, and a 2-block
+exact tail, the index uses about 512KB of block-summary state plus a 512-byte
+global-summary equivalent. It scores 4096 4-bit cells per query, or about 2KB of
+summary reads.
+
+In the deterministic topic/noise trial, relevant-query rate is about 87.2%.
+Overall block-hit rate is 100%, hot-token hit rate is 100%, and the measured
+cold-token relevant subset is also 100% for `summary_width=256`. The selected
+plus tail path reads about 640 token positions per query instead of 65,536, a
+roughly 102x token-read reduction.
+
+The limiting metric is not block hit but occurrence coverage. The same setting
+covers only about 8.4% of exact token occurrences, close to the oracle top-8
+block coverage of about 8.3%. This means the block index is a strong routing
+primitive but not a full replacement for attention quality; it must feed a
+within-block scorer, exact associative lane, or repeated sparse reads.
+
 ## Output-Head Metrics
 
 For output scoring, track:

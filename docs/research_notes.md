@@ -342,6 +342,24 @@ scoring reaches about 66.4%, close to topic-cache but still below gated dense
 scoring. This says the next indexer should not simply add dense tensor capacity;
 it needs better sharing or distillation.
 
+The eighteenth sweep shifted from output-candidate ranking to CSA-shaped
+context-block routing. The new compressed block index splits a 65,536-token
+context into 1024 blocks of 64 tokens. Each block stores a 4-bit count-min
+summary; a query token is scored locally by every block, then only the top
+blocks plus a short exact tail are read. With `summary_width=256`, 4 banks,
+8 selected blocks, and 2 tail blocks, the block summaries use about 512KB and
+the query scoring pass reads about 2KB of 4-bit summary counters. The selected
+path reads about 640 token positions instead of 65,536, about a 102x token-read
+reduction.
+
+This is the first direct CA analog of DeepSeek-V4 CSA in the repo. It is a
+positive routing result: relevant-query rate is about 87.2%, overall block-hit
+rate is 100%, and the measured cold-token relevant subset also reaches 100% in
+the deterministic trial at `summary_width=256`. It is not a full attention
+replacement. Occurrence coverage is only about 8.4%, close to the oracle
+top-block coverage for the same block budget, so selected blocks must feed
+within-block scoring, exact associative recall, or repeated sparse reads.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
