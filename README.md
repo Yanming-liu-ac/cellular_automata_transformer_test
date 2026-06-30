@@ -32,6 +32,8 @@ The near-term goal is to turn this into a sequence-model testbed:
 
 - `docs/architecture.md` - HARC-CA architecture proposal.
 - `docs/research_notes.md` - evidence, hypotheses, and research risks.
+- `docs/deepseek_lessons.md` - DeepSeek V3/V4 design lessons translated to
+  HARC-CA.
 - `docs/hardware_metrics.md` - chip-oriented metrics to track from day one.
 - `docs/roadmap.md` - staged experiments and kill criteria.
 - `src/cellular_transformer/` - NumPy prototypes and measurement utilities.
@@ -42,6 +44,7 @@ The near-term goal is to turn this into a sequence-model testbed:
 ```powershell
 python experiments/propagation_demo.py
 python experiments/retrieval_demo.py
+python experiments/task_benchmark_demo.py
 python experiments/hardware_estimate_demo.py
 python experiments/lowbit_demo.py
 ```
@@ -50,5 +53,6 @@ The first experiments compare:
 
 - propagation depth for local CA versus HARC-CA;
 - exact key/value recall through a hash-routed associative CA lane;
+- copy, induction, and key/value memory tasks;
 - rough local-message traffic versus Transformer KV-cache traffic;
 - integer-only low-bit state rollout.

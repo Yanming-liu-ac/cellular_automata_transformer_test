@@ -42,6 +42,7 @@ class HashRouteCAMConfig:
 
     buckets: int
     ways: int = 4
+    routes: int = 1
     tag_bits: int = 24
     value_bits: int = 32
 
@@ -50,6 +51,8 @@ class HashRouteCAMConfig:
             raise ValueError("buckets must be positive")
         if self.ways <= 0:
             raise ValueError("ways must be positive")
+        if self.routes <= 0:
+            raise ValueError("routes must be positive")
         if not 1 <= self.tag_bits <= 63:
             raise ValueError("tag_bits must be in [1, 63]")
         if not 1 <= self.value_bits <= 63:
@@ -80,10 +83,11 @@ class LookupResult:
     route_steps: int
     way_reads: int
     tag_matches: int
+    routes: int
 
     @property
     def visited_cells(self) -> int:
-        return self.route_steps + self.way_reads
+        return self.route_steps * self.routes + self.way_reads
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,7 @@ class RecallTrialResult:
     context_length: int
     buckets: int
     ways: int
+    routes: int
     tag_bits: int
     load_factor: float
     evictions: int
@@ -110,8 +115,8 @@ class HashRouteCAM:
 
     The chip interpretation is a small CA fabric:
 
-    - hash bits route a query through a binary local tree to one bucket;
-    - each bucket contains a few low-bit entries;
+    - hash bits route a query through one or more binary local trees;
+    - each route reaches one small set-associative bucket;
     - ways compare tags in parallel with XNOR/equality logic;
     - values are returned without scanning sequence cells.
     """
@@ -130,6 +135,16 @@ class HashRouteCAM:
     def _bucket(self, key: int) -> int:
         return keyed_hash(key, 1) % self.config.buckets
 
+    def _buckets(self, key: int) -> Tuple[int, ...]:
+        buckets = []
+        seen = set()
+        for route in range(self.config.routes):
+            bucket = keyed_hash(key, route + 1) % self.config.buckets
+            if bucket not in seen:
+                seen.add(bucket)
+                buckets.append(bucket)
+        return tuple(buckets)
+
     def _tag(self, key: int) -> int:
         mask = (1 << self.config.tag_bits) - 1
         tag = keyed_hash(key, 2) & mask
@@ -144,26 +159,42 @@ class HashRouteCAM:
         Returns `True` if an occupied entry was evicted.
         """
 
-        bucket = self._bucket(key)
+        buckets = self._buckets(key)
         tag = self._tag(key)
         value_u64 = int(value) & self._value_mask()
         self.clock = np.uint64(int(self.clock) + 1)
 
-        valid = self.valid[bucket]
-        same_tag = valid & (self.tags[bucket] == tag)
-        same_key = same_tag & (self.debug_keys[bucket] == int(key))
-        if np.any(same_key):
-            way = int(np.argmax(same_key))
-            self.values[bucket, way] = value_u64
-            self.ages[bucket, way] = self.clock
-            return False
+        for bucket in buckets:
+            valid = self.valid[bucket]
+            same_tag = valid & (self.tags[bucket] == tag)
+            same_key = same_tag & (self.debug_keys[bucket] == int(key))
+            if np.any(same_key):
+                way = int(np.argmax(same_key))
+                self.values[bucket, way] = value_u64
+                self.ages[bucket, way] = self.clock
+                return False
 
-        empty = np.flatnonzero(~valid)
-        if len(empty) > 0:
-            way = int(empty[0])
+        best_empty: Tuple[int, int] | None = None
+        lowest_occupancy = self.config.ways + 1
+        for bucket in buckets:
+            valid = self.valid[bucket]
+            occupancy = int(np.count_nonzero(valid))
+            empty = np.flatnonzero(~valid)
+            if len(empty) > 0 and occupancy < lowest_occupancy:
+                best_empty = (bucket, int(empty[0]))
+                lowest_occupancy = occupancy
+
+        if best_empty is not None:
+            bucket, way = best_empty
             evicted = False
         else:
-            way = int(np.argmin(self.ages[bucket]))
+            bucket, way = min(
+                (
+                    (bucket, int(np.argmin(self.ages[bucket])))
+                    for bucket in buckets
+                ),
+                key=lambda item: int(self.ages[item[0], item[1]]),
+            )
             evicted = True
             self.evictions += 1
 
@@ -177,34 +208,41 @@ class HashRouteCAM:
     def lookup(self, key: int) -> LookupResult:
         """Lookup one key using only bucket routing and tag comparison."""
 
-        bucket = self._bucket(key)
+        buckets = self._buckets(key)
         tag = self._tag(key)
-        matches = self.valid[bucket] & (self.tags[bucket] == tag)
-        tag_matches = int(np.count_nonzero(matches))
-        if tag_matches == 0:
+        total_tag_matches = 0
+        for bucket in buckets:
+            matches = self.valid[bucket] & (self.tags[bucket] == tag)
+            tag_matches = int(np.count_nonzero(matches))
+            total_tag_matches += tag_matches
+            if tag_matches == 0:
+                continue
+
+            way = int(np.argmax(matches))
+            value = int(self.values[bucket, way])
+            correct = int(self.debug_keys[bucket, way]) == int(key)
             return LookupResult(
                 key=int(key),
                 bucket=bucket,
-                found=False,
-                correct=False,
-                value=None,
+                found=True,
+                correct=correct,
+                value=value,
                 route_steps=self.config.route_steps,
-                way_reads=self.config.ways,
-                tag_matches=0,
+                way_reads=self.config.ways * len(buckets),
+                tag_matches=total_tag_matches,
+                routes=len(buckets),
             )
 
-        way = int(np.argmax(matches))
-        value = int(self.values[bucket, way])
-        correct = int(self.debug_keys[bucket, way]) == int(key)
         return LookupResult(
             key=int(key),
-            bucket=bucket,
-            found=True,
-            correct=correct,
-            value=value,
+            bucket=buckets[0],
+            found=False,
+            correct=False,
+            value=None,
             route_steps=self.config.route_steps,
-            way_reads=self.config.ways,
-            tag_matches=tag_matches,
+            way_reads=self.config.ways * len(buckets),
+            tag_matches=total_tag_matches,
+            routes=len(buckets),
         )
 
     def memory_bytes(self) -> float:
@@ -233,6 +271,7 @@ def run_recall_trial(
     context_length: int,
     buckets: int,
     ways: int = 4,
+    routes: int = 1,
     tag_bits: int = 24,
     query_count: int | None = None,
     seed: int = 0,
@@ -241,7 +280,7 @@ def run_recall_trial(
 
     pairs = make_induction_pairs(context_length, seed)
     expected = dict(pairs)
-    config = HashRouteCAMConfig(buckets=buckets, ways=ways, tag_bits=tag_bits)
+    config = HashRouteCAMConfig(buckets=buckets, ways=ways, routes=routes, tag_bits=tag_bits)
     cam = HashRouteCAM(config)
     for key, value in pairs:
         cam.insert(key, value)
@@ -275,6 +314,7 @@ def run_recall_trial(
         context_length=context_length,
         buckets=buckets,
         ways=ways,
+        routes=routes,
         tag_bits=tag_bits,
         load_factor=context_length / config.capacity,
         evictions=cam.evictions,
@@ -292,6 +332,7 @@ def sweep_recall_trials(
     lengths: Iterable[int],
     bucket_multipliers: Iterable[float] = (0.5, 1.0, 2.0),
     ways: int = 4,
+    routes: int = 1,
     tag_bits: int = 24,
     query_count: int = 1000,
     seed: int = 0,
@@ -307,6 +348,7 @@ def sweep_recall_trials(
                     context_length=length,
                     buckets=buckets,
                     ways=ways,
+                    routes=routes,
                     tag_bits=tag_bits,
                     query_count=min(query_count, length),
                     seed=seed,

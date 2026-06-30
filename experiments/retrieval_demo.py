@@ -32,6 +32,7 @@ def main() -> None:
         lengths=[1024, 4096, 16384],
         bucket_multipliers=[0.25, 0.5, 1.0],
         ways=4,
+        routes=2,
         tag_bits=24,
         query_count=1000,
         seed=11,
@@ -40,6 +41,7 @@ def main() -> None:
     headers = [
         "ctx",
         "buckets",
+        "routes",
         "load",
         "evict",
         "correct",
@@ -55,6 +57,7 @@ def main() -> None:
         row = [
             f"{r.context_length}",
             f"{r.buckets}",
+            f"{r.routes}",
             f"{r.load_factor:0.2f}",
             f"{r.evictions}",
             fmt_pct(r.correct_rate),
@@ -68,7 +71,7 @@ def main() -> None:
     print()
     print("Interpretation:")
     print("- correct is exact key->value recall for random induction pairs.")
-    print("- visited is route depth plus bucket ways, not a full context scan.")
+    print("- visited is route depth plus bucket ways across hash routes, not a full context scan.")
     print("- evictions show when set-associative capacity is too tight.")
 
 

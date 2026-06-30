@@ -63,3 +63,13 @@ For associative recall, track:
 The key metric is not only accuracy. It is whether exact recall can remain high
 while query work grows roughly with `log(context)` plus a small number of bucket
 ways, instead of `context`.
+
+For multi-route memory, report the whole tradeoff:
+
+```text
+visited cells = routes * route_depth + routes * ways
+```
+
+More routes can reduce evictions at the same SRAM capacity, but they increase
+local query work. This is acceptable only while the scan-avoidance ratio remains
+large and exact recall improves enough to justify the extra local activity.

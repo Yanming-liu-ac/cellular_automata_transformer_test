@@ -30,6 +30,20 @@ rule. It is more likely to be a learned, quantized, multiscale CA with:
 - a small output interface that avoids full-vocabulary dense projection where
   possible.
 
+DeepSeek-V3/V4 sharpen this hypothesis. Their system-level pattern is
+compressed memory, sparse activation, careful routing, low precision with
+selected high-precision paths, and hardware-aware scheduling. HARC-CA should
+mirror that pattern in CA-native form: compressed cell summaries, sparse active
+rule banks, bounded route waves, associative exact memory, and multi-tick
+prediction training.
+
+DeepSeek-V4 adds an especially relevant lesson: efficient inference can combine
+two memory paths. Its CSA path compresses the retrieval set before attention,
+while HCA preserves a dense causal view through compressed recurrent state. The
+CA analog is to pair a sparse exact associative lane with a compressed recurrent
+state field, instead of forcing one mechanism to solve both exact recall and
+fuzzy context integration.
+
 ## What Must Be Proven
 
 The project should prove or disprove these claims experimentally:
@@ -101,18 +115,19 @@ The next prototypes should be judged by gates instead of intuition:
 
 ## First Retrieval Prototype
 
-The first non-neural retrieval component is a hash-routed associative CA lane.
-It is closer to a hardware primitive than to a trained model:
+The first non-neural retrieval component is a multi-route hash-routed
+associative CA lane. It is closer to a hardware primitive than to a trained
+model:
 
-- a query routes through a logarithmic local tree using hash bits;
-- it lands in one set-associative bucket;
+- a query routes through logarithmic local trees using hash bits;
+- it lands in one or more set-associative buckets;
 - a small number of low-bit tags are compared in parallel;
 - the value returns without scanning all sequence cells.
 
 This is deliberately not exact Transformer attention. It tests whether a CA
 fabric can provide sparse exact recall for copy and induction tasks.
 
-The first sweep showed:
+The first single-route sweep showed:
 
 | Context | Buckets | Ways | Correct Recall | Cells Visited | Full Scan |
 | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -124,6 +139,20 @@ The warning sign is capacity pressure: at load factor 1.0, the same 4-way design
 falls to roughly 80% recall due to bucket evictions. The chip architecture
 therefore needs either more ways, better hashing, learned routing, overflow
 lanes, or tiered memory for rare exact facts.
+
+The second sweep added multi-route lookup and explicit copy / induction /
+key-value tasks. At fixed capacity (`buckets = context / 4`, `ways = 4`) and
+16k context, 2-route lookup reached roughly 92-93% recall while visiting about
+32 cells per query. That is still far below a full scan of 16,384 token cells,
+but it is not yet reliable enough for LLM-grade exact memory.
+
+Current interpretation:
+
+```text
+Multi-route associative CA memory is a credible primitive, but the architecture
+still needs overflow or learned routing before it can replace attention for
+facts that must be recalled exactly.
+```
 
 ## Primary References
 

@@ -19,7 +19,7 @@ Decision:
 
 ## Phase 1: Retrieval Before Language
 
-Status: first hash-routed prototype added.
+Status: multi-route hash-routed prototype and sequence-memory benchmarks added.
 
 Language modeling will fail if the CA cannot retrieve exact distant information.
 The first hard tasks should be:
@@ -39,12 +39,23 @@ sublinearly rather than scanning the full context.
 
 Initial result:
 
-- A 4-way hash-routed associative lane reaches about 99% exact recall when bucket
-  count is similar to context length.
-- For 16k context, the prototype visits about 18 cells per query instead of
-  scanning 16,384 token cells.
-- When capacity is tight, recall drops to about 80%, so the area/recall tradeoff
-  is real and must be measured.
+- A 4-way, 2-route hash-routed associative lane reaches 100% exact recall in the
+  first random trial when load factor is 0.5.
+- At load factor 1.0 on 16k context, 2-route lookup reaches roughly 92-93%
+  exact recall on copy, induction, and key-value tasks while visiting about 32
+  cells per query instead of scanning 16,384 token cells.
+- At the same load, 4-route and 8-route checks improve recall further but still
+  do not guarantee perfect recall; capacity pressure remains a real design
+  problem.
+
+Next retrieval work:
+
+- overflow tier for evicted facts;
+- learned or content-aware routing instead of pure hashing;
+- variable-width exact memory for rare names, numbers, and code symbols;
+- degradation tests with repeated keys and conflicting induction patterns.
+- separate metrics for exact sparse recall versus compressed dense context,
+  following the DeepSeek-V4 CSA/HCA split.
 
 ## Phase 2: Trainable Continuous HARC-CA
 
@@ -53,11 +64,16 @@ Add PyTorch or JAX when the environment allows dependency installation.
 Implement:
 
 - continuous cell state;
+- grouped local / summary / route / memory-IO / stability channels;
 - shared local update rule;
+- Cellular-MoE rule banks with bounded low-cost routing;
 - residual bounded updates;
 - random asynchronous update masks;
 - auxiliary routing losses;
+- route-bias control inspired by auxiliary-loss-free load balancing;
+- multi-token / multi-tick prediction heads;
 - tiny Transformer teacher for distillation experiments.
+- optional Muon-style optimizer experiment for the shared recurrent rule.
 
 Success criterion:
 
@@ -71,8 +87,9 @@ same-size Transformer baseline.
 Move from continuous training to deployment-shaped inference:
 
 - 8-bit training baseline;
-- 4-bit state;
+- 4-bit state as a primary target, inspired by DeepSeek-V4 FP4 QAT;
 - 2-bit / binary ablations;
+- per-group scale / offset metadata;
 - LUT-style or XNOR-popcount rule kernels;
 - integer-only rollout verification.
 
@@ -111,6 +128,10 @@ Translate the architecture into a hardware proposal:
 - parent-child routing fabric;
 - active-region scheduler;
 - low-bit LUT / XNOR-popcount datapath;
+- fine-grained quantization metadata and online cast path;
+- route-wave / reduction communication offload;
+- state-cache hierarchy for active tail, summaries, exact-memory overflow, and
+  reusable prompt-prefix states;
 - area and bandwidth estimates;
 - FPGA prototype plan.
 
