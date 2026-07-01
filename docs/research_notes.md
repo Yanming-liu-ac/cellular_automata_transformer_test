@@ -431,6 +431,14 @@ combined case all keep shared dense coverage at 2/2 and sparse false-enable at
 0.00%. This says the next CA rule should learn when to share local evidence,
 not just when to flip a tile.
 
+The first learned version of that rule is tiny. A radius LUT over guard block
+size learns `256 -> radius 2`, `512 -> radius 1`, and `1024 -> radius 0` from
+the same mixed-stream objective: keep 25% dense off, enable 50% and 75% dense,
+and never enable sparse blocks. The table is under one byte in this diagnostic
+and recovers 100% dense coverage for the finer blocks that local counters miss.
+This is a better CA-chip shape than a global heuristic because the control is a
+small local-geometry table.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

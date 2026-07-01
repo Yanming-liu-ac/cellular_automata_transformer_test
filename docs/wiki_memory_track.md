@@ -252,6 +252,14 @@ dense coverage at 2/2 and sparse false-enable at 0.00%. The hardware lesson is
 now sharper: density tags should gate short-range counter sharing, not just
 local tile choice.
 
+The first learned sharing-radius LUT replaces that hand choice. Training on the
+25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and 1,024
+learns `256 -> radius 2`, `512 -> radius 1`, and `1024 -> radius 0`. The table
+is only 0.75B for these three geometry entries. Evaluation hits the target:
+25% dense stays off, 50% dense rises from 50% local dense-block coverage to
+100% for 256 and 512-page blocks, 75% dense remains 100%, and sparse
+false-enable stays 0.00%.
+
 ## Kill Criteria
 
 This track is not useful if:

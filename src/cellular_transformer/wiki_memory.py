@@ -641,6 +641,45 @@ class WikiMemoryMixedGuardCounterResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryGuardSharingLUTEntry:
+    """Learned sharing-radius choice for one guard-counter geometry."""
+
+    guard_counter_block_pages: int
+    chosen_share_radius_blocks: int
+    training_points: int
+    training_cost: float
+
+
+@dataclass(frozen=True)
+class WikiMemoryLearnedGuardSharingPoint:
+    """One evaluation point for the learned guard-sharing LUT."""
+
+    dense_page_fraction: float
+    tag_threshold: int
+    guard_counter_block_pages: int
+    chosen_share_radius_blocks: int
+    target_dense_enable_rate: float
+    local_dense_enable_rate: float
+    learned_dense_enable_rate: float
+    local_sparse_false_enable_rate: float
+    learned_sparse_false_enable_rate: float
+    dense_raw_wins: int
+    dense_raw_losses: int
+
+
+@dataclass(frozen=True)
+class WikiMemoryLearnedGuardSharingResult:
+    """Train/evaluate a tiny LUT for guard-counter sharing radius."""
+
+    policy: str
+    radius_lut_state_bytes: float
+    radius_options: Tuple[int, ...]
+    min_dense_fraction_to_enable: float
+    entries: Tuple[WikiMemoryGuardSharingLUTEntry, ...]
+    points: Tuple[WikiMemoryLearnedGuardSharingPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -3559,4 +3598,118 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         quality_probe_updates=quality_probe_updates,
         quality_probe_min_gain=quality_probe_min_gain,
         points=tuple(points),
+    )
+
+
+def run_wiki_memory_learned_guard_sharing_sweep(
+    total_pages: int = 2048,
+    dense_page_fractions: Tuple[float, ...] = (0.25, 0.50, 0.75),
+    tag_threshold: int = 2,
+    guard_counter_block_page_options: Tuple[int, ...] = (256, 512, 1024),
+    guard_share_radius_options: Tuple[int, ...] = (0, 1, 2),
+    min_dense_fraction_to_enable: float = 0.50,
+    false_enable_weight: float = 8.0,
+    radius_cost_weight: float = 0.01,
+    **mixed_sweep_kwargs: object,
+) -> WikiMemoryLearnedGuardSharingResult:
+    """Learn a tiny LUT choosing same-tag guard-counter sharing radius."""
+
+    if not 0.0 < min_dense_fraction_to_enable < 1.0:
+        raise ValueError("min_dense_fraction_to_enable must be in (0, 1)")
+    if false_enable_weight < 0.0:
+        raise ValueError("false_enable_weight must be non-negative")
+    if radius_cost_weight < 0.0:
+        raise ValueError("radius_cost_weight must be non-negative")
+    clean_blocks = tuple(dict.fromkeys(int(value) for value in guard_counter_block_page_options))
+    clean_radii = tuple(dict.fromkeys(int(value) for value in guard_share_radius_options))
+    if len(clean_blocks) == 0:
+        raise ValueError("guard_counter_block_page_options must not be empty")
+    if len(clean_radii) == 0:
+        raise ValueError("guard_share_radius_options must not be empty")
+
+    sweep = run_wiki_memory_mixed_guard_counter_sweep(
+        total_pages=total_pages,
+        dense_page_fractions=dense_page_fractions,
+        tag_thresholds=(tag_threshold,),
+        guard_counter_block_page_options=clean_blocks,
+        guard_share_radius_options=clean_radii,
+        **mixed_sweep_kwargs,
+    )
+    by_block_radius: dict[tuple[int, int], list[WikiMemoryMixedGuardCounterPoint]] = {}
+    local_by_block_fraction: dict[tuple[int, float], WikiMemoryMixedGuardCounterPoint] = {}
+    for point in sweep.points:
+        by_block_radius.setdefault(
+            (point.guard_counter_block_pages, point.guard_share_radius_blocks),
+            [],
+        ).append(point)
+        if point.guard_share_radius_blocks == 0:
+            local_by_block_fraction[
+                (point.guard_counter_block_pages, point.dense_page_fraction)
+            ] = point
+
+    entries = []
+    chosen_radius_by_block: dict[int, int] = {}
+    for block_pages in clean_blocks:
+        best_radius = clean_radii[0]
+        best_cost = float("inf")
+        best_count = 0
+        for radius in clean_radii:
+            points = by_block_radius.get((block_pages, radius), [])
+            cost = radius_cost_weight * radius
+            for point in points:
+                target = (
+                    1.0
+                    if point.dense_page_fraction >= min_dense_fraction_to_enable
+                    else 0.0
+                )
+                dense_error = abs(point.dense_shared_enable_rate - target)
+                false_error = false_enable_weight * point.sparse_shared_false_enable_rate
+                cost += dense_error + false_error
+            if cost < best_cost:
+                best_radius = radius
+                best_cost = cost
+                best_count = len(points)
+        chosen_radius_by_block[block_pages] = best_radius
+        entries.append(
+            WikiMemoryGuardSharingLUTEntry(
+                guard_counter_block_pages=block_pages,
+                chosen_share_radius_blocks=best_radius,
+                training_points=best_count,
+                training_cost=best_cost,
+            )
+        )
+
+    eval_points = []
+    for point in sweep.points:
+        chosen_radius = chosen_radius_by_block[point.guard_counter_block_pages]
+        if point.guard_share_radius_blocks != chosen_radius:
+            continue
+        local_point = local_by_block_fraction[
+            (point.guard_counter_block_pages, point.dense_page_fraction)
+        ]
+        target = 1.0 if point.dense_page_fraction >= min_dense_fraction_to_enable else 0.0
+        eval_points.append(
+            WikiMemoryLearnedGuardSharingPoint(
+                dense_page_fraction=point.dense_page_fraction,
+                tag_threshold=point.tag_threshold,
+                guard_counter_block_pages=point.guard_counter_block_pages,
+                chosen_share_radius_blocks=chosen_radius,
+                target_dense_enable_rate=target,
+                local_dense_enable_rate=local_point.dense_enable_rate,
+                learned_dense_enable_rate=point.dense_shared_enable_rate,
+                local_sparse_false_enable_rate=local_point.sparse_false_enable_rate,
+                learned_sparse_false_enable_rate=point.sparse_shared_false_enable_rate,
+                dense_raw_wins=point.dense_raw_wins,
+                dense_raw_losses=point.dense_raw_losses,
+            )
+        )
+
+    radius_lut_bits = len(clean_blocks) * max(1, int(np.ceil(np.log2(max(clean_radii) + 1))))
+    return WikiMemoryLearnedGuardSharingResult(
+        policy=sweep.policy,
+        radius_lut_state_bytes=radius_lut_bits / 8.0,
+        radius_options=clean_radii,
+        min_dense_fraction_to_enable=min_dense_fraction_to_enable,
+        entries=tuple(entries),
+        points=tuple(eval_points),
     )

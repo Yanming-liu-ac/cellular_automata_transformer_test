@@ -313,6 +313,12 @@ updates to 60%, or both together keeps shared dense coverage at 2/2 and sparse
 false-enable at 0.00%. The state is cheap enough; the hardware problem is now
 controlled evidence sharing across local blocks.
 
+The learned sharing-radius LUT is smaller than the counters. With three guard
+block geometries and radii 0-2, the table is 6 bits, or 0.75B. It chooses
+radius 2 for 256-page blocks, radius 1 for 512-page blocks, and radius 0 for
+1,024-page blocks. That restores 50% dense coverage to 100% for the finer
+blocks while keeping sparse false-enable at 0.00%.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:
