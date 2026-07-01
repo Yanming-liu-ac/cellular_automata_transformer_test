@@ -647,6 +647,15 @@ under-strict below 2% with a 64B LUT. The remaining roadmap item is now
 text realism: generated multi-sentence snippets or real markdown pages with
 ambiguous field mentions, missing fields, and conflicting source paragraphs.
 
+The generated paragraph version now covers the synthetic half of that text
+realism item. It keeps the 64B 4D LUT but feeds it from paragraph snippets with
+omitted fields and historical distractors. A more conservative asymmetric loss
+passes 4/4 held-out rows with 99.00-99.80% strict recall and 0.49-0.88%
+under-strict rate. The tradeoff is high over-strict repair, 26.95-28.03%, and
+9.35-9.40 touched cells/event. The next roadmap item is no longer just
+"paragraph text"; it is field-coverage confidence or compiler-side diagnostics
+that can lower strict repair without missing important stale wiki claims.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

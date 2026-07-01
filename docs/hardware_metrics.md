@@ -1513,6 +1513,17 @@ controller, the multi-field signal spends more strict repair traffic because
 there are more ways for a source to be partially stale, but under-strict risk is
 lower and the controller has a clearer hardware interpretation.
 
+Paragraph-style source/wiki cells keep the same 64.00B classifier and 1.125B
+provenance LUT, but make the text side less idealized. Source paragraphs can
+omit fields and include historical distractor sentences; the parser only emits
+current status/priority/region/owner values plus misses. The default paragraph
+controller uses a 10.00 under-estimation loss weight and 0.75 over-strict loss
+weight. On four held-out paragraph traces, strict recall is 99.00-99.80% and
+under-strict rate is 0.49-0.88%, but over-strict rate rises to 26.95-28.03% and
+estimated provenance traffic rises to 9.35-9.40 touched cells/event. The chip
+cost is therefore not a larger controller table; it is extra local repair
+traffic caused by weak paragraph coverage/confidence signals.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

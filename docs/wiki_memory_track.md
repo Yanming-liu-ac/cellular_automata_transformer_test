@@ -34,6 +34,12 @@ consolidate, and audit:
 
 https://arxiv.org/abs/2604.12034
 
+`Knowledge Compounding` is a useful empirical version of the same pivot: an
+LLM-updated markdown knowledge base compounds answer quality better than
+query-time lookup alone when the knowledge base is iteratively maintained:
+
+https://arxiv.org/abs/2604.11243
+
 ## CA Fit
 
 Wiki-memory has the shape CA wants:
@@ -501,6 +507,21 @@ under-strict rate is 1.27-1.95%, and estimated provenance touch is
 9.08-9.10 cells/event. This is a better abstraction than the single-status
 demo: the local state now distinguishes field importance and source agreement
 without adding a dense text model to the CA fabric.
+
+The paragraph trace makes the source/wiki boundary less structured. Source
+cells are now sentence-level paragraphs with omitted fields and historical
+distractor sentences such as old status or ownership references. The parser
+extracts only current status, priority, region, and owner statements, and the
+same four 2-bit CA-side buckets drive the same 64.00B classifier plus 1.125B
+provenance table. With 3%/6% source omission, 1%/3% summary omission, 12%
+distractor rate, 6% misread, and 3% drop, the default asymmetric loss is more
+conservative: under-estimated importance costs 10x versus 0.75x over-strict
+repair. On four held-out paragraph traces, accuracy is 71.48-72.17%, strict
+recall is 99.00-99.80%, under-strict rate is 0.49-0.88%, over-strict rate is
+26.95-28.03%, and estimated provenance touch is 9.35-9.40 cells/event. The
+result supports the LLM-Wiki direction, but it also identifies the next missing
+state: field coverage and parser confidence should reduce unnecessary strict
+repair on natural paragraphs.
 
 ## Kill Criteria
 

@@ -634,6 +634,17 @@ source disagreement, and parser misses reaches 97.57-98.96% strict recall and
 field-level compiler output can become low-bit local control state without
 requiring open-ended semantic inference inside the cell fabric.
 
+The paragraph trace is a harder version of the same claim. It keeps the
+four-field compiler output but renders source/wiki cells as paragraphs with
+missing fields and historical distractor sentences. The 64B 4D LUT still uses
+only weighted observed error, core conflict, weighted stale disagreement, and
+parser misses. Raising the asymmetric loss against under-estimated importance
+to 10x gives 99.00-99.80% strict recall and 0.49-0.88% under-strict rate, but
+accuracy falls to 71.48-72.17% and over-strict repair rises to 26.95-28.03%.
+That is a useful result, not a solved one: CA looks well matched to maintaining
+a compiled wiki, while paragraph-level text now requires field coverage or
+parser-confidence state to avoid excess repair traffic.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
