@@ -71,6 +71,7 @@ python experiments/wiki_memory_demo.py
 python experiments/wiki_memory_scaling_demo.py
 python experiments/wiki_memory_density_demo.py
 python experiments/wiki_memory_fanout_demo.py
+python experiments/wiki_memory_learned_fanout_grid_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -119,6 +120,8 @@ The first experiments compare:
   facts/page increases;
 - adaptive and learned-LUT wiki-memory fanout sweeps that recover dense-page
   recall without falling back to full flat page-summary scans;
+- learned fanout grid sweeps that expose the density boundary where stronger
+  summaries or page-internal routing are needed;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

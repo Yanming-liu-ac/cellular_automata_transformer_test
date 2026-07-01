@@ -373,6 +373,15 @@ Across checked evaluation seeds 91, 123, 211, 307, 401, 503, and 607, `t100`
 matches the hand adaptive recall while reading about 1,526-1,674 cells/query
 instead of the hand adaptive 1,991-2,309 cells/query range.
 
+The learned fanout grid turns this into a boundary map. For 8 facts/page,
+learned fanout matches flat recall across 512, 1,024, and 2,048 pages while
+cutting flat reads by 78.35%, 85.52%, and 87.95%. For 16 facts/page it still
+matches flat at 512 and 1,024 pages, but at 2,048 pages the 32-group cap holds
+recall to the hand adaptive level, 89.84%, while flat scan reaches 99.02%.
+For 32 facts/page, learned fanout either becomes too expensive at small page
+count or cannot recover enough candidate pages at large page count. This is a
+useful failure: fanout control is not sufficient once page summaries saturate.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

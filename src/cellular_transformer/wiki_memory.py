@@ -398,6 +398,44 @@ class WikiMemoryFanoutResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryLearnedFanoutGridPoint:
+    """One learned fanout LUT point across page count and page density."""
+
+    page_count: int
+    facts_per_page: int
+    summary_width: int
+    fixed_overall_recall: float
+    adaptive_overall_recall: float
+    learned_overall_recall: float
+    flat_overall_recall: float
+    fixed_cells_read_per_query: float
+    adaptive_cells_read_per_query: float
+    learned_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    exact_scan_cells_per_query: float
+    learned_cells_written_per_update: float
+    learned_read_reduction_vs_flat: float
+    learned_read_reduction_vs_adaptive: float
+    learned_read_reduction_vs_exact_scan: float
+    fanout_lut_state_bytes: float
+    fanout_training_examples: int
+
+
+@dataclass(frozen=True)
+class WikiMemoryLearnedFanoutGridResult:
+    """Learned fanout LUT sweep across wiki size and page density."""
+
+    policy: str
+    target_route_coverage: float
+    query_events: int
+    update_events: int
+    summary_banks: int
+    summary_width: int
+    summary_bits: int
+    points: Tuple[WikiMemoryLearnedFanoutGridPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -1765,5 +1803,123 @@ def run_wiki_memory_fanout_sweep(
         summary_width=summary_width,
         query_events=flat_config.query_events,
         update_events=flat_config.update_events,
+        points=tuple(points),
+    )
+
+
+def run_wiki_memory_learned_fanout_grid_sweep(
+    page_counts: Tuple[int, ...] = (512, 1024, 2048),
+    facts_per_page_values: Tuple[int, ...] = (8, 16, 32),
+    summary_width: int = 256,
+    target_route_coverage: float = 1.0,
+    train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryLearnedFanoutGridResult:
+    """Test learned fanout across wiki size and page-density pressure."""
+
+    clean_counts = tuple(dict.fromkeys(int(value) for value in page_counts))
+    clean_facts = tuple(dict.fromkeys(int(value) for value in facts_per_page_values))
+    if len(clean_counts) == 0:
+        raise ValueError("page_counts must not be empty")
+    if len(clean_facts) == 0:
+        raise ValueError("facts_per_page_values must not be empty")
+
+    points = []
+    for page_count in clean_counts:
+        for facts_per_page in clean_facts:
+            config = replace(
+                _density_config(page_count, facts_per_page, summary_width),
+                selected_groups=4,
+                adaptive_max_groups=32,
+                adaptive_score_margin=1,
+            )
+            flat_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="flat",
+            )
+            fixed_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="hierarchical",
+            )
+            adaptive_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="adaptive",
+            )
+            fanout_lut = train_wiki_memory_fanout_lut(
+                config=config,
+                policy=policy,
+                train_seeds=train_seeds,
+                base_groups=4,
+                max_groups=32,
+                target_route_coverage=target_route_coverage,
+            )
+            learned_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="lut",
+                fanout_lut=fanout_lut,
+            )
+            exact_scan = float(config.page_count * config.facts_per_page)
+            points.append(
+                WikiMemoryLearnedFanoutGridPoint(
+                    page_count=config.page_count,
+                    facts_per_page=config.facts_per_page,
+                    summary_width=config.summary_width,
+                    fixed_overall_recall=fixed_point.overall_recall,
+                    adaptive_overall_recall=adaptive_point.overall_recall,
+                    learned_overall_recall=learned_point.overall_recall,
+                    flat_overall_recall=flat_point.overall_recall,
+                    fixed_cells_read_per_query=fixed_point.cells_read_per_query,
+                    adaptive_cells_read_per_query=adaptive_point.cells_read_per_query,
+                    learned_cells_read_per_query=learned_point.cells_read_per_query,
+                    flat_cells_read_per_query=flat_point.cells_read_per_query,
+                    exact_scan_cells_per_query=exact_scan,
+                    learned_cells_written_per_update=learned_point.cells_written_per_update,
+                    learned_read_reduction_vs_flat=(
+                        1.0
+                        - learned_point.cells_read_per_query / flat_point.cells_read_per_query
+                        if flat_point.cells_read_per_query > 0.0
+                        else 0.0
+                    ),
+                    learned_read_reduction_vs_adaptive=(
+                        1.0
+                        - learned_point.cells_read_per_query
+                        / adaptive_point.cells_read_per_query
+                        if adaptive_point.cells_read_per_query > 0.0
+                        else 0.0
+                    ),
+                    learned_read_reduction_vs_exact_scan=(
+                        1.0 - learned_point.cells_read_per_query / exact_scan
+                        if exact_scan > 0.0
+                        else 0.0
+                    ),
+                    fanout_lut_state_bytes=fanout_lut.state_bytes,
+                    fanout_training_examples=fanout_lut.training_examples,
+                )
+            )
+
+    first_config = _density_config(clean_counts[0], clean_facts[0], summary_width)
+    return WikiMemoryLearnedFanoutGridResult(
+        policy=policy.name,
+        target_route_coverage=target_route_coverage,
+        query_events=first_config.query_events,
+        update_events=first_config.update_events,
+        summary_banks=first_config.summary_banks,
+        summary_width=first_config.summary_width,
+        summary_bits=first_config.summary_bits,
         points=tuple(points),
     )

@@ -257,6 +257,16 @@ cells/query, cutting flat page-summary reads by 63.0% and hand adaptive reads by
 about 21.3%. This makes group fanout a concrete low-bit control table rather
 than a fixed architecture constant.
 
+The grid sweep adds the hardware boundary. At 8 facts/page, learned fanout keeps
+flat-level recall while reading 459, 604, and 996 cells/query for 512, 1,024,
+and 2,048 pages. At 16 facts/page it still wins at 512 and 1,024 pages, but at
+2,048 pages the 32-group cap limits recall to 89.84%. At 32 facts/page, larger
+fanout alone is no longer the right primitive: reading all 32 groups at 512
+pages costs slightly more than flat page-summary scan, while 1,024 and 2,048
+pages need more than 32 groups for flat-level recall. The next hardware target
+is a denser page summary or a second-stage page-local index, not only a bigger
+fanout cap.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

@@ -186,6 +186,18 @@ only about 1,566 cells/query. That is a 63.0% read reduction versus flat
 page-summary scan and a further reduction versus the hand adaptive 1,991
 cells/query point.
 
+The learned fanout grid tests whether that is a single-point accident. At
+8 facts/page, learned fanout matches flat recall at 512, 1,024, and 2,048 pages
+while reading about 459, 604, and 996 cells/query, versus flat reads of about
+2,120, 4,168, and 8,263. At 16 facts/page, learned fanout still matches flat
+at 512 and 1,024 pages, but at 2,048 pages it matches the hand adaptive route
+rather than flat because the 32-group cap misses too many candidate pages. At
+32 facts/page, the limit is explicit: 512 pages can recover flat recall only by
+nearly degenerating into a full group scan, while 1,024 and 2,048 pages stay far
+below flat recall. The next architectural step is therefore not just a better
+fanout table; dense pages need stronger summaries or a page-internal second
+stage.
+
 ## Kill Criteria
 
 This track is not useful if:

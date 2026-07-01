@@ -431,9 +431,11 @@ page-summary scan. The learned fanout LUT improves that to the same 99.80%
 recall at about 1,560 cells/query with 1.1KB of table state. The
 conservative `t100` table is the current default because it is more stable
 across checked seeds while still reading only about 1,566 cells/query on the
-default stress point. The next step is to test learned fanout across wider
-density/page-count sweeps and then add stronger multi-feature summaries for
-dense pages.
+default stress point. The learned fanout grid now shows where this holds:
+8 facts/page works across 512-2,048 pages, 16 facts/page works through 1,024
+pages and then hits the 32-group cap, and 32 facts/page needs stronger summaries
+or a page-internal second stage. The next step is to add that dense-page second
+stage rather than only increasing fanout.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
