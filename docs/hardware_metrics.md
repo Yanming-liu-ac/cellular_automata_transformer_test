@@ -599,6 +599,30 @@ routes more queries through CSA, but it destroys the hot HCA fast path. The next
 sidecar should therefore be counting/deletable, or should use delayed promotion
 with a hot-token retirement rule.
 
+The first repair uses a counting Bloom sidecar with a fast 1-bit query plane and
+4-bit update counters. Query traffic stays at 3 presence bits, but sidecar state
+rises from about 8.8KB to about 44KB and updates write 5 bits per hash slot
+instead of 1 bit. When a token reaches the HCA threshold, the sidecar deletes it
+from rare-token presence:
+
+```text
+reference count1_retire15   state=44.0KB  active_rare=100.0%  hot_retired=100.0%  hot_poll=0.0%  update=0.27234B/token  HCA=84.0%  reduction=193.5x
+reference count2_retire15   state=44.0KB  active_rare=7.3%    hot_retired=100.0%  hot_poll=0.0%  update=0.03339B/token  HCA=84.7%  reduction=195.6x
+reference count14_retire15  state=44.0KB  active_rare=0.0%    hot_retired=100.0%  hot_poll=0.0%  update=0.01465B/token  HCA=84.7%  reduction=195.6x
+split_rare count1_retire15  state=44.8KB  active_rare=100.0%  hot_retired=100.0%  hot_poll=0.0%  update=0.27695B/token  coverage=99.5%  reduction=84.9x
+split_rare count2_retire15  state=44.8KB  active_rare=8.7%    hot_retired=100.0%  hot_poll=0.0%  update=0.03734B/token  coverage=99.5%  reduction=84.9x
+repeated count1_retire15    state=44.9KB  active_rare=100.0%  hot_retired=100.0%  hot_poll=0.0%  update=0.27761B/token  coverage=99.1%  reduction=52.7x
+repeated count2_retire15    state=44.9KB  active_rare=8.5%    hot_retired=100.0%  hot_poll=0.0%  update=0.03682B/token  coverage=99.1%  reduction=52.7x
+```
+
+This is the first online sidecar point that survives the hot-path pollution
+test. The conservative hardware baseline is `count1_retire15`: it matches the
+oracle sidecar contents at the end of the window and restores the reference HCA
+route rate. The lower-update `count2_retire15` point is attractive, but it is a
+quality-risk knob because many one-hit rare tokens are never inserted. The next
+work item is therefore to compress or gate the retirement sidecar without losing
+the exact rare-token contract.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

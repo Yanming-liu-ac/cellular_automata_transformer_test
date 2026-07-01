@@ -415,6 +415,16 @@ problem is not write energy; it is irreversible metadata pollution. The sidecar
 needs delayed promotion, a counting/deletable Bloom variant, or a hot-token
 retirement rule before it can be the default streaming hardware path.
 
+The first repair is a counting Bloom sidecar with a retained 1-bit query plane.
+Queries still read 3 presence bits, while updates maintain 4-bit counters and
+clear presence bits when a token reaches the hot threshold. With
+`count1_retire15`, reference HCA routing returns to 84.0%, hot-token pollution
+falls to 0.0%, split-rare coverage is 99.5%, and repeated-name coverage is
+99.1%. The price is explicit: sidecar state rises to about 44-45KB and update
+traffic to about 0.27B/context token. That is still small versus KV traffic, but
+large enough that the next CA-chip rule should learn or compile a lower-update
+promotion gate before making this the final sidecar.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

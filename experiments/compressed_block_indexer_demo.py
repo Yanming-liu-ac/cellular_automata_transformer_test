@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_bank_sweep,
+    run_csa_hca_rare_directory_bloom_retirement_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_selection_sweep,
     run_csa_hca_rare_directory_bloom_salt_sweep,
@@ -940,6 +941,64 @@ def main() -> None:
     print("- final_oracle is an upper bound that inserts only final rare-directory tokens.")
     print("- Naive count thresholds insert future hot tokens before they are known hot.")
     print("- That pollution collapses the reference HCA fast path, so the sidecar needs delayed promotion or deletion.")
+    print()
+
+    retirement = run_csa_hca_rare_directory_bloom_retirement_sweep()
+    print("Counting Bloom hot-retirement sweep")
+    print(
+        f"salt={retirement.sidecar_salt}, "
+        f"bpe={retirement.bits_per_entry}, "
+        f"k={retirement.hash_count}, "
+        f"counter_bits={retirement.counter_bits}, "
+        f"retire={retirement.retire_count_threshold}"
+    )
+    headers = [
+        "scenario",
+        "policy",
+        "state",
+        "insert",
+        "active",
+        "delete",
+        "active_rare",
+        "hot_ret",
+        "hot_poll",
+        "upd/tok",
+        "hca_r",
+        "coverage",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 184)
+    for point in retirement.points:
+        if point.scenario != "zipf_reference" and point.policy not in (
+            "count1_retire15",
+            "count2_retire15",
+            "count8_retire15",
+            "count14_retire15",
+        ):
+            continue
+        row = [
+            point.scenario,
+            point.policy,
+            f"{point.sidecar_state_bytes / 1024:0.1f}KB",
+            str(point.inserted_tokens),
+            str(point.active_tokens),
+            str(point.deleted_tokens),
+            fmt_pct(point.active_final_rare_rate),
+            fmt_pct(point.hot_retired_token_rate),
+            fmt_pct(point.hot_polluted_token_rate),
+            f"{point.update_bytes_per_context_token:0.5f}",
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Counting Bloom interpretation:")
+    print("- Hot-token retirement fixes the irreversible pollution found by naive streaming insertion.")
+    print("- count1_retire15 matches the oracle sidecar shape but spends about 5x sidecar state.")
+    print("- Later insert thresholds reduce update traffic but become a recall-risk knob for rarer tokens.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

@@ -641,6 +641,18 @@ to 0.0%. Rare stress coverage remains high because the pollution routes more
 queries to CSA, but the hot path loses its purpose. The next sidecar must be
 delayed, counting/deletable, or paired with hot-token retirement.
 
+The forty-fourth sweep adds that retirement path. The sidecar becomes a counting
+Bloom filter with a fast 1-bit query plane and 4-bit update counters. When a
+token reaches the HCA threshold, the sidecar deletes it from rare-token
+presence. `count1_retire15` restores the useful oracle shape: reference HCA
+routing returns to 84.0%, hot-token pollution falls to 0.0%, split-rare coverage
+is 99.5%, and repeated-name coverage is 99.1%. The cost is visible but still
+local: about 44-45KB of sidecar state and about 0.27B/context-token of update
+traffic. Later insert thresholds such as `count2_retire15` reduce update traffic
+to about 0.03-0.04B/token in the stress cases, but they leave most final rare
+tokens out of the sidecar, so they should be treated as learned promotion
+candidates rather than the conservative exact-recall baseline.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

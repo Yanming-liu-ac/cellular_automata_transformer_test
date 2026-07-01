@@ -530,6 +530,12 @@ online insert rule writes future hot tokens into the rare-token sidecar and
 collapses the HCA fast path. The DeepSeek-style takeaway is that routing state
 updates, retirement, and load protection belong in the architecture, not in a
 post-hoc runtime patch.
+The counting-retirement sweep is the constructive follow-up. It restores the
+HCA fast path by making sidecar metadata deletable when a token becomes hot,
+while preserving a 1-bit query plane for fast routing. The cost, about 44-45KB
+of local state for this context geometry, is the CA equivalent of paying for
+expert-routing or FP4 scale metadata: it is worthwhile only if the compiler or
+training loop can account for it and then compress it.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
