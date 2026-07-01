@@ -246,6 +246,13 @@ writes about 0.0489 with 97.6% demanded exactness. At 64 rows it writes about
 0.1783, almost fixed refresh. The output path should therefore be split into a
 cheap candidate reducer followed by a smaller exact content exposure stage.
 
+The content exposure stage can be a very small rule. A phase/rank/mismatch LUT
+uses three local facts: whether demand is exact-query or candidate-output,
+which coarse candidate-rank bucket the row belongs to, and whether the carrier
+content mismatches persistent content. This 9-byte table reaches 100.0%
+demanded exactness on the synthetic sweep. Route/envelope activity should guide
+propagation and routing, but it is too noisy for this exact exposure decision.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

@@ -21,11 +21,14 @@ def fmt_pct(value: float) -> str:
 
 
 def print_sweep(result: SyntheticLMCandidateDemandSweepResult) -> None:
+    base_lut_bytes = result.points[0].lut_state_bytes if result.points else 0.0
+    phase_lut_bytes = result.points[0].phase_lut_state_bytes if result.points else 0.0
     print("Synthetic candidate-output demand sparsity sweep")
     print(
         f"facts={result.fact_count}, events={result.total_events}, "
         f"topic_events={result.topic_events}, query_events={result.query_events}, "
-        f"bits={result.bits}, cost={result.write_cost:0.2f}"
+        f"bits={result.bits}, cost={result.write_cost:0.2f}, "
+        f"base_lut={base_lut_bytes:0.1f}B, phase_lut={phase_lut_bytes:0.1f}B"
     )
     headers = [
         "cand_rows",
@@ -38,10 +41,14 @@ def print_sweep(result: SyntheticLMCandidateDemandSweepResult) -> None:
         "learn_wr",
         "learn_exact",
         "learn_err",
+        "phase_wr",
+        "phase_exact",
+        "phase_err",
         "lut_writes",
+        "phase_wstates",
     ]
     print(" | ".join(f"{h:>12}" for h in headers))
-    print("-" * 155)
+    print("-" * 208)
     for point in result.points:
         row = [
             f"{point.candidate_rows}",
@@ -54,7 +61,11 @@ def print_sweep(result: SyntheticLMCandidateDemandSweepResult) -> None:
             f"{point.learned_writes_per_token_tick:0.4f}",
             fmt_pct(point.learned_demand_exact_rate),
             fmt_pct(point.learned_demand_mean_abs_error),
+            f"{point.phase_writes_per_token_tick:0.4f}",
+            fmt_pct(point.phase_demand_exact_rate),
+            fmt_pct(point.phase_demand_mean_abs_error),
             f"{point.lut_write_state_count}",
+            f"{point.phase_lut_write_state_count}",
         ]
         print(" | ".join(f"{cell:>12}" for cell in row))
 
@@ -62,6 +73,7 @@ def print_sweep(result: SyntheticLMCandidateDemandSweepResult) -> None:
     print("Interpretation:")
     print("- Candidate rows approximate how many output rows assert content demand.")
     print("- Low candidate rows model output-side pruning before content exposure.")
+    print("- Phase rows use exact/candidate/rank features and an exactness-oriented objective.")
     print("- The target is high demanded exactness with writes far below fixed refresh16.")
 
 

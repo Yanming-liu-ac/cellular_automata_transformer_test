@@ -210,10 +210,13 @@ from .synthetic_lm import (
     SyntheticLMCandidateDemandSweepResult,
     SyntheticLMDemandGateResult,
     SyntheticLMConfig,
+    SyntheticLMPhasedDemandGateLUT,
     SyntheticLMResult,
+    evaluate_synthetic_lm_phased_demand_gate,
     run_synthetic_lm_candidate_demand_sparsity_sweep,
     run_synthetic_lm_demand_gate_sweep,
     run_synthetic_lm_trial,
+    train_synthetic_lm_phased_demand_gate_lut,
 )
 
 __all__ = [
@@ -328,6 +331,7 @@ __all__ = [
     "SyntheticLMCandidateDemandSweepResult",
     "SyntheticLMDemandGateResult",
     "SyntheticLMResult",
+    "SyntheticLMPhasedDemandGateLUT",
     "TieredHashRouteCAM",
     "TieredHashRouteCAMConfig",
     "TieredLookupResult",
@@ -353,6 +357,7 @@ __all__ = [
     "evaluate_lut_demand_content_gate",
     "evaluate_lut_trace_demand_content_gate",
     "evaluate_trace_demand_content_gate",
+    "evaluate_synthetic_lm_phased_demand_gate",
     "evaluate_content_retention",
     "evaluate_dynamic_propagation",
     "evaluate_long_rollout_stability",
@@ -415,6 +420,7 @@ __all__ = [
     "train_content_gate_lut",
     "train_demand_content_gate_lut",
     "train_trace_demand_content_gate_lut",
+    "train_synthetic_lm_phased_demand_gate_lut",
     "train_hca_route_lut",
     "train_rare_directory_fanout_lut",
     "train_rare_directory_probe_lut",

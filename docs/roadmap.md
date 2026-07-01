@@ -361,11 +361,12 @@ Implement:
   shows the useful target is roughly 8-16 demanded candidate rows per topic
   event: 8 rows cost about 0.029 writes/token/tick, 16 rows cost about 0.049,
   while 64 rows costs about 0.178.
-- add candidate-phase or candidate-rank features to the demand gate. The hand
-  `demand_mismatch_ge1` upper bound is exact at low candidate counts, but the
-  learned 16-byte LUT sometimes misses sparse 2-row/4-row candidate demand.
-  The next LUT should distinguish exact-query demand, candidate demand, and
-  rank/phase.
+- keep the phase/rank/mismatch exact exposure gate as the content-lane rule.
+  The 9-byte LUT reaches 100.0% demanded exactness on the candidate sparsity
+  sweep and avoids the sparse 2-row/4-row misses from the generic learned LUT.
+- build a real low-bit candidate reducer in front of that gate. The current
+  sweep uses oracle candidate-row counts; the next diagnostic should produce
+  those 8-16 demanded rows from local scores, rank buckets, and route state.
 
 First trainable target:
 

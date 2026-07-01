@@ -358,6 +358,11 @@ nearly erases the write advantage. That matches the DeepSeek lesson at the
 systems level: routing and compression must happen before expensive state is
 materialized.
 
+The phase/rank/mismatch gate refines the lesson. A smaller 9-byte exactness LUT
+beats the larger generic route/envelope-aware learned gate on sparse candidate
+demand because it uses the right control signal. For CA hardware, tiny tables
+can work if their inputs match the active path.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

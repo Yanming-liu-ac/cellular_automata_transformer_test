@@ -25,6 +25,14 @@ from .propagation import (
     evaluate_lut_trace_demand_content_gate,
     evaluate_trace_demand_content_gate,
     train_trace_demand_content_gate_lut,
+    _demand_indices_to_mask,
+    _graph_for_topology,
+    _inject_content_into_carrier,
+    _level_entropy_bits,
+    _neighbor_indices,
+    _ordered_nodes,
+    _state_checksum,
+    _step_dynamic_state,
 )
 from .retrieval import HashRouteCAMConfig, TieredHashRouteCAM, TieredHashRouteCAMConfig, keyed_hash
 
@@ -190,6 +198,11 @@ class SyntheticLMCandidateDemandSweepPoint:
     learned_demand_mean_abs_error: float
     lut_state_bytes: float
     lut_write_state_count: int
+    phase_lut_state_bytes: float
+    phase_lut_write_state_count: int
+    phase_writes_per_token_tick: float
+    phase_demand_exact_rate: float
+    phase_demand_mean_abs_error: float
 
 
 @dataclass(frozen=True)
@@ -205,6 +218,79 @@ class SyntheticLMCandidateDemandSweepResult:
     eval_seed: int
     write_cost: float
     points: Tuple[SyntheticLMCandidateDemandSweepPoint, ...]
+
+
+@dataclass(frozen=True)
+class SyntheticLMPhasedDemandGateLUT:
+    """Synthetic LM LUT with exact/candidate phase and candidate-rank buckets."""
+
+    writes: Tuple[bool, ...]
+    phase_count: int = 3
+    rank_thresholds: Tuple[int, ...] = (1, 4, 8, 16, 32)
+    mismatch_thresholds: Tuple[int, ...] = (1, 4, 8)
+    route_thresholds: Tuple[int, ...] = ()
+    envelope_thresholds: Tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        expected = (
+            self.phase_count
+            * (len(self.rank_thresholds) + 1)
+            * (len(self.mismatch_thresholds) + 1)
+            * (len(self.route_thresholds) + 1)
+            * (len(self.envelope_thresholds) + 1)
+        )
+        if len(self.writes) != expected:
+            raise ValueError("write table length does not match phased demand dimensions")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.writes) / 8
+
+    @property
+    def write_state_count(self) -> int:
+        return sum(1 for value in self.writes if value)
+
+    def indices(
+        self,
+        phase: np.ndarray,
+        rank: np.ndarray,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        phase_bucket = np.clip(phase.astype(np.int64), 0, self.phase_count - 1)
+        rank_bucket = np.searchsorted(self.rank_thresholds, rank, side="right")
+        mismatch_bucket = np.searchsorted(self.mismatch_thresholds, mismatch, side="right")
+        route_bucket = np.searchsorted(self.route_thresholds, route, side="right")
+        envelope_bucket = np.searchsorted(self.envelope_thresholds, envelope, side="right")
+        rank_bucket_count = len(self.rank_thresholds) + 1
+        mismatch_bucket_count = len(self.mismatch_thresholds) + 1
+        route_bucket_count = len(self.route_thresholds) + 1
+        envelope_bucket_count = len(self.envelope_thresholds) + 1
+        return (
+            (
+                (
+                    (phase_bucket * rank_bucket_count + rank_bucket)
+                    * mismatch_bucket_count
+                    + mismatch_bucket
+                )
+                * route_bucket_count
+                + route_bucket
+            )
+            * envelope_bucket_count
+            + envelope_bucket
+        )
+
+    def gate_mask(
+        self,
+        phase: np.ndarray,
+        rank: np.ndarray,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        table = np.array(self.writes, dtype=np.bool_)
+        return table[self.indices(phase, rank, mismatch, route, envelope)]
 
 
 def make_fact_pairs(config: SyntheticLMConfig, seed: int) -> List[Tuple[int, int]]:
@@ -323,6 +409,282 @@ def make_mixed_exact_candidate_demand_trace(
         else:
             trace.append(candidate_indices)
     return tuple(trace)
+
+
+def _blank_phased_demand_lut() -> SyntheticLMPhasedDemandGateLUT:
+    phase_count = 3
+    rank_thresholds = (1, 4, 8, 16, 32)
+    mismatch_thresholds = (1, 4, 8)
+    route_thresholds: Tuple[int, ...] = ()
+    envelope_thresholds: Tuple[int, ...] = ()
+    size = (
+        phase_count
+        * (len(rank_thresholds) + 1)
+        * (len(mismatch_thresholds) + 1)
+        * (len(route_thresholds) + 1)
+        * (len(envelope_thresholds) + 1)
+    )
+    return SyntheticLMPhasedDemandGateLUT(
+        writes=tuple(False for _ in range(size)),
+        phase_count=phase_count,
+        rank_thresholds=rank_thresholds,
+        mismatch_thresholds=mismatch_thresholds,
+        route_thresholds=route_thresholds,
+        envelope_thresholds=envelope_thresholds,
+    )
+
+
+def _candidate_rank_vector(
+    length: int,
+    fact_count: int,
+    candidate_rows: int,
+) -> np.ndarray:
+    rank = np.zeros(length, dtype=np.int16)
+    if candidate_rows > 0:
+        rank[fact_count : fact_count + candidate_rows] = np.arange(
+            candidate_rows,
+            dtype=np.int16,
+        )
+    return rank
+
+
+def _demand_phase_vector(
+    demanded: np.ndarray,
+    length: int,
+    fact_count: int,
+) -> np.ndarray:
+    phase = np.zeros(length, dtype=np.uint8)
+    if len(demanded) == 0:
+        return phase
+    indices = np.asarray(demanded, dtype=np.int64)
+    indices = indices[(indices >= 0) & (indices < length)]
+    if len(indices) == 0:
+        return phase
+    exact_indices = indices[indices < fact_count]
+    candidate_indices = indices[indices >= fact_count]
+    phase[exact_indices] = 1
+    phase[candidate_indices] = 2
+    return phase
+
+
+def train_synthetic_lm_phased_demand_gate_lut(
+    demand_trace: Tuple[np.ndarray, ...],
+    fact_count: int,
+    candidate_rows: int,
+    topology: str = "harc",
+    bits: int = 4,
+    radius: int = 1,
+    seed: int = 911,
+    write_cost: float = 0.15,
+) -> SyntheticLMPhasedDemandGateLUT:
+    """Train a phase/rank-aware content gate for synthetic LM demand."""
+
+    if fact_count <= 0:
+        raise ValueError("fact_count must be positive")
+    if candidate_rows <= 0:
+        raise ValueError("candidate_rows must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if len(demand_trace) == 0:
+        raise ValueError("demand_trace must not be empty")
+    if write_cost < 0.0:
+        raise ValueError("write_cost must be non-negative")
+
+    length = fact_count + candidate_rows
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    content_rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = content_rng.integers(
+        0,
+        max_value + 1,
+        size=length,
+        dtype=np.uint8,
+    )
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    template = _blank_phased_demand_lut()
+    rank = _candidate_rank_vector(length, fact_count, candidate_rows)
+    benefit_sums = np.zeros(len(template.writes), dtype=np.float64)
+    counts = np.zeros(len(template.writes), dtype=np.int64)
+
+    for demanded in demand_trace:
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        phase = _demand_phase_vector(demanded, length, fact_count)
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        indices = template.indices(phase, rank, mismatch, route, envelope)
+        benefit = (
+            (phase > 0).astype(np.float64)
+            * (mismatch > 0).astype(np.float64)
+        )
+        np.add.at(benefit_sums, indices, benefit)
+        np.add.at(counts, indices, 1)
+
+    mean_benefit = np.divide(
+        benefit_sums,
+        counts,
+        out=np.zeros_like(benefit_sums),
+        where=counts > 0,
+    )
+    writes = tuple(
+        bool(count > 0 and value >= write_cost)
+        for count, value in zip(counts, mean_benefit)
+    )
+    return SyntheticLMPhasedDemandGateLUT(
+        writes=writes,
+        phase_count=template.phase_count,
+        rank_thresholds=template.rank_thresholds,
+        mismatch_thresholds=template.mismatch_thresholds,
+        route_thresholds=template.route_thresholds,
+        envelope_thresholds=template.envelope_thresholds,
+    )
+
+
+def evaluate_synthetic_lm_phased_demand_gate(
+    lut: SyntheticLMPhasedDemandGateLUT,
+    demand_trace: Tuple[np.ndarray, ...],
+    fact_count: int,
+    candidate_rows: int,
+    topology: str = "harc",
+    bits: int = 4,
+    radius: int = 1,
+    seed: int = 911,
+    policy: str = "learned_phase_rank_exact_lut",
+) -> DemandContentGatePoint:
+    """Evaluate a phase/rank-aware synthetic LM content gate."""
+
+    if fact_count <= 0:
+        raise ValueError("fact_count must be positive")
+    if candidate_rows <= 0:
+        raise ValueError("candidate_rows must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if len(demand_trace) == 0:
+        raise ValueError("demand_trace must not be empty")
+
+    length = fact_count + candidate_rows
+    ticks = len(demand_trace)
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    content_rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = content_rng.integers(
+        0,
+        max_value + 1,
+        size=length,
+        dtype=np.uint8,
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    rank = _candidate_rank_vector(length, fact_count, candidate_rows)
+    gate_token_writes = 0
+    demand_token_count = 0
+    demand_exact_count = 0.0
+    demand_error_sum = 0.0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+
+    for demanded in demand_trace:
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        phase = _demand_phase_vector(demanded, length, fact_count)
+        demand_mask = _demand_indices_to_mask(demanded, length)
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        selected = token_indices[lut.gate_mask(phase, rank, mismatch, route, envelope)]
+        if len(selected) > 0:
+            _inject_content_into_carrier(carrier, content_values, selected)
+            gate_token_writes += int(len(selected))
+
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16)
+            - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+        if bool(np.any(demand_mask)):
+            demand_values = carrier_token_content[demand_mask]
+            target_values = initial_token_content[demand_mask]
+            demand_errors = np.abs(
+                demand_values.astype(np.int16) - target_values.astype(np.int16)
+            )
+            demand_token_count += int(np.count_nonzero(demand_mask))
+            demand_exact_count += float(np.count_nonzero(demand_values == target_values))
+            demand_error_sum += float(np.sum(demand_errors) / float(max_value))
+
+    carrier_token_content = carrier[token_indices, 0]
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    demand_denominator = demand_token_count if demand_token_count else 1
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return DemandContentGatePoint(
+        policy=policy,
+        length=length,
+        topology=topology.lower(),
+        bits=bits,
+        ticks=ticks,
+        demand_rate=demand_token_count / float(length * ticks),
+        seed=seed,
+        state_bits_per_token=4 * bits,
+        gate_token_writes=gate_token_writes,
+        gate_channel_writes_per_token_tick=3 * gate_token_writes / float(length * ticks),
+        demand_token_count=demand_token_count,
+        mean_demand_fraction=demand_token_count / float(length * ticks),
+        demand_exact_rate=demand_exact_count / float(demand_denominator),
+        demand_mean_abs_error=demand_error_sum / float(demand_denominator),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        checksum=int(checksum),
+    )
 
 
 class DualPathSyntheticLM:
@@ -787,6 +1149,33 @@ def run_synthetic_lm_candidate_demand_sparsity_sweep(
             point for point in result.points if point.policy == "demand_mismatch_ge1"
         )
         learned = result.points[-1]
+        train_trace = make_mixed_exact_candidate_demand_trace(
+            gate_config,
+            seed=train_seed,
+            candidate_rows=rows,
+        )
+        eval_trace = make_mixed_exact_candidate_demand_trace(
+            gate_config,
+            seed=eval_seed,
+            candidate_rows=rows,
+        )
+        phase_lut = train_synthetic_lm_phased_demand_gate_lut(
+            demand_trace=train_trace,
+            fact_count=gate_config.fact_count,
+            candidate_rows=rows,
+            bits=bits,
+            seed=train_seed + 8192,
+            write_cost=write_cost,
+        )
+        phase_point = evaluate_synthetic_lm_phased_demand_gate(
+            lut=phase_lut,
+            demand_trace=eval_trace,
+            fact_count=gate_config.fact_count,
+            candidate_rows=rows,
+            bits=bits,
+            seed=eval_seed + 8192,
+            policy=f"learned_phase_rank_exact_lut_c{write_cost:0.2f}",
+        )
         points.append(
             SyntheticLMCandidateDemandSweepPoint(
                 candidate_rows=result.candidate_rows,
@@ -807,6 +1196,13 @@ def run_synthetic_lm_candidate_demand_sparsity_sweep(
                 learned_demand_mean_abs_error=learned.demand_mean_abs_error,
                 lut_state_bytes=result.lut_state_bytes,
                 lut_write_state_count=result.lut_write_state_count,
+                phase_lut_state_bytes=phase_lut.state_bytes,
+                phase_lut_write_state_count=phase_lut.write_state_count,
+                phase_writes_per_token_tick=(
+                    phase_point.gate_channel_writes_per_token_tick
+                ),
+                phase_demand_exact_rate=phase_point.demand_exact_rate,
+                phase_demand_mean_abs_error=phase_point.demand_mean_abs_error,
             )
         )
 

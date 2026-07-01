@@ -153,6 +153,14 @@ rows, writes reach 0.1783, nearly the fixed-refresh cost. The output hardware
 therefore needs an early low-bit candidate reducer that keeps content-demanded
 rows near the 8-16 range for normal topic steps.
 
+A smaller exactness-oriented candidate gate fixes the sparse-row misses. The
+phase/rank/mismatch LUT is only 72 bits, or 9 bytes. It reaches 100.0% demanded
+exactness for 1-64 candidate rows, with writes equal to the local
+`demand_mismatch_ge1` upper bound. The useful budget points are 0.0287 writes at
+8 rows and 0.0502 writes at 16 rows. At 64 rows the exact gate costs 0.1892
+writes, so the chip still needs candidate reduction before exact content
+exposure.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

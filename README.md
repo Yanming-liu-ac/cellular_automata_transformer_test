@@ -88,6 +88,8 @@ The first experiments compare:
   pressure of candidate shortlist scoring;
 - candidate-output demand sparsity sweeps showing that content exposure needs
   shortlist pruning before waking candidate rows;
+- 9-byte phase/rank/mismatch demand gates that recover exact candidate exposure
+  on sparse output demand;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;
