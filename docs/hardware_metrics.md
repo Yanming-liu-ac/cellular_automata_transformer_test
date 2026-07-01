@@ -76,6 +76,24 @@ final entropy is only about 1.58 bits. The next metric target is therefore not
 just "stable for 1,000 ticks"; it is stable with content entropy preserved under
 trained local rules.
 
+Content-retention adds another hardware-facing gate:
+
+- exact token-content retention after rollout;
+- average carrier exactness, not only final carrier exactness;
+- normalized carrier content error;
+- persistent state bits/token;
+- refresh channel writes/token/tick.
+
+In the current 512-token, 1,000-tick HARC sweep, shared mHC state stores only
+about 5.3% of random 4-bit content exactly. Adding one persistent content lane
+keeps content retention at 100.0% and raises per-token state from 12 to
+16 bits, but the carrier still averages only about 5.7% exactness. Refreshing
+the carrier from the content lane improves carrier visibility at a direct local
+write cost: refresh64 is 0.045 writes/token/tick for 8.5% average carrier
+exactness, refresh16 is 0.186 writes/token/tick for 12.6%, and refresh8 is
+0.375 writes/token/tick for 19.3%. This makes content exposure a learned
+write-gating problem, not a fixed always-refresh rule.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

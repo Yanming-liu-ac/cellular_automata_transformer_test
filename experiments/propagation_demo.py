@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from cellular_transformer.propagation import (
+    run_content_retention_sweep,
     run_dynamic_propagation_sweep,
     run_long_rollout_stability_sweep,
     summarize_lengths,
@@ -142,6 +143,52 @@ def main() -> None:
     print("- residual_avg is stable but can collapse structured signals into a low-entropy rest state.")
     print("- mhc_damped is rejected here: simple leakage prevents saturation but collapses the state to zero.")
     print("- mhc_grouped is the current hand-coded stability scaffold, but it still needs trained dynamics to preserve content.")
+    print()
+
+    retention = run_content_retention_sweep()
+    print("1,000-tick content retention on mHC carrier")
+    print(f"bits={retention.bits}, ticks={retention.ticks}, topology={','.join(retention.topologies)}")
+    headers = [
+        "policy",
+        "state_b",
+        "refresh",
+        "wr/tok/t",
+        "ent0",
+        "entF",
+        "content",
+        "c_err",
+        "carrierF",
+        "carrierM",
+        "k_errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{h:>16}" for h in headers))
+    print("-" * 218)
+    for point in retention.points:
+        row = [
+            point.policy,
+            str(point.state_bits_per_token),
+            str(point.refresh_interval),
+            f"{point.refresh_channel_writes_per_token_tick:0.4f}",
+            fmt_entropy(point.initial_content_entropy_bits),
+            fmt_entropy(point.final_content_entropy_bits),
+            fmt_pct(point.content_exact_retention_rate),
+            fmt_pct(point.content_mean_abs_error),
+            fmt_pct(point.carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            fmt_entropy(point.carrier_final_entropy_bits),
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>16}" for cell in row))
+
+    print()
+    print("Content-retention interpretation:")
+    print("- shared_mhc confirms the failure: a stable carrier alone does not preserve arbitrary content.")
+    print("- content_latch preserves token content exactly with one extra low-bit lane, but the carrier still forgets it.")
+    print("- carrierF is phase-sensitive; carrierM reports average content visibility across the rollout.")
+    print("- refresh policies trade local writes for keeping the dynamic carrier closer to the persistent content lane.")
 
 
 if __name__ == "__main__":

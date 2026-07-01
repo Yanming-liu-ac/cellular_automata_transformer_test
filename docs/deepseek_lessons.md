@@ -305,6 +305,15 @@ settles to a low-entropy attractor. This is exactly where V4's optimizer lesson
 matters: the CA rule needs trained, constrained dynamics, not just a manually
 tuned leak.
 
+The content-retention diagnostic adds the memory-layout lesson. The mHC carrier
+is a computation carrier, not a reliable content store: direct shared-carrier
+content retention is only about 5% after 1,000 ticks. A persistent content lane
+keeps content exact, while the route/local/envelope carrier can remain a
+low-bit dynamic workspace. Periodic refresh from content into carrier is a crude
+upper bound and quickly spends local writes. The DeepSeek-style translation is
+to keep paths specialized: persistent content, fast route state, and stability
+metadata should be separate paths with learned gates between them.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

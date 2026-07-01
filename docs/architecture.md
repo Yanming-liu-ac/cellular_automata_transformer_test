@@ -175,6 +175,18 @@ states. It still converges to a low-entropy attractor, so the architecture needs
 trained local dynamics and memory-lane writes to carry content on top of that
 stable grouped carrier.
 
+The content-retention sweep turns that into a cell-format decision. Storing
+random 4-bit token content directly in the shared mHC carrier fails after
+1,000 ticks: exact retention is only about 5.3%. A separate persistent content
+lane keeps exact token content at 100.0% with 16 bits/token for the current
+`content | local | route | envelope` scaffold. The carrier still forgets unless
+the content lane writes back into it. Fixed refresh improves carrier visibility
+but costs local writes: refresh64 gives about 8.5% average carrier exactness at
+0.045 channel writes/token/tick, refresh16 gives 12.6% at 0.186 writes, and
+refresh8 gives 19.3% at 0.375 writes. Therefore the architecture should not
+blindly refresh every content cell. It needs a trained local gate that exposes
+persistent content to the carrier only when route/local computation needs it.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

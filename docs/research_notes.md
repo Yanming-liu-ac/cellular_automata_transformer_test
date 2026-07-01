@@ -150,6 +150,22 @@ not yet information-rich. The next trainable rule should preserve this grouped
 stability scaffold while learning content-preserving perturbations and memory
 injection.
 
+The content-retention sweep makes that requirement measurable. It initializes
+random 4-bit token content and rolls the HARC/mHC carrier for 1,000 ticks. If
+the content is stored directly in the shared mHC carrier, exact retention is
+only about 5.3% and mean absolute content error is about 45.0%; a stable carrier
+alone is not a memory. Adding one explicit content latch lane raises token
+content retention to 100.0% at 16 state bits/token, but the dynamic carrier
+still remembers only about 5.7% of exact content on average. Periodic refresh
+from the content lane into the carrier gives the expected traffic/visibility
+tradeoff: refresh64 costs about 0.045 low-bit channel writes/token/tick and
+raises average carrier exactness to 8.5%; refresh16 costs about 0.186 writes and
+raises it to 12.6%; refresh8 costs about 0.375 writes and raises it to 19.3%
+while reducing average carrier error to 17.0%. This is a constructive boundary:
+HARC-CA needs a separate persistent content lane, and the trainable rule should
+learn when to expose that content to the route/local carrier rather than
+refreshing everything on a fixed schedule.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

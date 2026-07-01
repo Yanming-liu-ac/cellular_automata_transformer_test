@@ -109,6 +109,48 @@ class LongRolloutStabilityResult:
     points: Tuple[LongRolloutStabilityPoint, ...]
 
 
+@dataclass(frozen=True)
+class ContentRetentionPoint:
+    """Content-retention result for a stable CA carrier plus optional latch plane."""
+
+    topology: str
+    policy: str
+    length: int
+    bits: int
+    ticks: int
+    seed: int
+    graph_nodes: int
+    graph_edges: int
+    state_bits_per_token: int
+    refresh_interval: int
+    refresh_events: int
+    refresh_channel_writes_per_token_tick: float
+    initial_content_entropy_bits: float
+    final_content_entropy_bits: float
+    content_exact_retention_rate: float
+    content_mean_abs_error: float
+    carrier_exact_retention_rate: float
+    mean_carrier_exact_retention_rate: float
+    carrier_mean_abs_error: float
+    mean_carrier_mean_abs_error: float
+    carrier_final_entropy_bits: float
+    carrier_final_saturation_fraction: float
+    carrier_final_mean_level: float
+    checksum: int
+
+
+@dataclass(frozen=True)
+class ContentRetentionResult:
+    """Sweep of content retention policies on top of the mHC carrier."""
+
+    lengths: Tuple[int, ...]
+    topologies: Tuple[str, ...]
+    policies: Tuple[str, ...]
+    bits: int
+    ticks: int
+    points: Tuple[ContentRetentionPoint, ...]
+
+
 def _connect(edges: EdgeMap, a: Node, b: Node) -> None:
     edges.setdefault(a, []).append(b)
     edges.setdefault(b, []).append(a)
@@ -723,6 +765,212 @@ def run_long_rollout_stability_sweep(
         topologies=clean_topologies,
         rules=clean_rules,
         init_modes=clean_init_modes,
+        bits=bits,
+        ticks=ticks,
+        points=tuple(points),
+    )
+
+
+def _parse_content_policy(policy: str) -> Tuple[bool, int]:
+    policy = str(policy).lower()
+    if policy == "shared_mhc":
+        return False, 0
+    if policy == "content_latch":
+        return True, 0
+    prefix = "content_latch_refresh"
+    if policy.startswith(prefix):
+        suffix = policy[len(prefix) :]
+        if not suffix:
+            raise ValueError("content_latch_refresh policy must include an interval")
+        interval = int(suffix)
+        if interval <= 0:
+            raise ValueError("refresh interval must be positive")
+        return True, interval
+    raise ValueError(
+        "policy must be one of: shared_mhc, content_latch, content_latch_refresh<N>"
+    )
+
+
+def _inject_content_into_carrier(
+    carrier: np.ndarray,
+    content_values: np.ndarray,
+    token_indices: np.ndarray,
+) -> None:
+    token_content = content_values[token_indices]
+    carrier[token_indices, 0] = token_content
+    carrier[token_indices, 1] = token_content
+    carrier[token_indices, 2] = (token_content // 2).astype(np.uint8)
+
+
+def evaluate_content_retention(
+    length: int,
+    topology: str,
+    policy: str,
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 0,
+) -> ContentRetentionPoint:
+    """Measure whether low-bit content survives on or beside the mHC carrier."""
+
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    policy = str(policy).lower()
+    has_latch, refresh_interval = _parse_content_policy(policy)
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    refresh_events = 0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+    for tick in range(1, ticks + 1):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        if has_latch and refresh_interval > 0 and tick % refresh_interval == 0:
+            _inject_content_into_carrier(carrier, content_values, token_indices)
+            refresh_events += 1
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+    carrier_token_content = carrier[token_indices, 0]
+    if has_latch:
+        final_token_content = content_values[token_indices]
+    else:
+        final_token_content = carrier_token_content
+
+    content_error = np.abs(
+        final_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    content_channel_count = 1 if has_latch else 0
+    state_bits_per_token = (3 + content_channel_count) * bits
+    refresh_channel_writes_per_token_tick = (
+        refresh_events * 3 / float(ticks)
+        if has_latch and refresh_interval > 0
+        else 0.0
+    )
+
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return ContentRetentionPoint(
+        topology=topology.lower(),
+        policy=policy,
+        length=length,
+        bits=bits,
+        ticks=ticks,
+        seed=seed,
+        graph_nodes=len(nodes),
+        graph_edges=edge_count(edges),
+        state_bits_per_token=state_bits_per_token,
+        refresh_interval=refresh_interval,
+        refresh_events=refresh_events,
+        refresh_channel_writes_per_token_tick=refresh_channel_writes_per_token_tick,
+        initial_content_entropy_bits=_level_entropy_bits(initial_token_content, max_value),
+        final_content_entropy_bits=_level_entropy_bits(final_token_content, max_value),
+        content_exact_retention_rate=float(np.mean(final_token_content == initial_token_content)),
+        content_mean_abs_error=float(np.mean(content_error) / float(max_value)),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        carrier_final_mean_level=float(np.mean(carrier)) / float(max_value),
+        checksum=int(checksum),
+    )
+
+
+def run_content_retention_sweep(
+    lengths: Tuple[int, ...] = (512,),
+    topologies: Tuple[str, ...] = ("harc",),
+    policies: Tuple[str, ...] = (
+        "shared_mhc",
+        "content_latch",
+        "content_latch_refresh64",
+        "content_latch_refresh16",
+        "content_latch_refresh8",
+    ),
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 211,
+) -> ContentRetentionResult:
+    """Sweep content-latch policies over the stable mHC carrier."""
+
+    if len(lengths) == 0:
+        raise ValueError("lengths must not be empty")
+    clean_lengths = tuple(int(length) for length in lengths)
+    if any(length <= 0 for length in clean_lengths):
+        raise ValueError("lengths must be positive")
+    if len(topologies) == 0:
+        raise ValueError("topologies must not be empty")
+    clean_topologies = tuple(dict.fromkeys(str(topology).lower() for topology in topologies))
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+    clean_policies = tuple(dict.fromkeys(str(policy).lower() for policy in policies))
+
+    points = []
+    for length_index, length in enumerate(clean_lengths):
+        for topology_index, topology in enumerate(clean_topologies):
+            for policy_index, policy in enumerate(clean_policies):
+                point_seed = seed + 1009 * length_index + 131 * topology_index + 17 * policy_index
+                points.append(
+                    evaluate_content_retention(
+                        length=length,
+                        topology=topology,
+                        policy=policy,
+                        bits=bits,
+                        ticks=ticks,
+                        radius=radius,
+                        seed=point_seed,
+                    )
+                )
+
+    return ContentRetentionResult(
+        lengths=clean_lengths,
+        topologies=clean_topologies,
+        policies=clean_policies,
         bits=bits,
         ticks=ticks,
         points=tuple(points),

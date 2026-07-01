@@ -341,6 +341,10 @@ Implement:
 - extend the 1,000-tick random-state stability sweep into trained-state sweeps
   that optimize for content entropy preservation, not just avoiding zero
   collapse or saturation.
+- train a content-to-carrier write gate. The content-retention diagnostic shows
+  that a persistent content lane is necessary, but fixed refresh spends local
+  writes inefficiently; the next rule should learn when the mHC carrier needs
+  content exposure.
 
 First trainable target:
 
