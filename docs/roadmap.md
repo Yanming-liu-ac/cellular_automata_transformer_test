@@ -146,6 +146,11 @@ Compressed block-index result:
   but HCA hot-path efficiency is sensitive: 1% FPR keeps reference HCA routing
   at 82.1%, 10% keeps it at 80.0%, and 25% drops it to 46.3%. The first sidecar
   target is therefore roughly 1-10% FPR, pending a real layout model.
+- The first physical Bloom sidecar instantiates that target. At 8 bits/entry,
+  `k=3`, and 8 banks, it uses about 8.8KB on the reference case, reads
+  0.375B/query, measures about 1.1% sidecar false positives, keeps reference
+  HCA routing at 84.2%, and keeps the rare stress coverage at 100.0% split-rare
+  and 98.4% repeated-name.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -283,8 +288,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- implement a more physical rare-directory presence sidecar: hash count, bits
-  per entry, update cost, bank conflicts, and adversarial false-positive tests.
+- stress the physical Bloom sidecar with adversarial hot-token false positives,
+  alternative bank mappings, and shared per-tile update scheduling.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

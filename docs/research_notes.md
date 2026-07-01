@@ -597,6 +597,15 @@ hot-path efficiency. On the reference stream, a 1% target sidecar has about
 This gives the first concrete sidecar design target: 1-10% false positives may
 be acceptable, but loose presence summaries destroy the dense hot path.
 
+The thirty-ninth sweep instantiates the sidecar as an actual Bloom-style bit
+array. The best first physical point is `8 bits/entry, k=3, 8 banks`: it uses
+about 8.8KB on the reference case, reads 0.375B/query, has about 1.1% measured
+sidecar false positives, keeps 84.2% of reference queries on HCA, and keeps the
+rare stress cases at 100.0% split-rare and 98.4% repeated-name coverage. Moving
+to `k=4` lowers false positives further but raises read traffic to 0.5B/query
+and creates many same-bank read conflicts. This is the first result that looks
+like a real CA-chip control SRAM rather than only an abstract routing label.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

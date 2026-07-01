@@ -588,6 +588,59 @@ class LowBitDirectoryAwareHcaRouteLUT:
         return bool(self.routes_hca[index])
 
 
+class LowBitPresenceBloomSidecar:
+    """Low-bit Bloom-style sidecar for rare-directory token presence."""
+
+    def __init__(
+        self,
+        bit_count: int,
+        hash_count: int,
+        bank_count: int = 8,
+        salt: int = 6113,
+    ) -> None:
+        if bit_count <= 0:
+            raise ValueError("bit_count must be positive")
+        if hash_count <= 0:
+            raise ValueError("hash_count must be positive")
+        if bank_count <= 0:
+            raise ValueError("bank_count must be positive")
+        self.bit_count = int(bit_count)
+        self.hash_count = int(hash_count)
+        self.bank_count = int(bank_count)
+        self.salt = int(salt)
+        self.bits = np.zeros(self.bit_count, dtype=np.bool_)
+        self.insert_count = 0
+
+    @property
+    def state_bytes(self) -> float:
+        return self.bit_count / 8
+
+    @property
+    def read_bytes_per_query(self) -> float:
+        return self.hash_count / 8
+
+    @property
+    def write_bytes_per_insert(self) -> float:
+        return self.hash_count / 8
+
+    def slots(self, token: int) -> Tuple[int, ...]:
+        return tuple(
+            int(keyed_hash(int(token), self.salt + index * 131) % self.bit_count)
+            for index in range(self.hash_count)
+        )
+
+    def banks(self, slots: Tuple[int, ...]) -> Tuple[int, ...]:
+        return tuple(int(slot) % self.bank_count for slot in slots)
+
+    def insert(self, token: int) -> None:
+        for slot in self.slots(token):
+            self.bits[slot] = True
+        self.insert_count += 1
+
+    def query(self, token: int) -> bool:
+        return all(bool(self.bits[slot]) for slot in self.slots(token))
+
+
 @dataclass(frozen=True)
 class CsaHcaRareDirectoryLearnedFanoutResult:
     """Trained fanout-LUT evaluation for the rare-token directory."""
@@ -768,6 +821,64 @@ class CsaHcaRareDirectoryPresenceSidecarResult:
     route_lut: LowBitDirectoryAwareHcaRouteLUT
     fanout_lut: LowBitRareDirectoryFanoutLUT
     points: Tuple[CsaHcaRareDirectoryPresenceSidecarPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomSidecarPoint:
+    """One physical Bloom-sidecar point for directory-aware HCA routing."""
+
+    bits_per_entry: int
+    hash_count: int
+    bank_count: int
+    scenario: str
+    hca_threshold: int
+    route_lut_state_bytes: float
+    sidecar_state_bytes: float
+    fanout_lut_state_bytes: float
+    directory_state_bytes: float
+    sidecar_entries: int
+    read_bytes_per_query: float
+    write_bytes_per_insert: float
+    update_bytes_per_context_token: float
+    sidecar_false_positive_query_rate: float
+    query_bank_conflict_rate: float
+    update_bank_conflict_rate: float
+    avg_query_unique_banks: float
+    avg_update_unique_banks: float
+    directory_hit_rate: float
+    hca_query_rate: float
+    csa_query_rate: float
+    rare_false_hca_rate: float
+    repaired_relevant_hit_rate: float
+    repaired_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomSidecarResult:
+    """Physical Bloom-sidecar sweep for directory-aware HCA routing."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    coverage_target: float
+    route_positive_rate_threshold: float
+    bits_per_entry_options: Tuple[int, ...]
+    hash_count_options: Tuple[int, ...]
+    bank_count: int
+    train_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    route_lut: LowBitDirectoryAwareHcaRouteLUT
+    fanout_lut: LowBitRareDirectoryFanoutLUT
+    points: Tuple[CsaHcaRareDirectoryBloomSidecarPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -3312,6 +3423,188 @@ def run_csa_hca_rare_directory_presence_sidecar_sweep(
     )
 
 
+def run_csa_hca_rare_directory_bloom_sidecar_sweep(
+    bits_per_entry_options: Tuple[int, ...] = (4, 8, 12),
+    hash_count_options: Tuple[int, ...] = (2, 3, 4),
+    bank_count: int = 8,
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    route_positive_rate_threshold: float = 0.50,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+    sidecar_salt: int = 9173,
+) -> CsaHcaRareDirectoryBloomSidecarResult:
+    """Evaluate a concrete Bloom-style rare-directory presence sidecar."""
+
+    if len(bits_per_entry_options) == 0:
+        raise ValueError("bits_per_entry_options must not be empty")
+    if len(hash_count_options) == 0:
+        raise ValueError("hash_count_options must not be empty")
+    bits_options = tuple(sorted({int(value) for value in bits_per_entry_options}))
+    hash_options = tuple(sorted({int(value) for value in hash_count_options}))
+    if any(value <= 0 for value in bits_options):
+        raise ValueError("bits_per_entry_options must be positive")
+    if any(value <= 0 for value in hash_options):
+        raise ValueError("hash_count_options must be positive")
+    if bank_count <= 0:
+        raise ValueError("bank_count must be positive")
+
+    route_lut, route_training_samples = train_directory_aware_hca_route_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+    fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=tuple(s for s in train_scenarios if s != "zipf_reference") or train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=True,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed + 4096,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        directory_entry_state_bytes = sum(len(blocks) for blocks in directory.values()) * directory_entry_bytes
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+        directory_tokens = tuple(sorted(int(token) for token in directory))
+
+        for bits_per_entry in bits_options:
+            for hash_count in hash_options:
+                bit_count = max(1, int(len(directory_tokens) * bits_per_entry))
+                sidecar = LowBitPresenceBloomSidecar(
+                    bit_count=bit_count,
+                    hash_count=hash_count,
+                    bank_count=bank_count,
+                    salt=sidecar_salt + scenario_index * 997 + bits_per_entry * 31 + hash_count,
+                )
+                for token in directory_tokens:
+                    sidecar.insert(token)
+                points.append(
+                    _evaluate_rare_directory_bloom_sidecar_point(
+                        bits_per_entry=bits_per_entry,
+                        scenario=scenario,
+                        config=config,
+                        index=index,
+                        global_summary=global_summary,
+                        exact_counts=exact_counts,
+                        directory=directory,
+                        directory_blocks_per_token=directory_blocks_per_token,
+                        directory_entry_bytes=directory_entry_bytes,
+                        directory_state_bytes=directory_entry_state_bytes + sidecar.state_bytes,
+                        hca_threshold=hca_threshold,
+                        route_lut=route_lut,
+                        fanout_lut=fanout_lut,
+                        sidecar=sidecar,
+                        min_read_blocks_per_token=min_read_blocks_per_token,
+                        recent_blocks=recent_blocks,
+                        query_tokens=query_tokens,
+                        directory_tokens=directory_tokens,
+                    )
+                )
+
+    return CsaHcaRareDirectoryBloomSidecarResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        coverage_target=coverage_target,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        bits_per_entry_options=bits_options,
+        hash_count_options=hash_options,
+        bank_count=bank_count,
+        train_scenarios=train_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=route_training_samples + fanout_training_samples,
+        route_lut=route_lut,
+        fanout_lut=fanout_lut,
+        points=tuple(points),
+    )
+
+
 def run_hca_summary_quality_sweep(
     global_widths: Tuple[int, ...] = (512, 1024, 2048, 4096),
     threshold: int = 8,
@@ -4544,6 +4837,140 @@ def _evaluate_rare_directory_presence_sidecar_point(
         directory_state_bytes=directory_state_bytes,
         route_feature_read_bytes=route_feature_read_bytes,
         sidecar_false_positive_query_rate=sidecar_false_positive_queries / query_denominator,
+        directory_hit_rate=directory_hits / query_denominator,
+        hca_query_rate=hca_queries / query_denominator,
+        csa_query_rate=csa_queries / query_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
+
+
+def _evaluate_rare_directory_bloom_sidecar_point(
+    bits_per_entry: int,
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    route_lut: LowBitDirectoryAwareHcaRouteLUT,
+    fanout_lut: LowBitRareDirectoryFanoutLUT,
+    sidecar: LowBitPresenceBloomSidecar,
+    min_read_blocks_per_token: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+    directory_tokens: Tuple[int, ...],
+) -> CsaHcaRareDirectoryBloomSidecarPoint:
+    hca_queries = 0
+    csa_queries = 0
+    directory_hits = 0
+    sidecar_false_positive_queries = 0
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    repaired_hits = 0
+    repaired_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+    query_bank_conflicts = 0
+    query_unique_banks = 0
+    min_read_blocks_per_token = min(max(0, int(min_read_blocks_per_token)), directory_blocks_per_token)
+
+    for token in query_tokens:
+        token = int(token)
+        counter_values = _dense_counter_values(global_summary, token)
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
+        slots = sidecar.slots(token)
+        banks = sidecar.banks(slots)
+        unique_banks = len(set(banks))
+        query_unique_banks += unique_banks
+        query_bank_conflicts += int(unique_banks < len(banks))
+        sidecar_visible = all(bool(sidecar.bits[slot]) for slot in slots)
+        sidecar_false_positive = sidecar_visible and not directory_hit
+        if directory_hit:
+            visible_directory_blocks = directory_blocks
+        elif sidecar_false_positive:
+            visible_directory_blocks = np.array([-1], dtype=np.int32)
+        else:
+            visible_directory_blocks = np.empty(0, dtype=np.int32)
+        directory_read_bytes += sidecar.read_bytes_per_query
+        directory_hits += int(directory_hit)
+        sidecar_false_positive_queries += int(sidecar_false_positive)
+
+        route_hca = route_lut.route_hca(counter_values, visible_directory_blocks)
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            selected = recent_blocks
+            hca_queries += 1
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            read_limit = fanout_lut.predict(directory_blocks, base_selected)
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
+            csa_queries += 1
+            if directory_hit:
+                directory_read_bytes += directory_entry_bytes * len(readable_directory_blocks)
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+        repaired_hits += _block_hit(selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+    update_conflicts = 0
+    update_unique_banks = 0
+    for token in directory_tokens:
+        slots = sidecar.slots(int(token))
+        banks = sidecar.banks(slots)
+        unique_banks = len(set(banks))
+        update_unique_banks += unique_banks
+        update_conflicts += int(unique_banks < len(banks))
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    update_denominator = len(directory_tokens) if len(directory_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    token_reads_per_query = token_reads / query_denominator
+
+    return CsaHcaRareDirectoryBloomSidecarPoint(
+        bits_per_entry=bits_per_entry,
+        hash_count=sidecar.hash_count,
+        bank_count=sidecar.bank_count,
+        scenario=scenario,
+        hca_threshold=hca_threshold,
+        route_lut_state_bytes=route_lut.state_bytes,
+        sidecar_state_bytes=sidecar.state_bytes,
+        fanout_lut_state_bytes=fanout_lut.state_bytes,
+        directory_state_bytes=directory_state_bytes,
+        sidecar_entries=len(directory_tokens),
+        read_bytes_per_query=sidecar.read_bytes_per_query,
+        write_bytes_per_insert=sidecar.write_bytes_per_insert,
+        update_bytes_per_context_token=(
+            len(directory_tokens) * sidecar.write_bytes_per_insert / config.context_length
+        ),
+        sidecar_false_positive_query_rate=sidecar_false_positive_queries / query_denominator,
+        query_bank_conflict_rate=query_bank_conflicts / query_denominator,
+        update_bank_conflict_rate=update_conflicts / update_denominator,
+        avg_query_unique_banks=query_unique_banks / query_denominator,
+        avg_update_unique_banks=update_unique_banks / update_denominator,
         directory_hit_rate=directory_hits / query_denominator,
         hca_query_rate=hca_queries / query_denominator,
         csa_query_rate=csa_queries / query_denominator,

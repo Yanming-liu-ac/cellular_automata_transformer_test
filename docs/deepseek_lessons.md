@@ -507,6 +507,11 @@ metadata needs an error budget. In the current stress set, 1-10% presence
 false positives mostly cost hot-path HCA efficiency, while 25% is too loose and
 collapses reference HCA routing. CA routing metadata should therefore be trained
 and budgeted as part of the model, not treated as free bookkeeping.
+The physical Bloom-sidecar sweep is the next systems step: hash count, bits per
+entry, read bits, update bits, and bank conflicts become model-facing design
+parameters. This is exactly the DeepSeek-style lesson at CA scale: efficient
+models come from the joint design of routing policy, memory format, and kernel
+or fabric access pattern.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

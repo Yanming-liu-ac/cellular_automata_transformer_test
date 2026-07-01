@@ -18,6 +18,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_joint_threshold_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
+    run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_presence_sidecar_sweep,
     run_csa_hca_rare_directory_route_lut_sweep,
@@ -698,6 +699,57 @@ def main() -> None:
     print("- Exact sidecar behavior is the upper bound; Bloom false positives trade state for HCA hot-path loss.")
     print("- Rare recall stays safe because false positives route extra queries to CSA instead of HCA.")
     print("- The hardware target is the largest false-positive rate that keeps reference HCA routing high enough.")
+    print()
+
+    bloom = run_csa_hca_rare_directory_bloom_sidecar_sweep()
+    print("Physical Bloom presence-sidecar sweep")
+    print(
+        f"training_samples={bloom.training_samples}, "
+        f"route_lut={format_bytes(bloom.route_lut.state_bytes)}, "
+        f"banks={bloom.bank_count}"
+    )
+    headers = [
+        "bpe",
+        "k",
+        "scenario",
+        "sidecar",
+        "rd",
+        "fp_q",
+        "hca_r",
+        "coverage",
+        "q_conf",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 150)
+    for point in bloom.points:
+        show_reference = point.scenario == "zipf_reference"
+        show_stress = (
+            point.bits_per_entry == 8
+            and point.hash_count == 3
+            and point.scenario in ("split_rare", "repeated_name")
+        )
+        if not (show_reference or show_stress):
+            continue
+        row = [
+            f"{point.bits_per_entry}",
+            f"{point.hash_count}",
+            point.scenario,
+            format_bytes(point.sidecar_state_bytes),
+            format_bytes(point.read_bytes_per_query),
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            fmt_pct(point.query_bank_conflict_rate),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Physical Bloom interpretation:")
+    print("- The 8 bits/entry, k=3 point keeps reference HCA routing near the ideal sidecar.")
+    print("- More hash reads cut false positives but raise read traffic and bank conflicts.")
+    print("- This turns the presence sidecar into an explicit SRAM/read-port design knob.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

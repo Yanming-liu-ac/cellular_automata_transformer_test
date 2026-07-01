@@ -374,6 +374,14 @@ reference HCA routing falls to 46.3%, so the hot path starts losing its point.
 Rare recall remains safe in this sweep because false positives route extra
 queries to CSA, not HCA.
 
+The concrete Bloom-sidecar sweep turns that into an SRAM/read-port candidate.
+With `8 bits/entry`, `k=3` hashes, and 8 banks, the sidecar is about 8.8KB on the
+reference case, reads 3 bits/query, writes 3 bits per rare-directory insertion,
+and keeps reference HCA routing at 84.2%. The same setting keeps split-rare
+coverage at 100.0% and repeated-name coverage at 98.4%. Increasing `k` reduces
+false positives but raises read traffic and bank conflicts, so the CA control
+plane now has a concrete layout knob instead of an abstract "presence bit."
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

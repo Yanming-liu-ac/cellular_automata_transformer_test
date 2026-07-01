@@ -511,6 +511,28 @@ efficiency risk for hot reference traffic, not an exact-recall risk in this
 stress set. A target around 1-10% looks plausible; 25% is too loose for the HCA
 hot path.
 
+The next sweep replaces the abstract false-positive target with a concrete
+Bloom-style sidecar. It inserts the rare-directory token ids into a bit array,
+queries `k` hashed bits per token, and measures false positives and bank
+conflicts directly. On the reference stream:
+
+```text
+bpe=4   k=2  sidecar=4.40KB   read=0.25B/query  fp_q=9.3%   HCA=77.7%  q_bank_conflict=4.9%
+bpe=4   k=3  sidecar=4.40KB   read=0.38B/query  fp_q=10.5%  HCA=76.0%  q_bank_conflict=48.0%
+bpe=8   k=2  sidecar=8.80KB   read=0.25B/query  fp_q=3.1%   HCA=82.5%  q_bank_conflict=7.4%
+bpe=8   k=3  sidecar=8.80KB   read=0.38B/query  fp_q=1.1%   HCA=84.2%  q_bank_conflict=19.9%
+bpe=8   k=4  sidecar=8.80KB   read=0.50B/query  fp_q=0.7%   HCA=84.5%  q_bank_conflict=62.5%
+bpe=12  k=3  sidecar=13.19KB  read=0.38B/query  fp_q=0.4%   HCA=84.4%  q_bank_conflict=30.9%
+```
+
+The current concrete candidate is `8 bits/entry, k=3, 8 banks`: it uses about
+8.8-9.0KB sidecar SRAM across the stress cases, reads 3 bits/query, writes
+3 bits per rare-directory insertion, spends about 0.052B of sidecar update
+traffic per context token, keeps reference HCA routing at 84.2%, keeps
+split-rare coverage at 100.0%, and keeps repeated-name coverage at 98.4%. The
+next physical question is bank layout: `k=4` gives lower false positives but too
+many same-bank read conflicts under the simple modulo-bank model.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text
