@@ -717,6 +717,23 @@ accuracy is only 63.57% under doubled parser noise. This says the next teacher
 must explicitly distinguish "parser is uncertain, downgrade excess strict" from
 "coverage is missing, keep or raise strict".
 
+The first two-branch diagnostics test that split directly. A parser-relief
+branch after the learned selector improves over-strict traffic but is unstable:
+the 234B controller passes only 3/4 default rows and still fails parser_x2. The
+more useful split starts from `factor_vote80b`, which already survives
+parser_x2, and adds a 30B coverage-repair LUT that can upgrade normal claims
+back to strict when local coverage gaps look dangerous. This
+`two_branch_factor_selector` uses 174B total state, passes 4/4 default rows,
+and passes the coverage-side stress rows: omit_x2, distractor_x2, and large_2k
+are all 2/2. It still fails parser_x2 at 0/2, with 63.92% accuracy and 35.74%
+over-strict. A 90B branch mixer over factor mode, learned mode, vote count,
+core gap, and parser misses also fails to close the matrix. The useful
+negative result is that the current per-claim local buckets do not carry enough
+regime information to select the parser branch under parser noise and the
+coverage branch under omission shift. The next version needs a small
+event-level or region-level regime signal, such as rolling parser-miss excess
+versus rolling coverage-gap excess, before spending more SRAM on per-claim LUTs.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

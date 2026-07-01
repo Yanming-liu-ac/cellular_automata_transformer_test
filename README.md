@@ -185,6 +185,8 @@ The first experiments compare:
   parser noise, omitted fields, distractors, and larger claim counts;
 - learned paragraph shift selectors that train a small local LUT across
   multiple paragraph-noise distributions;
+- two-branch paragraph selector diagnostics that split parser-tolerant
+  downgrades from coverage repair and expose the missing regime signal;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

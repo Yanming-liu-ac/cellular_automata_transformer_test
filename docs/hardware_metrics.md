@@ -1550,6 +1550,9 @@ factor_vote80b: 144B controller, 23.83% mean over-strict, 9.32 touch/event, 0/4 
 factor_vote80b_covsafe: 144B controller, 24.22% mean over-strict, 9.32 touch/event, 0/4 failures
 factor_vote80b_shiftguard: 144B controller, 24.29% mean over-strict, 9.33 touch/event, 0/4 failures
 learned_shift_selector: 204B controller, 28.44% mean over-strict, 9.40 touch/event, 0/4 failures
+two_branch_selector: 234B controller, 27.25% mean over-strict, 9.38 touch/event, 1/4 failures
+two_branch_factor_selector: 174B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
+two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/event, 1/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
@@ -1580,6 +1583,16 @@ learned_shift_selector parser_x2:        63.57% accuracy, 99.39% strict recall, 
 learned_shift_selector omit_x2:          72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
 learned_shift_selector distractor_x2:    70.07% accuracy, 99.47% strict recall, 0.49% under, 29.44% over, 2/2 pass
 learned_shift_selector large_2k:         70.07% accuracy, 98.74% strict recall, 0.93% under, 29.00% over, 2/2 pass
+two_branch_factor_selector default_1k:   73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
+two_branch_factor_selector parser_x2:    63.92% accuracy, 99.49% strict recall, 0.34% under, 35.74% over, 0/2 pass
+two_branch_factor_selector omit_x2:      73.58% accuracy, 99.32% strict recall, 0.98% under, 25.44% over, 2/2 pass
+two_branch_factor_selector distractor_x2: 70.65% accuracy, 99.59% strict recall, 0.68% under, 28.66% over, 2/2 pass
+two_branch_factor_selector large_2k:     71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
+two_branch_mixer_selector default_1k:    74.66% accuracy, 98.28% strict recall, 1.07% under, 24.27% over, 1/2 pass
+two_branch_mixer_selector parser_x2:     65.82% accuracy, 98.57% strict recall, 0.78% under, 33.40% over, 1/2 pass
+two_branch_mixer_selector omit_x2:       75.44% accuracy, 97.49% strict recall, 1.71% under, 22.85% over, 0/2 pass
+two_branch_mixer_selector distractor_x2: 73.00% accuracy, 98.42% strict recall, 1.17% under, 25.83% over, 1/2 pass
+two_branch_mixer_selector large_2k:      73.14% accuracy, 98.12% strict recall, 1.27% under, 25.59% over, 1/2 pass
 ```
 
 This separates efficiency from robustness. The 144B guard is efficient and
@@ -1590,6 +1603,14 @@ multi-distribution learned selector solves the coverage-shift rows but stays
 too strict under parser-noise shift. A chip-facing version should therefore use
 a two-branch teacher: coverage uncertainty raises repair, parser uncertainty
 suppresses false strict repair.
+
+The first two-branch diagnostics narrow that requirement. A factor-first
+coverage repair branch uses only 174B and passes default plus the coverage-side
+stress rows, but parser_x2 remains 0/2. A local factor/learned mixer with 294B
+state still fails to choose the right branch consistently. The next hardware
+metric should therefore track a tiny rolling regime counter per region or tile:
+parser-miss excess should select the factor branch, while coverage-gap excess
+should select the repair branch.
 
 ## Tile/Floorplan Metrics
 

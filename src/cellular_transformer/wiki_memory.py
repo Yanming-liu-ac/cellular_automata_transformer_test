@@ -10450,6 +10450,21 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     factor_guard80_shiftguard_min_core_gap_sum: int = 3,
     learned_shift_selector_under_importance_weight: float = 8.0,
     learned_shift_selector_over_importance_weight: float = 0.75,
+    two_branch_parser_relief_under_importance_weight: float = 8.0,
+    two_branch_parser_relief_over_importance_weight: float = 2.0,
+    two_branch_parser_relief_parser_profile_weight: float = 3.0,
+    two_branch_parser_relief_min_parser_miss_bucket: int = 2,
+    two_branch_parser_relief_max_core_gap_bucket: int = 2,
+    two_branch_coverage_repair_under_importance_weight: float = 12.0,
+    two_branch_coverage_repair_over_importance_weight: float = 0.25,
+    two_branch_coverage_repair_profile_weight: float = 5.0,
+    two_branch_coverage_repair_parser_profile_weight: float = 0.5,
+    two_branch_coverage_repair_min_core_gap_bucket: int = 1,
+    two_branch_coverage_repair_max_parser_miss_bucket: int = 3,
+    two_branch_mixer_under_importance_weight: float = 8.0,
+    two_branch_mixer_over_importance_weight: float = 1.0,
+    two_branch_mixer_coverage_profile_weight: float = 1.0,
+    two_branch_mixer_parser_profile_weight: float = 1.0,
     learned_shift_selector_profiles: Tuple[str, ...] = (
         "default",
         "parser_x2",
@@ -10567,6 +10582,60 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError(
             "learned_shift_selector_over_importance_weight must be non-negative"
         )
+    if two_branch_parser_relief_under_importance_weight < 0.0:
+        raise ValueError(
+            "two_branch_parser_relief_under_importance_weight must be non-negative"
+        )
+    if two_branch_parser_relief_over_importance_weight < 0.0:
+        raise ValueError(
+            "two_branch_parser_relief_over_importance_weight must be non-negative"
+        )
+    if two_branch_parser_relief_parser_profile_weight < 0.0:
+        raise ValueError(
+            "two_branch_parser_relief_parser_profile_weight must be non-negative"
+        )
+    if not 0 <= two_branch_parser_relief_min_parser_miss_bucket < 4:
+        raise ValueError(
+            "two_branch_parser_relief_min_parser_miss_bucket must be in [0, 3]"
+        )
+    if not 0 <= two_branch_parser_relief_max_core_gap_bucket < 4:
+        raise ValueError(
+            "two_branch_parser_relief_max_core_gap_bucket must be in [0, 3]"
+        )
+    if two_branch_coverage_repair_under_importance_weight < 0.0:
+        raise ValueError(
+            "two_branch_coverage_repair_under_importance_weight must be non-negative"
+        )
+    if two_branch_coverage_repair_over_importance_weight < 0.0:
+        raise ValueError(
+            "two_branch_coverage_repair_over_importance_weight must be non-negative"
+        )
+    if two_branch_coverage_repair_profile_weight < 0.0:
+        raise ValueError(
+            "two_branch_coverage_repair_profile_weight must be non-negative"
+        )
+    if two_branch_coverage_repair_parser_profile_weight < 0.0:
+        raise ValueError(
+            "two_branch_coverage_repair_parser_profile_weight must be non-negative"
+        )
+    if not 0 <= two_branch_coverage_repair_min_core_gap_bucket < 4:
+        raise ValueError(
+            "two_branch_coverage_repair_min_core_gap_bucket must be in [0, 3]"
+        )
+    if not 0 <= two_branch_coverage_repair_max_parser_miss_bucket < 4:
+        raise ValueError(
+            "two_branch_coverage_repair_max_parser_miss_bucket must be in [0, 3]"
+        )
+    if two_branch_mixer_under_importance_weight < 0.0:
+        raise ValueError("two_branch_mixer_under_importance_weight must be non-negative")
+    if two_branch_mixer_over_importance_weight < 0.0:
+        raise ValueError("two_branch_mixer_over_importance_weight must be non-negative")
+    if two_branch_mixer_coverage_profile_weight < 0.0:
+        raise ValueError(
+            "two_branch_mixer_coverage_profile_weight must be non-negative"
+        )
+    if two_branch_mixer_parser_profile_weight < 0.0:
+        raise ValueError("two_branch_mixer_parser_profile_weight must be non-negative")
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10910,12 +10979,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         variant for variant in factor_guard_variants if variant[0] == "factor_vote80b"
     )
     selector_projections = factor80_variant[1]
+    selector_vote_threshold = int(factor80_variant[2])
     selector_guards = factor80_variant[3]
     selector_guard_bytes = float(factor80_variant[4])
     selector_counts = np.zeros(
         (mode_count, 5, bucket_count, bucket_count, mode_count),
         dtype=np.int64,
     )
+    selector_training_examples: List[Tuple[str, np.ndarray, np.ndarray]] = []
 
     def add_selector_examples(bucket_rows: np.ndarray, labels: np.ndarray) -> None:
         for row, label in zip(bucket_rows, labels):
@@ -10999,6 +11070,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 axis=1,
             ).astype(np.int64)
             add_selector_examples(selector_buckets, trace[0])
+            selector_training_examples.append((profile, selector_buckets, trace[0]))
 
     learned_shift_selector = np.ones(
         (mode_count, 5, bucket_count, bucket_count),
@@ -11029,6 +11101,244 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             losses.append(loss)
         learned_shift_selector[index] = int(np.argmin(losses))
     selector_lut_bytes = float(np.prod(learned_shift_selector.shape)) * 2.0 / 8.0
+
+    parser_relief_counts = np.zeros(
+        (mode_count, 5, bucket_count, bucket_count, mode_count),
+        dtype=np.float64,
+    )
+    for profile, bucket_rows, labels in selector_training_examples:
+        profile_weight = (
+            two_branch_parser_relief_parser_profile_weight
+            if profile == "parser_x2"
+            else 1.0
+        )
+        for row, label in zip(bucket_rows, labels):
+            base_mode = int(
+                lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
+            )
+            vote_count = 0
+            for projection, factor_guard in zip(selector_projections, selector_guards):
+                vote_count += int(
+                    factor_guard[tuple(int(row[index]) for index in projection)]
+                )
+            core_gap_bucket = min(int(row[4]) + int(row[5]), bucket_count - 1)
+            parser_miss_bucket = int(row[3])
+            coverage_action = (
+                int(
+                    learned_shift_selector[
+                        base_mode,
+                        vote_count,
+                        core_gap_bucket,
+                        parser_miss_bucket,
+                    ]
+                )
+                - 1
+            )
+            coverage_mode = max(0, min(mode_count - 1, base_mode + coverage_action))
+            if (
+                coverage_mode != 2
+                or parser_miss_bucket < two_branch_parser_relief_min_parser_miss_bucket
+                or core_gap_bucket > two_branch_parser_relief_max_core_gap_bucket
+            ):
+                continue
+            parser_relief_counts[
+                coverage_mode,
+                vote_count,
+                core_gap_bucket,
+                parser_miss_bucket,
+                int(label),
+            ] += profile_weight
+
+    parser_relief_selector = np.zeros(
+        (mode_count, 5, bucket_count, bucket_count),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(parser_relief_selector.shape):
+        coverage_mode = int(index[0])
+        core_gap_bucket = int(index[2])
+        parser_miss_bucket = int(index[3])
+        if (
+            coverage_mode != 2
+            or parser_miss_bucket < two_branch_parser_relief_min_parser_miss_bucket
+            or core_gap_bucket > two_branch_parser_relief_max_core_gap_bucket
+        ):
+            continue
+        bucket_counts = parser_relief_counts[index]
+        if float(np.sum(bucket_counts)) <= 0.0:
+            continue
+        losses = []
+        for relief in (0, 1):
+            predicted = max(0, coverage_mode - relief)
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (
+                        (actual - predicted)
+                        * two_branch_parser_relief_under_importance_weight
+                        * count
+                    )
+                elif predicted > actual:
+                    loss += (
+                        (predicted - actual)
+                        * two_branch_parser_relief_over_importance_weight
+                        * count
+                    )
+            losses.append(loss)
+        parser_relief_selector[index] = int(np.argmin(losses))
+    parser_relief_lut_bytes = float(np.prod(parser_relief_selector.shape)) / 8.0
+
+    coverage_repair_counts = np.zeros(
+        (mode_count, 5, bucket_count, bucket_count, mode_count),
+        dtype=np.float64,
+    )
+    for profile, bucket_rows, labels in selector_training_examples:
+        if profile in ("omit_x2", "distractor_x2"):
+            profile_weight = two_branch_coverage_repair_profile_weight
+        elif profile == "parser_x2":
+            profile_weight = two_branch_coverage_repair_parser_profile_weight
+        else:
+            profile_weight = 1.0
+        for row, label in zip(bucket_rows, labels):
+            base_mode = int(
+                lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
+            )
+            vote_count = 0
+            for projection, factor_guard in zip(selector_projections, selector_guards):
+                vote_count += int(
+                    factor_guard[tuple(int(row[index]) for index in projection)]
+                )
+            core_gap_bucket = min(int(row[4]) + int(row[5]), bucket_count - 1)
+            parser_miss_bucket = int(row[3])
+            factor_mode = base_mode
+            if factor_mode == 2 and vote_count >= selector_vote_threshold:
+                factor_mode = 1
+            if (
+                factor_mode != 1
+                or core_gap_bucket < two_branch_coverage_repair_min_core_gap_bucket
+                or parser_miss_bucket > two_branch_coverage_repair_max_parser_miss_bucket
+            ):
+                continue
+            coverage_repair_counts[
+                factor_mode,
+                vote_count,
+                core_gap_bucket,
+                parser_miss_bucket,
+                int(label),
+            ] += profile_weight
+
+    coverage_repair_selector = np.zeros(
+        (mode_count, 5, bucket_count, bucket_count),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(coverage_repair_selector.shape):
+        factor_mode = int(index[0])
+        core_gap_bucket = int(index[2])
+        parser_miss_bucket = int(index[3])
+        if (
+            factor_mode != 1
+            or core_gap_bucket < two_branch_coverage_repair_min_core_gap_bucket
+            or parser_miss_bucket > two_branch_coverage_repair_max_parser_miss_bucket
+        ):
+            continue
+        bucket_counts = coverage_repair_counts[index]
+        if float(np.sum(bucket_counts)) <= 0.0:
+            continue
+        losses = []
+        for repair in (0, 1):
+            predicted = min(mode_count - 1, factor_mode + repair)
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (
+                        (actual - predicted)
+                        * two_branch_coverage_repair_under_importance_weight
+                        * count
+                    )
+                elif predicted > actual:
+                    loss += (
+                        (predicted - actual)
+                        * two_branch_coverage_repair_over_importance_weight
+                        * count
+                    )
+            losses.append(loss)
+        coverage_repair_selector[index] = int(np.argmin(losses))
+    coverage_repair_lut_bytes = float(np.prod(coverage_repair_selector.shape)) / 8.0
+
+    branch_mixer_counts = np.zeros(
+        (mode_count, mode_count, 5, bucket_count, bucket_count, mode_count),
+        dtype=np.float64,
+    )
+    for profile, bucket_rows, labels in selector_training_examples:
+        if profile in ("omit_x2", "distractor_x2"):
+            profile_weight = two_branch_mixer_coverage_profile_weight
+        elif profile == "parser_x2":
+            profile_weight = two_branch_mixer_parser_profile_weight
+        else:
+            profile_weight = 1.0
+        for row, label in zip(bucket_rows, labels):
+            base_mode = int(
+                lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
+            )
+            vote_count = 0
+            for projection, factor_guard in zip(selector_projections, selector_guards):
+                vote_count += int(
+                    factor_guard[tuple(int(row[index]) for index in projection)]
+                )
+            core_gap_bucket = min(int(row[4]) + int(row[5]), bucket_count - 1)
+            parser_miss_bucket = int(row[3])
+            factor_mode = base_mode
+            if factor_mode == 2 and vote_count >= selector_vote_threshold:
+                factor_mode = 1
+            learned_action = (
+                int(
+                    learned_shift_selector[
+                        base_mode,
+                        vote_count,
+                        core_gap_bucket,
+                        parser_miss_bucket,
+                    ]
+                )
+                - 1
+            )
+            learned_mode = max(0, min(mode_count - 1, base_mode + learned_action))
+            branch_mixer_counts[
+                factor_mode,
+                learned_mode,
+                vote_count,
+                core_gap_bucket,
+                parser_miss_bucket,
+                int(label),
+            ] += profile_weight
+
+    branch_mixer_selector = np.zeros(
+        (mode_count, mode_count, 5, bucket_count, bucket_count),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(branch_mixer_selector.shape):
+        bucket_counts = branch_mixer_counts[index]
+        if float(np.sum(bucket_counts)) <= 0.0:
+            continue
+        factor_mode = int(index[0])
+        learned_mode = int(index[1])
+        losses = []
+        for predicted in (factor_mode, learned_mode):
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (
+                        (actual - predicted)
+                        * two_branch_mixer_under_importance_weight
+                        * count
+                    )
+                elif predicted > actual:
+                    loss += (
+                        (predicted - actual)
+                        * two_branch_mixer_over_importance_weight
+                        * count
+                    )
+            losses.append(loss)
+        branch_mixer_selector[index] = int(np.argmin(losses))
+    branch_mixer_lut_bytes = float(np.prod(branch_mixer_selector.shape)) / 8.0
 
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
     mode_touch = {}
@@ -11234,6 +11544,8 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum(downgrade_mask)),
             )
         )
+        factor80_predicted = None
+        factor80_downgrade_mask = None
         for (
             variant,
             projections,
@@ -11280,6 +11592,9 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                     core_gap_sum >= int(upgrade_min_core_gap_sum)
                 )
                 factor_predicted[upgrade_mask] = 2
+            if variant == "factor_vote80b":
+                factor80_predicted = factor_predicted.copy()
+                factor80_downgrade_mask = factor_downgrade_mask.copy()
             eval_points.append(
                 make_point(
                     variant,
@@ -11327,6 +11642,85 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 selector_guard_bytes + selector_lut_bytes,
                 14,
                 int(np.sum((base_predicted == 2) & (selector_predicted < 2))),
+            )
+        )
+        parser_relief_mask = (
+            parser_relief_selector[
+                selector_predicted,
+                selector_votes,
+                selector_core_gap,
+                parser_miss_bucket,
+            ].astype(np.bool_)
+            & (selector_predicted == 2)
+            & (parser_miss_bucket >= two_branch_parser_relief_min_parser_miss_bucket)
+            & (selector_core_gap <= two_branch_parser_relief_max_core_gap_bucket)
+        )
+        two_branch_predicted = selector_predicted.copy()
+        two_branch_predicted[parser_relief_mask] = 1
+        eval_points.append(
+            make_point(
+                "two_branch_selector",
+                seed,
+                teacher,
+                two_branch_predicted,
+                trace,
+                classifier4_bytes,
+                selector_guard_bytes + selector_lut_bytes + parser_relief_lut_bytes,
+                14,
+                int(np.sum((base_predicted == 2) & (two_branch_predicted < 2))),
+            )
+        )
+        if factor80_predicted is None or factor80_downgrade_mask is None:
+            raise RuntimeError("factor_vote80b prediction was not produced")
+        coverage_repair_mask = (
+            coverage_repair_selector[
+                factor80_predicted,
+                selector_votes,
+                selector_core_gap,
+                parser_miss_bucket,
+            ].astype(np.bool_)
+            & (factor80_predicted == 1)
+            & (selector_core_gap >= two_branch_coverage_repair_min_core_gap_bucket)
+            & (parser_miss_bucket <= two_branch_coverage_repair_max_parser_miss_bucket)
+        )
+        two_branch_factor_predicted = factor80_predicted.copy()
+        two_branch_factor_predicted[coverage_repair_mask] = 2
+        eval_points.append(
+            make_point(
+                "two_branch_factor_selector",
+                seed,
+                teacher,
+                two_branch_factor_predicted,
+                trace,
+                classifier4_bytes,
+                selector_guard_bytes + coverage_repair_lut_bytes,
+                14,
+                int(np.sum((base_predicted == 2) & (two_branch_factor_predicted < 2))),
+            )
+        )
+        branch_mixer_choose_learned = branch_mixer_selector[
+            factor80_predicted,
+            selector_predicted,
+            selector_votes,
+            selector_core_gap,
+            parser_miss_bucket,
+        ].astype(np.bool_)
+        branch_mixer_predicted = np.where(
+            branch_mixer_choose_learned,
+            selector_predicted,
+            factor80_predicted,
+        ).astype(np.int64)
+        eval_points.append(
+            make_point(
+                "two_branch_mixer_selector",
+                seed,
+                teacher,
+                branch_mixer_predicted,
+                trace,
+                classifier4_bytes,
+                selector_guard_bytes + selector_lut_bytes + branch_mixer_lut_bytes,
+                14,
+                int(np.sum((base_predicted == 2) & (branch_mixer_predicted < 2))),
             )
         )
         split_lut_predicted = np.array(
@@ -11391,6 +11785,9 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "factor_vote80b_covsafe",
             "factor_vote80b_shiftguard",
             "learned_shift_selector",
+            "two_branch_selector",
+            "two_branch_factor_selector",
+            "two_branch_mixer_selector",
             "split_lut7d",
         ),
         points=tuple(eval_points),
@@ -11431,10 +11828,28 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "factor_vote80b_covsafe",
         "factor_vote80b_shiftguard",
         "learned_shift_selector",
+        "two_branch_selector",
+        "two_branch_factor_selector",
+        "two_branch_mixer_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
+    two_branch_parser_relief_under_importance_weight: float = 8.0,
+    two_branch_parser_relief_over_importance_weight: float = 2.0,
+    two_branch_parser_relief_parser_profile_weight: float = 3.0,
+    two_branch_parser_relief_min_parser_miss_bucket: int = 2,
+    two_branch_parser_relief_max_core_gap_bucket: int = 2,
+    two_branch_coverage_repair_under_importance_weight: float = 12.0,
+    two_branch_coverage_repair_over_importance_weight: float = 0.25,
+    two_branch_coverage_repair_profile_weight: float = 5.0,
+    two_branch_coverage_repair_parser_profile_weight: float = 0.5,
+    two_branch_coverage_repair_min_core_gap_bucket: int = 1,
+    two_branch_coverage_repair_max_parser_miss_bucket: int = 3,
+    two_branch_mixer_under_importance_weight: float = 8.0,
+    two_branch_mixer_over_importance_weight: float = 1.0,
+    two_branch_mixer_coverage_profile_weight: float = 1.0,
+    two_branch_mixer_parser_profile_weight: float = 1.0,
 ) -> CAWikiCellParagraphFactorizedGuardStressResult:
     """Stress factorized guards under eval-only paragraph distribution shifts."""
 
@@ -11517,6 +11932,51 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
             min_accuracy=min_accuracy,
             min_strict_recall=min_strict_recall,
             max_under_strict_rate=max_under_strict_rate,
+            two_branch_parser_relief_under_importance_weight=(
+                two_branch_parser_relief_under_importance_weight
+            ),
+            two_branch_parser_relief_over_importance_weight=(
+                two_branch_parser_relief_over_importance_weight
+            ),
+            two_branch_parser_relief_parser_profile_weight=(
+                two_branch_parser_relief_parser_profile_weight
+            ),
+            two_branch_parser_relief_min_parser_miss_bucket=(
+                two_branch_parser_relief_min_parser_miss_bucket
+            ),
+            two_branch_parser_relief_max_core_gap_bucket=(
+                two_branch_parser_relief_max_core_gap_bucket
+            ),
+            two_branch_coverage_repair_under_importance_weight=(
+                two_branch_coverage_repair_under_importance_weight
+            ),
+            two_branch_coverage_repair_over_importance_weight=(
+                two_branch_coverage_repair_over_importance_weight
+            ),
+            two_branch_coverage_repair_profile_weight=(
+                two_branch_coverage_repair_profile_weight
+            ),
+            two_branch_coverage_repair_parser_profile_weight=(
+                two_branch_coverage_repair_parser_profile_weight
+            ),
+            two_branch_coverage_repair_min_core_gap_bucket=(
+                two_branch_coverage_repair_min_core_gap_bucket
+            ),
+            two_branch_coverage_repair_max_parser_miss_bucket=(
+                two_branch_coverage_repair_max_parser_miss_bucket
+            ),
+            two_branch_mixer_under_importance_weight=(
+                two_branch_mixer_under_importance_weight
+            ),
+            two_branch_mixer_over_importance_weight=(
+                two_branch_mixer_over_importance_weight
+            ),
+            two_branch_mixer_coverage_profile_weight=(
+                two_branch_mixer_coverage_profile_weight
+            ),
+            two_branch_mixer_parser_profile_weight=(
+                two_branch_mixer_parser_profile_weight
+            ),
         )
         for variant in clean_variants:
             variant_points = [

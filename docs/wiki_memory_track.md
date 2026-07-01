@@ -604,6 +604,20 @@ splits the problem cleanly: multi-distribution training can learn
 "uncertain coverage means stricter repair", but parser-noise shift needs a
 separate over-strict relief branch or a different teacher.
 
+The two-branch follow-up confirms that split but does not close it yet. The
+best new diagnostic is `two_branch_factor_selector`: keep the 80B
+parser-tolerant factor branch, then add a 30B learned coverage-repair LUT that
+can raise normal claims back to strict. It is smaller than the learned selector
+at 174B total control state and passes 4/4 default rows. In the stress matrix
+it passes default, omit_x2, distractor_x2, and large_2k at 2/2 each, but still
+fails parser_x2 at 0/2 because accuracy stays at 63.92% under doubled parser
+noise. A local mixer between the factor and learned branches also fails, even
+with vote count included. This is an important boundary: the current per-claim
+14-bit signal can express either "parser-noise tolerant downgrade" or
+"coverage-risk repair", but it does not reliably identify which regime the
+claim is in. The next CA-native feature should be a rolling regime counter,
+not a bigger monolithic per-claim LUT.
+
 ## Kill Criteria
 
 This track is not useful if:

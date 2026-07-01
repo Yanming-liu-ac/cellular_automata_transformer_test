@@ -109,6 +109,7 @@ def print_result(result: CAWikiCellParagraphSplitConfidenceResult) -> None:
     print("- factor_vote56b/80b compress the split guard into small projected vote tables.")
     print("- covsafe/shiftguard are hand-coded coverage-shift diagnostics.")
     print("- learned_shift_selector is a multi-distribution selector over base mode, votes, core gap, and parser misses.")
+    print("- two-branch variants test parser-tolerant factor routing plus learned coverage repair.")
     print("- split_lut7d is the direct 7D classifier; it is more aggressive and can miss the safety gate.")
 
 

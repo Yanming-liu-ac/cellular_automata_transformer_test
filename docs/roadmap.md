@@ -702,6 +702,17 @@ teacher: one branch for coverage uncertainty that keeps or raises strict
 repair, and one branch for parser-noise uncertainty that allows safe downgrade
 of excess strict repair.
 
+The first two-branch teacher diagnostics are now measured. A parser-relief
+branch after the learned selector is too unstable, while a factor-first
+coverage-repair branch is useful but incomplete. `two_branch_factor_selector`
+uses the 80B factor branch plus a 30B coverage-repair LUT, for 174B total state
+with the 64B baseline. It passes the default four-row evaluation and passes
+omit_x2, distractor_x2, and large_2k in the stress matrix, but parser_x2
+remains 0/2 at 63.92% accuracy. A local mixer between factor and learned
+branches still cannot close the matrix. The next roadmap item is a regime
+counter: a tiny rolling state that distinguishes parser-miss shift from
+coverage-omission shift before the per-claim selector fires.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
