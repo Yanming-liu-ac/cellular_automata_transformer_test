@@ -252,17 +252,20 @@ dense coverage at 2/2 and sparse false-enable at 0.00%. The hardware lesson is
 now sharper: density tags should gate short-range counter sharing, not just
 local tile choice.
 
-The first learned sharing-radius LUT replaces that hand choice. Training on the
+The first learned guard LUT now replaces that hand choice. Training on the
 25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and 1,024
-learns `256 -> radius 2`, `512 -> radius 1`, and `1024 -> radius 0`. The table
-is only 0.75B for these three geometry entries. Training-seed evaluation hits
-the target: 25% dense stays off, 50% dense rises from 50% local dense-block
-coverage to 100% for 256 and 512-page blocks, 75% dense remains 100%, and
-sparse false-enable stays 0.00%. The held-out seed audit is the first real
-failure case: seeds 1301 and 1401 generalize, but seed 1501 has 99/1 dense
-wins/losses at 75% dense, and the strict `loss == 0` guard collapses dense
-coverage despite sparse false-enable staying 0.00%. The next control variable
-is therefore loss tolerance or loss decay, not only sharing radius.
+learns `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`, and
+`1024 -> radius 0/loss 1`. The table is 1.125B for these three geometry
+entries. The loss tolerance is not a floating-point score; it is a one-count
+low-bit comparison against the same 4-bit loss counter. Training-seed
+evaluation hits the target: 25% dense stays off, 50% dense rises from 50% local
+dense-block coverage to 100% for 256 and 512-page blocks, 75% dense remains
+100%, and sparse false-enable stays 0.00%. The held-out seed audit that used to
+fail is now repaired: seed 1501 has 99/1 dense wins/losses at 75% dense, and
+`loss <= 1` restores 100% learned dense coverage for 256, 512, and 1,024-page
+blocks with sparse false-enable still 0.00%. The next control variable is no
+longer just sharing radius; it is a robust local guard over win threshold,
+sharing radius, and loss decay/tolerance.
 
 ## Kill Criteria
 
@@ -286,3 +289,10 @@ research:
 If the wiki-memory track works first, it is the cleaner chip story: a CA memory
 accelerator that serves any decoder, then gradually absorbs more reasoning and
 generation logic.
+
+This also reframes the Karpathy-style LLM-Wiki question. A CA fabric does not
+need to beat the whole Transformer first. It can first become the mutable
+knowledge substrate: local pages, local dirty summaries, local disagreement
+counters, and low-bit learned guards that decide when facts are queryable or
+need repair. That is a more natural first chip target than trying to replace
+all dense attention and MLP computation at once.

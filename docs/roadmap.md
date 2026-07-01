@@ -476,16 +476,17 @@ false-enable at 0.00% from 128/64 through 1,024/512 query/update windows. The
 update-noise stress keeps the same 2/2 and 0.00% result with revision updates
 at 80%, cluster updates at 60%, and both together.
 
-The first learned sharing-radius LUT now exists. It trains on the mixed-stream
-counter sweep and maps guard block size to same-tag sharing radius:
-`256 -> 2`, `512 -> 1`, `1024 -> 0`. The LUT is 0.75B for these three entries.
-It keeps 25% dense off, restores 50% dense coverage from 50% local to 100% for
-256 and 512-page blocks, leaves 75% dense at 100%, and keeps sparse
-false-enable at 0.00% on the training stream. Held-out seed testing now exists:
-seeds 1301 and 1401 pass, but seed 1501 exposes a failure at 75% dense where
-99/1 dense wins/losses trigger the strict zero-loss gate and reduce coverage.
-The next step is to learn the win threshold jointly with a loss tolerance or
-loss-decay rule, then retest on held-out seeds.
+The first learned guard LUT now exists. It trains on the mixed-stream counter
+sweep and maps guard block size to same-tag sharing radius plus a one-count
+loss tolerance: `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`,
+`1024 -> radius 0/loss 1`. The LUT is 1.125B for these three entries. It keeps
+25% dense off, restores 50% dense coverage from 50% local to 100% for 256 and
+512-page blocks, leaves 75% dense at 100%, and keeps sparse false-enable at
+0.00% on the training stream. Held-out seed testing now passes the former
+failure: seed 1501 has 99/1 dense wins/losses at 75% dense, and `loss <= 1`
+restores 100% learned dense coverage while sparse false-enable remains 0.00%.
+The next step is to expand the held-out seed/noise audit and then learn the win
+threshold jointly with loss decay, not just a fixed loss tolerance.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

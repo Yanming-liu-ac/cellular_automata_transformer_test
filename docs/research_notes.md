@@ -431,16 +431,19 @@ combined case all keep shared dense coverage at 2/2 and sparse false-enable at
 0.00%. This says the next CA rule should learn when to share local evidence,
 not just when to flip a tile.
 
-The first learned version of that rule is tiny. A radius LUT over guard block
-size learns `256 -> radius 2`, `512 -> radius 1`, and `1024 -> radius 0` from
-the same mixed-stream objective: keep 25% dense off, enable 50% and 75% dense,
-and never enable sparse blocks. The table is under one byte in this diagnostic
-and recovers 100% dense coverage for the finer blocks that local counters miss.
-Held-out seed testing makes the result more honest. The learned radii generalize
-to seeds 1301 and 1401, but seed 1501 produces one dense loss in a 99/1
-wins/losses case at 75% dense. Because the current rule requires zero loss, that
-single miss blocks dense coverage. This is a better CA-chip shape than a global
-heuristic, but the loss gate must become learned, decayed, or tolerant.
+The first learned version of that rule is still tiny. A guard LUT over block
+size learns `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`, and
+`1024 -> radius 0/loss 1` from the same mixed-stream objective: keep 25% dense
+off, enable 50% and 75% dense, and never enable sparse blocks. The table is
+1.125B in this diagnostic and recovers 100% dense coverage for the finer blocks
+that local counters miss. Held-out seed testing makes the result more honest.
+The strict zero-loss version generalized to seeds 1301 and 1401 but failed on
+seed 1501, where one dense loss in a 99/1 wins/losses case blocked coverage at
+75% dense. The tolerant version repairs that case: `loss <= 1` restores 100%
+learned dense coverage for all three block sizes and keeps sparse false-enable
+at 0.00%. This is a better CA-chip shape than a global heuristic, but it still
+needs a wider seed/noise audit and a learned decay rule before it can be called
+stable.
 
 ## First Retrieval Prototype
 

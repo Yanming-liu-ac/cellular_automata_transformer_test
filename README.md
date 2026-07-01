@@ -139,7 +139,7 @@ The first experiments compare:
   sparse/dense event stream instead of separate region probes;
 - observation-window stress sweeps for the same shared guard counters;
 - update-noise stress sweeps for the shared guard counters;
-- learned low-bit sharing-radius LUTs for mixed-stream guard counters;
+- learned low-bit sharing-radius/loss-tolerance LUTs for mixed-stream guard counters;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

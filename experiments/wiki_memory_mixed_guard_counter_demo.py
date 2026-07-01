@@ -40,6 +40,7 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
         "thr",
         "blk_pg",
         "sh_r",
+        "loss",
         "need",
         "s_tag",
         "d_tag",
@@ -70,6 +71,7 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
             f"{point.tag_threshold}",
             f"{point.guard_counter_block_pages}",
             f"{point.guard_share_radius_blocks}",
+            f"{point.guard_allowed_loss_count}",
             f"{point.guard_required_win_count}",
             f"{point.sparse_density_tag}",
             f"{point.dense_density_tag}",
@@ -97,6 +99,7 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
     print("Interpretation:")
     print("- One mixed event stream feeds sparse and dense guard blocks together.")
     print("- en_s/en_d are local counters; sh_s/sh_d add same-tag neighbor sharing.")
+    print("- loss is the allowed low-bit loss-counter value before suppressing a block.")
     print("- false columns should stay near zero; on columns show dense block coverage.")
     print("- cmax columns are max saturated win/loss counters within sparse/dense blocks.")
 

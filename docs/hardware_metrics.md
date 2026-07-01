@@ -313,14 +313,16 @@ updates to 60%, or both together keeps shared dense coverage at 2/2 and sparse
 false-enable at 0.00%. The state is cheap enough; the hardware problem is now
 controlled evidence sharing across local blocks.
 
-The learned sharing-radius LUT is smaller than the counters. With three guard
-block geometries and radii 0-2, the table is 6 bits, or 0.75B. It chooses
-radius 2 for 256-page blocks, radius 1 for 512-page blocks, and radius 0 for
-1,024-page blocks. That restores 50% dense coverage to 100% for the finer
-blocks while keeping sparse false-enable at 0.00% on the training stream.
-Held-out seed 1501 exposes the current reliability limit: a 99/1 dense
-wins/losses trace at 75% dense trips the zero-loss guard and drops coverage.
-The next hardware state should include a small loss-tolerance or decay field.
+The learned guard LUT is smaller than the counters. With three guard block
+geometries, radii 0-2, and loss tolerances 0-1, the table is 9 bits, or
+1.125B. It chooses radius 2/loss 1 for 256-page blocks, radius 1/loss 1 for
+512-page blocks, and radius 0/loss 1 for 1,024-page blocks. That restores 50%
+dense coverage to 100% for the finer blocks while keeping sparse false-enable
+at 0.00% on the training stream. The former held-out seed 1501 failure is now a
+positive stress case: a 99/1 dense wins/losses trace at 75% dense no longer
+trips the guard because `loss <= 1` restores 100% learned dense coverage with
+0.00% sparse false-enable. The next hardware state should test a learned
+loss-decay field and a larger held-out seed/noise audit.
 
 ## Retrieval-Lane Metrics
 

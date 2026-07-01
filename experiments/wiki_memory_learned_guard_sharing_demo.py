@@ -22,15 +22,16 @@ def fmt_pct(value: float) -> str:
 
 
 def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
-    print("CA wiki-memory learned guard-counter sharing radius")
+    print("CA wiki-memory learned guard-counter sharing radius + loss tolerance")
     print(
         f"policy={result.policy}, radius_options={result.radius_options}, "
+        f"loss_options={result.allowed_loss_options}, "
         f"enable_dense_at>={fmt_pct(result.min_dense_fraction_to_enable)}, "
         f"lut_state={format_bytes(result.radius_lut_state_bytes)}"
     )
     print()
-    print("Learned radius LUT")
-    headers = ["blk_pg", "radius", "train_n", "cost"]
+    print("Learned guard LUT")
+    headers = ["blk_pg", "radius", "loss", "train_n", "cost"]
     header_line = " | ".join(f"{header:>10}" for header in headers)
     print(header_line)
     print("-" * len(header_line))
@@ -38,6 +39,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
         row = [
             f"{entry.guard_counter_block_pages}",
             f"{entry.chosen_share_radius_blocks}",
+            f"{entry.chosen_allowed_loss_count}",
             f"{entry.training_points}",
             f"{entry.training_cost:0.3f}",
         ]
@@ -50,6 +52,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
         "dense%",
         "blk_pg",
         "radius",
+        "loss",
         "target",
         "local",
         "learned",
@@ -66,6 +69,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
             fmt_pct(point.dense_page_fraction),
             f"{point.guard_counter_block_pages}",
             f"{point.chosen_share_radius_blocks}",
+            f"{point.chosen_allowed_loss_count}",
             fmt_pct(point.target_dense_enable_rate),
             fmt_pct(point.local_dense_enable_rate),
             fmt_pct(point.learned_dense_enable_rate),
@@ -77,9 +81,10 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
 
     print()
     print("Interpretation:")
-    print("- The LUT maps guard block size to a same-tag sharing radius.")
+    print("- The LUT maps guard block size to same-tag sharing radius and loss tolerance.")
     print("- The training objective enables dense blocks at 50%+ dense while keeping sparse false-enable at zero.")
-    print("- lut_state is sub-byte here because only three block-size entries are learned.")
+    print("- Cost ties prefer the tolerant guard when it does not raise sparse false-enable.")
+    print("- loss=1 is a one-count tolerant guard for rare dense misses, still using low-bit counters.")
 
 
 def main() -> None:
@@ -88,6 +93,7 @@ def main() -> None:
             dense_page_fractions=(0.25, 0.50, 0.75),
             guard_counter_block_page_options=(256, 512, 1024),
             guard_share_radius_options=(0, 1, 2),
+            guard_allowed_loss_options=(0, 1),
             quality_probe_event_options=((512, 256),),
             eval_seeds=(1201, 1301, 1401, 1501),
         )
