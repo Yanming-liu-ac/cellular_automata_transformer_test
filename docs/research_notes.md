@@ -291,6 +291,17 @@ refresh-16 keeps 91.1% of top-64 quality at 492 cells/topic. Stale summaries
 therefore look tolerable on this trace; the next step is to learn when to force
 an early refresh rather than using a fixed interval.
 
+Triggered summary refresh is the first local rule for that decision. The
+`dirty_count_or_age` policy refreshes all dirty groups only when the local dirty
+set reaches 16 groups or the summary age reaches 16 topic events. On the same
+trace, top-16 keeps 85.6% of top-64 quality at about 421 cells/topic, slightly
+cheaper than fixed refresh-4 and higher quality than fixed refresh-16. Top-32
+keeps 93.3% at about 549 cells/topic. The more aggressive `top_dirty_or_age`
+policy is cheaper, but it lets top-32 exact content exposure fall to 97.8%, so
+the current lesson is conservative: refresh pressure should be driven by
+dirty-count and age first, with learned top-dirty shortcuts treated as a later
+risk/reward optimization.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

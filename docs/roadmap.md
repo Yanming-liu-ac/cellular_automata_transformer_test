@@ -382,6 +382,10 @@ Implement:
   keeps top-16 at 84.0% of top-64 quality while reducing total score work to
   364 cells/topic; a learned trigger should recover refresh-4 quality with
   closer to refresh-16 cost.
+- validate triggered refresh against fixed refresh. `dirty_count_or_age` now
+  gets refresh-4-like top-16 quality at about 421 cells/topic, below fixed
+  refresh-4 but above fixed refresh-16. Next, test learned trigger thresholds
+  and adversarial topic bursts.
 
 First trainable target:
 

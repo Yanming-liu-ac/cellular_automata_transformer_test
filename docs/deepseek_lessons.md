@@ -384,6 +384,12 @@ every 16 topic steps still keeps top-16 at about 84% of top-64 quality while
 cutting score work by about 82%. The useful CA rule is not "always exact"; it is
 "exact only where stale state would change the route."
 
+Triggered refresh turns that into a closer hardware rule. A dirty-count plus
+age trigger recovers the fixed refresh-4 top-16 quality point with about 421
+score cells/topic, still a 79% reduction from full-pool scoring. The lesson is
+DeepSeek-like but CA-native: route maintenance should be event-driven and local,
+not a synchronized global operation.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

@@ -194,6 +194,14 @@ quality. Top-32 with refresh-16 costs about 492 cells/topic while preserving
 suggests group summaries can be maintained with dirty/lazy local updates rather
 than exact recompute every topic step.
 
+Triggered refresh adds a local controller to the same path. The current best
+conservative rule, `dirty_count_or_age`, refreshes dirty groups when either 16
+groups are dirty or the summary is 16 topic steps old. It gives top-16 about
+421 score cells/topic with 85.6% top-64 quality retention, and top-32 about 549
+score cells/topic with 93.3% retention. This is not a dramatic new minimum, but
+it proves the maintenance decision can be made from local dirty bits and an age
+counter rather than from a global scheduler.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

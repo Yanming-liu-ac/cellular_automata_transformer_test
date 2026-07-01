@@ -464,6 +464,83 @@ class SyntheticLMLazyGroupSummaryReducerResult:
 
 
 @dataclass(frozen=True)
+class SyntheticLMTriggeredGroupSummaryReducerTrace:
+    """Demand trace from locally triggered group-summary refresh."""
+
+    demand_trace: Tuple[np.ndarray, ...]
+    fact_count: int
+    candidate_pool_size: int
+    content_rows: int
+    reducer_rows: int
+    base_top_k: int
+    group_size: int
+    selected_groups: int
+    trigger_policy: str
+    dirty_threshold: int
+    max_age: int
+    total_groups: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    candidate_score_source: str
+    base_topic_hit_rate: float
+    reduced_topic_hit_rate: float
+    group_scan_cells_per_topic_event: float
+    fine_score_cells_per_topic_event: float
+    maintenance_cells_per_topic_event: float
+    score_cells_per_topic_event: float
+    score_cells_per_event: float
+    score_cell_reduction_rate: float
+    refresh_events: int
+    mean_refreshed_groups: float
+    summary_state_bytes: float
+
+
+@dataclass(frozen=True)
+class SyntheticLMTriggeredGroupSummaryReducerPoint:
+    """One triggered group-summary reducer point."""
+
+    reducer_rows: int
+    group_size: int
+    selected_groups: int
+    trigger_policy: str
+    dirty_threshold: int
+    max_age: int
+    candidate_score_source: str
+    base_topic_hit_rate: float
+    reduced_topic_hit_rate: float
+    hit_retention_rate: float
+    group_scan_cells_per_topic_event: float
+    fine_score_cells_per_topic_event: float
+    maintenance_cells_per_topic_event: float
+    score_cells_per_topic_event: float
+    score_cell_reduction_rate: float
+    refresh_events: int
+    mean_refreshed_groups: float
+    summary_state_bytes: float
+    phase_channel_writes_per_event: float
+    phase_demand_exact_rate: float
+    phase_demand_mean_abs_error: float
+
+
+@dataclass(frozen=True)
+class SyntheticLMTriggeredGroupSummaryReducerResult:
+    """Triggered group-summary reducer plus exact content-gate sweep."""
+
+    fact_count: int
+    candidate_pool_size: int
+    base_top_k: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    bits: int
+    train_seed: int
+    eval_seed: int
+    write_cost: float
+    points: Tuple[SyntheticLMTriggeredGroupSummaryReducerPoint, ...]
+
+
+@dataclass(frozen=True)
 class SyntheticLMPhasedDemandGateLUT:
     """Synthetic LM LUT with exact/candidate phase and candidate-rank buckets."""
 
@@ -1892,6 +1969,230 @@ def make_lazy_group_summary_reducer_demand_trace(
     )
 
 
+def _trigger_refresh_groups(
+    summary_scores: np.ndarray,
+    dirty_groups: np.ndarray,
+    selected_groups: int,
+    trigger_policy: str,
+    dirty_threshold: int,
+    max_age: int,
+    age: int,
+) -> np.ndarray:
+    dirty_indices = np.nonzero(dirty_groups)[0].astype(np.int32)
+    if len(dirty_indices) == 0:
+        return dirty_indices
+
+    policy = trigger_policy.lower()
+    if max_age > 0 and age >= max_age:
+        return dirty_indices
+    if policy == "dirty_count_or_age":
+        if len(dirty_indices) >= dirty_threshold:
+            return dirty_indices
+        return np.empty(0, dtype=np.int32)
+    if policy == "top_dirty_or_age":
+        group_tiebreaker = np.arange(len(summary_scores), dtype=np.int32)
+        group_order = np.lexsort((group_tiebreaker, summary_scores))[::-1]
+        top_groups = group_order[: min(selected_groups, len(summary_scores))]
+        return top_groups[dirty_groups[top_groups]].astype(np.int32)
+    if policy == "top_dirty_or_count_or_age":
+        group_tiebreaker = np.arange(len(summary_scores), dtype=np.int32)
+        group_order = np.lexsort((group_tiebreaker, summary_scores))[::-1]
+        top_groups = group_order[: min(selected_groups, len(summary_scores))]
+        top_dirty = top_groups[dirty_groups[top_groups]].astype(np.int32)
+        if len(top_dirty) > 0:
+            return top_dirty
+        if len(dirty_indices) >= dirty_threshold:
+            return dirty_indices
+        return np.empty(0, dtype=np.int32)
+    raise ValueError(
+        "trigger_policy must be one of: dirty_count_or_age, top_dirty_or_age, "
+        "top_dirty_or_count_or_age"
+    )
+
+
+def make_triggered_group_summary_reducer_demand_trace(
+    config: SyntheticLMConfig | None = None,
+    reducer_rows: int = 16,
+    group_size: int = 16,
+    selected_groups: int = 2,
+    trigger_policy: str = "top_dirty_or_count_or_age",
+    dirty_threshold: int = 16,
+    max_age: int = 16,
+    seed: int = 37,
+    base_top_k: int | None = None,
+) -> SyntheticLMTriggeredGroupSummaryReducerTrace:
+    """Build a trace using local dirty/age triggered summary refresh."""
+
+    trace_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+        candidate_score_source="topic_phase",
+    )
+    if trace_config.candidate_strategy != "static":
+        raise ValueError("triggered group-summary reducer requires static candidates")
+    if trace_config.candidate_score_source != "topic_phase":
+        raise ValueError("triggered group-summary reducer currently models topic_phase scores")
+
+    rows = min(max(1, int(reducer_rows)), trace_config.candidate_pool_size)
+    clean_group_size = max(1, int(group_size))
+    clean_selected_groups = max(1, int(selected_groups))
+    clean_dirty_threshold = max(1, int(dirty_threshold))
+    clean_max_age = max(0, int(max_age))
+    top_k = trace_config.topic_top_k if base_top_k is None else int(base_top_k)
+    top_k = min(max(1, top_k), trace_config.candidate_pool_size)
+    policy = str(trigger_policy).lower()
+
+    lm = DualPathSyntheticLM(trace_config, seed=seed)
+    lm.prefill()
+    if lm.candidate_slots is None or lm.candidate_score_dense is None or lm.candidates is None:
+        raise RuntimeError("static candidate score state is not initialized")
+
+    scores, full_score_cells = lm.score_static_candidates()
+    summary_scores = _group_max_scores(scores, clean_group_size)
+    dirty_groups = np.zeros(len(summary_scores), dtype=np.bool_)
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=trace_config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * trace_config.topic_events + ["query"] * trace_config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    trace = []
+    query_cursor = 0
+    summary_age = 0
+    base_topic_hits = 0
+    reduced_topic_hits = 0
+    group_scan_cells = 0.0
+    fine_score_cells = 0.0
+    maintenance_cells = 0.0
+    refresh_events = 0
+    refreshed_groups_total = 0
+    max_value = (1 << trace_config.dense_bits) - 1
+    score_cells_per_candidate = full_score_cells / float(trace_config.candidate_pool_size)
+    summary_cells_per_group = score_cells_per_candidate
+
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(trace_config, lm.rng)
+            current_scores, _ = lm.score_static_candidates()
+            full_order = lm.order_static_candidate_scores(current_scores)
+
+            refresh_groups = _trigger_refresh_groups(
+                summary_scores=summary_scores,
+                dirty_groups=dirty_groups,
+                selected_groups=clean_selected_groups,
+                trigger_policy=policy,
+                dirty_threshold=clean_dirty_threshold,
+                max_age=clean_max_age,
+                age=summary_age,
+            )
+            if len(refresh_groups) > 0:
+                for group in refresh_groups:
+                    start = int(group) * clean_group_size
+                    end = min(start + clean_group_size, trace_config.candidate_pool_size)
+                    summary_scores[group] = int(np.max(current_scores[start:end]))
+                maintenance_cells += (
+                    len(refresh_groups) * clean_group_size * score_cells_per_candidate
+                    + len(refresh_groups) * summary_cells_per_group
+                )
+                dirty_groups[refresh_groups] = False
+                refresh_events += 1
+                refreshed_groups_total += int(len(refresh_groups))
+                summary_age = 0
+
+            reduced_indices, selected_candidate_count = _lazy_hierarchical_candidate_reducer_indices(
+                summary_scores=summary_scores,
+                current_scores=current_scores,
+                reducer_rows=rows,
+                group_size=clean_group_size,
+                selected_groups=clean_selected_groups,
+            )
+            group_scan_cells += len(summary_scores) * summary_cells_per_group
+            fine_score_cells += selected_candidate_count * score_cells_per_candidate
+
+            base_indices = full_order[:top_k]
+            base_topic_hits += int(bool(np.any(lm.candidates[base_indices] == token)))
+            reduced_topic_hits += int(bool(np.any(lm.candidates[reduced_indices] == token)))
+            trace.append((trace_config.fact_count + reduced_indices).astype(np.int32))
+
+            slots = [
+                keyed_hash(int(token), 1000 + bank) % trace_config.dense_width
+                for bank in range(trace_config.dense_banks)
+            ]
+            changed_banks = tuple(
+                bank
+                for bank, slot in enumerate(slots)
+                if int(lm.candidate_score_dense.counters[bank, slot]) < max_value
+            )
+            _, touched_groups = _candidate_rows_and_groups_touched_by_update(
+                candidate_slots=lm.candidate_slots,
+                token=token,
+                group_size=clean_group_size,
+                dense_width=trace_config.dense_width,
+                changed_banks=changed_banks,
+            )
+            before_steps = lm.candidate_score_dense.steps
+            lm.dense.update(token)
+            lm.candidate_score_dense.update(token)
+            if len(touched_groups) > 0:
+                dirty_groups[touched_groups] = True
+            if (before_steps + 1) % trace_config.dense_decay_interval == 0:
+                summary_scores >>= 1
+                maintenance_cells += len(summary_scores) * summary_cells_per_group
+            summary_age += 1
+            continue
+
+        fact_index = int(query_indices[query_cursor])
+        query_cursor += 1
+        key, expected = lm.facts[fact_index]
+        trace.append(np.array([fact_index], dtype=np.int32))
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    total_events = trace_config.topic_events + trace_config.query_events
+    score_cells = group_scan_cells + fine_score_cells + maintenance_cells
+    full_score_cells_per_topic = float(full_score_cells)
+    return SyntheticLMTriggeredGroupSummaryReducerTrace(
+        demand_trace=tuple(trace),
+        fact_count=trace_config.fact_count,
+        candidate_pool_size=trace_config.candidate_pool_size,
+        content_rows=trace_config.fact_count + trace_config.candidate_pool_size,
+        reducer_rows=rows,
+        base_top_k=top_k,
+        group_size=clean_group_size,
+        selected_groups=clean_selected_groups,
+        trigger_policy=policy,
+        dirty_threshold=clean_dirty_threshold,
+        max_age=clean_max_age,
+        total_groups=len(summary_scores),
+        topic_events=trace_config.topic_events,
+        query_events=trace_config.query_events,
+        total_events=total_events,
+        candidate_score_source=trace_config.candidate_score_source,
+        base_topic_hit_rate=base_topic_hits / float(trace_config.topic_events),
+        reduced_topic_hit_rate=reduced_topic_hits / float(trace_config.topic_events),
+        group_scan_cells_per_topic_event=group_scan_cells / float(trace_config.topic_events),
+        fine_score_cells_per_topic_event=fine_score_cells / float(trace_config.topic_events),
+        maintenance_cells_per_topic_event=maintenance_cells / float(trace_config.topic_events),
+        score_cells_per_topic_event=score_cells / float(trace_config.topic_events),
+        score_cells_per_event=score_cells / float(total_events),
+        score_cell_reduction_rate=1.0
+        - (score_cells / float(trace_config.topic_events)) / full_score_cells_per_topic,
+        refresh_events=refresh_events,
+        mean_refreshed_groups=(
+            refreshed_groups_total / float(refresh_events) if refresh_events else 0.0
+        ),
+        summary_state_bytes=len(summary_scores) * trace_config.dense_banks * trace_config.dense_bits / 8,
+    )
+
+
 def run_synthetic_lm_trial(seed: int = 0, config: SyntheticLMConfig | None = None) -> SyntheticLMResult:
     """Convenience wrapper for one synthetic dual-path LM trial."""
 
@@ -2488,6 +2789,152 @@ def run_synthetic_lm_lazy_group_summary_reducer_sweep(
         )
 
     return SyntheticLMLazyGroupSummaryReducerResult(
+        fact_count=reducer_config.fact_count,
+        candidate_pool_size=reducer_config.candidate_pool_size,
+        base_top_k=base_top_k,
+        topic_events=reducer_config.topic_events,
+        query_events=reducer_config.query_events,
+        total_events=reducer_config.topic_events + reducer_config.query_events,
+        bits=bits,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        write_cost=write_cost,
+        points=tuple(points),
+    )
+
+
+def run_synthetic_lm_triggered_group_summary_reducer_sweep(
+    config: SyntheticLMConfig | None = None,
+    settings: Tuple[Tuple[int, int, int, str, int, int], ...] = (
+        (16, 16, 2, "top_dirty_or_count_or_age", 16, 16),
+        (16, 16, 2, "dirty_count_or_age", 16, 16),
+        (16, 16, 2, "top_dirty_or_age", 16, 16),
+        (32, 16, 4, "top_dirty_or_count_or_age", 16, 16),
+        (32, 16, 4, "dirty_count_or_age", 16, 16),
+        (32, 16, 4, "top_dirty_or_age", 16, 16),
+    ),
+    bits: int = 4,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+    write_cost: float = 0.15,
+) -> SyntheticLMTriggeredGroupSummaryReducerResult:
+    """Evaluate locally triggered group-summary refresh policies."""
+
+    reducer_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+        candidate_score_source="topic_phase",
+    )
+    clean_settings = tuple(
+        dict.fromkeys(
+            (
+                min(max(1, int(rows)), reducer_config.candidate_pool_size),
+                max(1, int(group_size)),
+                max(1, int(selected_groups)),
+                str(trigger_policy).lower(),
+                max(1, int(dirty_threshold)),
+                max(0, int(max_age)),
+            )
+            for (
+                rows,
+                group_size,
+                selected_groups,
+                trigger_policy,
+                dirty_threshold,
+                max_age,
+            ) in settings
+        )
+    )
+    if len(clean_settings) == 0:
+        raise ValueError("settings must not be empty")
+
+    points = []
+    base_top_k = reducer_config.topic_top_k
+    for rows, group_size, selected_groups, trigger_policy, dirty_threshold, max_age in clean_settings:
+        train_trace = make_triggered_group_summary_reducer_demand_trace(
+            config=reducer_config,
+            reducer_rows=rows,
+            group_size=group_size,
+            selected_groups=selected_groups,
+            trigger_policy=trigger_policy,
+            dirty_threshold=dirty_threshold,
+            max_age=max_age,
+            seed=train_seed,
+            base_top_k=base_top_k,
+        )
+        eval_trace = make_triggered_group_summary_reducer_demand_trace(
+            config=reducer_config,
+            reducer_rows=rows,
+            group_size=group_size,
+            selected_groups=selected_groups,
+            trigger_policy=trigger_policy,
+            dirty_threshold=dirty_threshold,
+            max_age=max_age,
+            seed=eval_seed,
+            base_top_k=base_top_k,
+        )
+        phase_lut = train_synthetic_lm_phased_demand_gate_lut(
+            demand_trace=train_trace.demand_trace,
+            fact_count=reducer_config.fact_count,
+            candidate_rows=reducer_config.candidate_pool_size,
+            bits=bits,
+            seed=train_seed + 8192,
+            write_cost=write_cost,
+        )
+        phase_point = evaluate_synthetic_lm_phased_demand_gate(
+            lut=phase_lut,
+            demand_trace=eval_trace.demand_trace,
+            fact_count=reducer_config.fact_count,
+            candidate_rows=reducer_config.candidate_pool_size,
+            bits=bits,
+            seed=eval_seed + 8192,
+            policy=f"learned_triggered_group_phase_rank_lut_c{write_cost:0.2f}",
+        )
+        hit_retention = (
+            eval_trace.reduced_topic_hit_rate / eval_trace.base_topic_hit_rate
+            if eval_trace.base_topic_hit_rate > 0.0
+            else 0.0
+        )
+        points.append(
+            SyntheticLMTriggeredGroupSummaryReducerPoint(
+                reducer_rows=rows,
+                group_size=group_size,
+                selected_groups=selected_groups,
+                trigger_policy=trigger_policy,
+                dirty_threshold=dirty_threshold,
+                max_age=max_age,
+                candidate_score_source=eval_trace.candidate_score_source,
+                base_topic_hit_rate=eval_trace.base_topic_hit_rate,
+                reduced_topic_hit_rate=eval_trace.reduced_topic_hit_rate,
+                hit_retention_rate=hit_retention,
+                group_scan_cells_per_topic_event=(
+                    eval_trace.group_scan_cells_per_topic_event
+                ),
+                fine_score_cells_per_topic_event=(
+                    eval_trace.fine_score_cells_per_topic_event
+                ),
+                maintenance_cells_per_topic_event=(
+                    eval_trace.maintenance_cells_per_topic_event
+                ),
+                score_cells_per_topic_event=eval_trace.score_cells_per_topic_event,
+                score_cell_reduction_rate=eval_trace.score_cell_reduction_rate,
+                refresh_events=eval_trace.refresh_events,
+                mean_refreshed_groups=eval_trace.mean_refreshed_groups,
+                summary_state_bytes=eval_trace.summary_state_bytes,
+                phase_channel_writes_per_event=(
+                    phase_point.gate_channel_writes_per_token_tick
+                    * eval_trace.content_rows
+                ),
+                phase_demand_exact_rate=phase_point.demand_exact_rate,
+                phase_demand_mean_abs_error=phase_point.demand_mean_abs_error,
+            )
+        )
+
+    return SyntheticLMTriggeredGroupSummaryReducerResult(
         fact_count=reducer_config.fact_count,
         candidate_pool_size=reducer_config.candidate_pool_size,
         base_top_k=base_top_k,

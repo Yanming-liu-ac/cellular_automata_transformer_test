@@ -282,6 +282,14 @@ work falls to about 364 cells/topic. The architectural rule becomes: keep group
 summaries local and mostly stale, refresh dirty groups periodically or on a
 learned trigger, then fine-score only selected groups.
 
+The first trigger can be hand-local rather than neural. A group bank keeps a
+dirty bitset and a small age counter. If the dirty count crosses a threshold, or
+the age counter expires, the bank refreshes the affected summaries before the
+next reducer read. This `dirty_count_or_age` rule recovers refresh-4 quality on
+the current top-16 trace with lower score work, and it maps cleanly to local
+hardware: no global candidate sweep, no full-pool comparator, and no wide
+controller state.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code
