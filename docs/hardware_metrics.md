@@ -1236,6 +1236,30 @@ The learned table misses 2 of 24 evaluated rows at the chosen targets. That is
 now a hardware metric, not a hidden caveat: fan-in wider than the local repair
 radius quickly turns maintenance traffic into the dominant cost.
 
+Strict/budget mode stores two learned policy ids per bucket, 7.50B total. The
+strict target is 99% recall, 98% recent recall, and 1% stale source cells; the
+budget target is 90%, 85%, and 10%. Evaluation over the same 24 rows gives:
+
+```text
+strict: 0/24 target failures, 22.22 mean touch/event
+budget: 2/24 target failures, 20.12 mean touch/event
+traffic saved by budget mode: 9.47%
+```
+
+Per-bucket budget savings versus strict mode:
+
+```text
+4 sources, 128 updates:   0.62%
+4 sources, 256 updates:   4.24%
+8 sources, 128 updates:   4.86%
+8 sources, 256 updates:   6.06%
+16 sources, 128 updates: 12.40%
+16 sources, 256 updates: 10.42%
+```
+
+This is the first chip-facing quality mode for CA Wiki Cell: a tiny mode bit can
+trade maintenance traffic for a measured failure budget.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

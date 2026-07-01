@@ -350,6 +350,19 @@ falls just below the recall/recent targets. This marks the next boundary:
 large fan-in needs a second-level source tile or a learned radius/tick policy
 with stronger local evidence.
 
+The strict/budget comparison makes that boundary product-shaped. Running the
+same candidate bank twice gives two policy tables: strict mode targets
+99.00% recall, 98.00% recent recall, and at most 1.00% stale source cells;
+budget mode keeps the 90.00% / 85.00% / 10.00% target. Each table is 3.75B, so
+storing both policy ids costs 7.50B in this diagnostic. Strict mode has zero
+target failures across 24 evaluation rows and mean local touch of 22.22
+cells/event. Budget mode has two target failures and mean touch of 20.12
+cells/event, a 9.47% maintenance-traffic reduction. The largest savings appear
+where fan-in is wide: 16-source/128-update saves 12.40%, and
+16-source/256-update saves 10.42%. This is a clearer chip knob than one fixed
+policy: high-confidence memory pages can use strict repair, while ordinary
+mutable wiki pages can use budget repair.
+
 ## Kill Criteria
 
 This track is not useful if:

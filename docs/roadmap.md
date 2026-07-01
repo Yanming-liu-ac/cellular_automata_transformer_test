@@ -551,6 +551,15 @@ mode for high-confidence memory and budget mode for cheap mutable wiki refresh.
 The 16-source bucket also shows that a single source tile is too wide; the next
 geometry should add source subtiles or a second-level claim summary.
 
+That two-target controller now exists as a strict/budget comparison. Strict
+mode targets 99% recall, 98% recent recall, and 1% stale source cells; budget
+mode targets 90%, 85%, and 10%. Storing both policy ids is 7.50B in this
+diagnostic. Strict mode passes all 24 evaluation rows at 22.22 cells/event
+average local touch. Budget mode passes 22 of 24 rows at 20.12 cells/event,
+saving 9.47% traffic. The next roadmap item is no longer just "learn repair";
+it is to attach the mode bit to page importance and to reduce the 16-source
+strict traffic with source subtiles.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

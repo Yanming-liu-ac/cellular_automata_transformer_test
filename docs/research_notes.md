@@ -517,6 +517,16 @@ query failure or disagreement. On held-out seeds it keeps query reads at
 boundary. This is the right kind of failure: it turns "repair scheduling" into
 a measured local-control problem instead of a vague chip claim.
 
+The strict/budget repair demo reframes that control as a runtime quality mode.
+Strict mode raises the target to 99% recall, 98% recent recall, and 1% stale
+sources, using stronger penalties for misses and stale cells. It learns
+full-update repair in hard buckets and passes all 24 evaluation rows at
+22.22 cells/event average touch. Budget mode uses the previous target, passes
+22 of 24 rows, and averages 20.12 cells/event, saving 9.47% traffic. Two policy
+ids per bucket take 7.50B. This is now a plausible chip interface: critical
+facts can be kept in strict mode while ordinary wiki pages use lower-cost
+background repair.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
