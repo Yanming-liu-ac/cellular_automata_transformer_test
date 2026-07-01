@@ -252,22 +252,23 @@ dense coverage at 2/2 and sparse false-enable at 0.00%. The hardware lesson is
 now sharper: density tags should gate short-range counter sharing, not just
 local tile choice.
 
-The first learned guard LUT now replaces that hand choice. Training on the
-25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and 1,024
-learns `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`, and
-`1024 -> radius 0/loss 1`. The table is 1.125B for these three geometry
-entries. The loss tolerance is not a floating-point score; it is a one-count
-low-bit comparison against the same 4-bit loss counter. Training-seed
-evaluation hits the target: 25% dense stays off, 50% dense rises from 50% local
-dense-block coverage to 100% for 256 and 512-page blocks, 75% dense remains
-100%, and sparse false-enable stays 0.00%. The held-out seed audit that used to
-fail is now repaired: seed 1501 has 99/1 dense wins/losses at 75% dense, and
-`loss <= 1` restores 100% learned dense coverage for 256, 512, and 1,024-page
-blocks with sparse false-enable still 0.00%. The next control variable is no
-longer just sharing radius; it is a robust local guard over win threshold,
-sharing radius, and loss decay/tolerance.
+The learned guard LUT now chooses the full low-bit guard controller. Training
+on the 25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and
+1,024 learns `256 -> radius 2/decay win/loss 0`,
+`512 -> radius 1/decay win/loss 0`, and
+`1024 -> radius 0/decay win/loss 0`. The table is 1.875B for these three
+geometry entries: radius bits, one decay-mode code, and one loss-threshold bit.
+Training-seed evaluation hits the target: 25% dense stays off, 50% dense rises
+from 50% local dense-block coverage to 100% for 256 and 512-page blocks, 75%
+dense remains 100%, and sparse false-enable stays 0.00%. The held-out seed
+audit that used to fail is now repaired without permanent tolerance: seed 1501
+has 99/1 dense wins/losses at 75% dense, and decay-on-win with strict
+`loss == 0` restores 100% learned dense coverage for 256, 512, and 1,024-page
+blocks with sparse false-enable still 0.00%. The current controller is now a
+learned local rule over sharing radius, event-driven loss decay, and loss
+tolerance.
 
-The held-out loss-tolerance audit isolates the 512-page/radius-1 learned choice
+The held-out loss-tolerance audit isolates the 512-page/radius-1 geometry
 and compares strict `loss=0` against tolerant `loss=1` on seeds 1201, 1301,
 1401, and 1501. The strict gate has one dense-on failure: seed 1501 at 75%
 dense drops to 0.00% shared dense coverage on a 99/1 dense wins/losses trace.

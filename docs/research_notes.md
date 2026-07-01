@@ -431,22 +431,23 @@ combined case all keep shared dense coverage at 2/2 and sparse false-enable at
 0.00%. This says the next CA rule should learn when to share local evidence,
 not just when to flip a tile.
 
-The first learned version of that rule is still tiny. A guard LUT over block
-size learns `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`, and
-`1024 -> radius 0/loss 1` from the same mixed-stream objective: keep 25% dense
-off, enable 50% and 75% dense, and never enable sparse blocks. The table is
-1.125B in this diagnostic and recovers 100% dense coverage for the finer blocks
-that local counters miss. Held-out seed testing makes the result more honest.
-The strict zero-loss version generalized to seeds 1301 and 1401 but failed on
-seed 1501, where one dense loss in a 99/1 wins/losses case blocked coverage at
-75% dense. The tolerant version repairs that case: `loss <= 1` restores 100%
-learned dense coverage for all three block sizes and keeps sparse false-enable
-at 0.00%. This is a better CA-chip shape than a global heuristic, but it still
-needs a wider seed/noise audit and a learned decay rule before it can be called
-stable.
+The first learned version of that rule is still tiny, but it now learns the
+counter dynamics too. A guard LUT over block size learns
+`256 -> radius 2/decay win/loss 0`, `512 -> radius 1/decay win/loss 0`, and
+`1024 -> radius 0/decay win/loss 0` from the same mixed-stream objective: keep
+25% dense off, enable 50% and 75% dense, and never enable sparse blocks. The
+table is 1.875B in this diagnostic and recovers 100% dense coverage for the
+finer blocks that local counters miss. Held-out seed testing makes the result
+more honest. The old strict zero-loss version generalized to seeds 1301 and
+1401 but failed on seed 1501, where one dense loss in a 99/1 wins/losses case
+blocked coverage at 75% dense. The learned decay version repairs that case with
+strict `loss == 0`: decay-on-win restores 100% learned dense coverage for all
+three block sizes and keeps sparse false-enable at 0.00%. This is a better
+CA-chip shape than a global heuristic because the learned controller changes
+local counter dynamics rather than only relaxing the loss threshold.
 
 A first regression-style audit now exists for that failure mode. It fixes the
-learned 512-page/radius-1 geometry and compares `loss=0` with `loss=1` across
+512-page/radius-1 geometry and compares `loss=0` with `loss=1` across
 seeds 1201, 1301, 1401, and 1501. The strict gate has one dense-on failure and
 87.50% mean dense-on coverage; the tolerant gate has zero dense-on failures,
 100.00% mean dense-on coverage, zero off-region enables, and 0.00% max sparse

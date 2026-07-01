@@ -649,6 +649,7 @@ class WikiMemoryGuardSharingLUTEntry:
 
     guard_counter_block_pages: int
     chosen_share_radius_blocks: int
+    chosen_loss_decay_mode: str
     chosen_allowed_loss_count: int
     training_points: int
     training_cost: float
@@ -663,6 +664,7 @@ class WikiMemoryLearnedGuardSharingPoint:
     tag_threshold: int
     guard_counter_block_pages: int
     chosen_share_radius_blocks: int
+    chosen_loss_decay_mode: str
     chosen_allowed_loss_count: int
     target_dense_enable_rate: float
     local_dense_enable_rate: float
@@ -680,6 +682,7 @@ class WikiMemoryLearnedGuardSharingResult:
     policy: str
     radius_lut_state_bytes: float
     radius_options: Tuple[int, ...]
+    loss_decay_options: Tuple[str, ...]
     allowed_loss_options: Tuple[int, ...]
     min_dense_fraction_to_enable: float
     entries: Tuple[WikiMemoryGuardSharingLUTEntry, ...]
@@ -3690,15 +3693,17 @@ def run_wiki_memory_learned_guard_sharing_sweep(
     tag_threshold: int = 2,
     guard_counter_block_page_options: Tuple[int, ...] = (256, 512, 1024),
     guard_share_radius_options: Tuple[int, ...] = (0, 1, 2),
+    guard_loss_decay_options: Tuple[str, ...] = ("none", "win", "nonloss"),
     guard_allowed_loss_options: Tuple[int, ...] = (0, 1),
     min_dense_fraction_to_enable: float = 0.50,
     false_enable_weight: float = 8.0,
     radius_cost_weight: float = 0.01,
+    decay_cost_weight: float = 0.0,
     loss_cost_weight: float = 0.0,
     eval_seeds: Tuple[int, ...] = (),
     **mixed_sweep_kwargs: object,
 ) -> WikiMemoryLearnedGuardSharingResult:
-    """Learn a tiny LUT choosing same-tag sharing radius and loss tolerance."""
+    """Learn a tiny LUT choosing sharing radius, loss decay, and tolerance."""
 
     if not 0.0 < min_dense_fraction_to_enable < 1.0:
         raise ValueError("min_dense_fraction_to_enable must be in (0, 1)")
@@ -3706,20 +3711,31 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         raise ValueError("false_enable_weight must be non-negative")
     if radius_cost_weight < 0.0:
         raise ValueError("radius_cost_weight must be non-negative")
+    if decay_cost_weight < 0.0:
+        raise ValueError("decay_cost_weight must be non-negative")
     if loss_cost_weight < 0.0:
         raise ValueError("loss_cost_weight must be non-negative")
     clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
     clean_blocks = tuple(dict.fromkeys(int(value) for value in guard_counter_block_page_options))
     clean_radii = tuple(dict.fromkeys(int(value) for value in guard_share_radius_options))
+    clean_loss_decay_modes = tuple(
+        dict.fromkeys(str(value).strip().lower() for value in guard_loss_decay_options)
+    )
     clean_allowed_losses = tuple(dict.fromkeys(int(value) for value in guard_allowed_loss_options))
     if len(clean_blocks) == 0:
         raise ValueError("guard_counter_block_page_options must not be empty")
     if len(clean_radii) == 0:
         raise ValueError("guard_share_radius_options must not be empty")
+    if len(clean_loss_decay_modes) == 0:
+        raise ValueError("guard_loss_decay_options must not be empty")
     if len(clean_allowed_losses) == 0:
         raise ValueError("guard_allowed_loss_options must not be empty")
+    if any(value not in ("none", "win", "nonloss") for value in clean_loss_decay_modes):
+        raise ValueError("all guard loss decay options must be none, win, or nonloss")
     if any(value < 0 for value in clean_allowed_losses):
         raise ValueError("all guard allowed loss options must be non-negative")
+    decay_preference = {"none": 0, "nonloss": 1, "win": 2}
+    decay_cost_index = {value: index for index, value in enumerate(clean_loss_decay_modes)}
 
     sweep = run_wiki_memory_mixed_guard_counter_sweep(
         total_pages=total_pages,
@@ -3727,52 +3743,78 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         tag_thresholds=(tag_threshold,),
         guard_counter_block_page_options=clean_blocks,
         guard_share_radius_options=clean_radii,
+        guard_loss_decay_options=clean_loss_decay_modes,
         guard_allowed_loss_options=clean_allowed_losses,
         **mixed_sweep_kwargs,
     )
-    by_block_choice: dict[tuple[int, int, int], list[WikiMemoryMixedGuardCounterPoint]] = {}
+    by_block_choice: dict[
+        tuple[int, int, str, int],
+        list[WikiMemoryMixedGuardCounterPoint],
+    ] = {}
     for point in sweep.points:
         by_block_choice.setdefault(
             (
                 point.guard_counter_block_pages,
                 point.guard_share_radius_blocks,
+                point.guard_loss_decay_mode,
                 point.guard_allowed_loss_count,
             ),
             [],
         ).append(point)
 
     entries = []
-    chosen_choice_by_block: dict[int, tuple[int, int]] = {}
+    chosen_choice_by_block: dict[int, tuple[int, str, int]] = {}
     for block_pages in clean_blocks:
         best_radius = clean_radii[0]
+        best_loss_decay_mode = clean_loss_decay_modes[0]
         best_allowed_loss = clean_allowed_losses[0]
         best_cost = float("inf")
         best_count = 0
         for radius in clean_radii:
-            for allowed_loss in clean_allowed_losses:
-                points = by_block_choice.get((block_pages, radius, allowed_loss), [])
-                cost = radius_cost_weight * radius + loss_cost_weight * allowed_loss
-                for point in points:
-                    target = (
-                        1.0
-                        if point.dense_page_fraction >= min_dense_fraction_to_enable
-                        else 0.0
+            for loss_decay_mode in clean_loss_decay_modes:
+                for allowed_loss in clean_allowed_losses:
+                    points = by_block_choice.get(
+                        (block_pages, radius, loss_decay_mode, allowed_loss),
+                        [],
                     )
-                    dense_error = abs(point.dense_shared_enable_rate - target)
-                    false_error = false_enable_weight * point.sparse_shared_false_enable_rate
-                    cost += dense_error + false_error
-                if cost < best_cost or (
-                    np.isclose(cost, best_cost) and allowed_loss > best_allowed_loss
-                ):
-                    best_radius = radius
-                    best_allowed_loss = allowed_loss
-                    best_cost = cost
-                    best_count = len(points)
-        chosen_choice_by_block[block_pages] = (best_radius, best_allowed_loss)
+                    cost = (
+                        radius_cost_weight * radius
+                        + decay_cost_weight * decay_cost_index[loss_decay_mode]
+                        + loss_cost_weight * allowed_loss
+                    )
+                    for point in points:
+                        target = (
+                            1.0
+                            if point.dense_page_fraction >= min_dense_fraction_to_enable
+                            else 0.0
+                        )
+                        dense_error = abs(point.dense_shared_enable_rate - target)
+                        false_error = false_enable_weight * point.sparse_shared_false_enable_rate
+                        cost += dense_error + false_error
+                    better_tie = (
+                        allowed_loss < best_allowed_loss
+                        or (
+                            allowed_loss == best_allowed_loss
+                            and decay_preference[loss_decay_mode]
+                            > decay_preference[best_loss_decay_mode]
+                        )
+                    )
+                    if cost < best_cost or (np.isclose(cost, best_cost) and better_tie):
+                        best_radius = radius
+                        best_loss_decay_mode = loss_decay_mode
+                        best_allowed_loss = allowed_loss
+                        best_cost = cost
+                        best_count = len(points)
+        chosen_choice_by_block[block_pages] = (
+            best_radius,
+            best_loss_decay_mode,
+            best_allowed_loss,
+        )
         entries.append(
             WikiMemoryGuardSharingLUTEntry(
                 guard_counter_block_pages=block_pages,
                 chosen_share_radius_blocks=best_radius,
+                chosen_loss_decay_mode=best_loss_decay_mode,
                 chosen_allowed_loss_count=best_allowed_loss,
                 training_points=best_count,
                 training_cost=best_cost,
@@ -3783,22 +3825,27 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         source_points: Tuple[WikiMemoryMixedGuardCounterPoint, ...],
         eval_seed: int,
     ) -> None:
-        by_fraction: dict[tuple[int, float, int, int], WikiMemoryMixedGuardCounterPoint] = {}
+        by_fraction: dict[
+            tuple[int, float, int, str, int],
+            WikiMemoryMixedGuardCounterPoint,
+        ] = {}
         for source in source_points:
             by_fraction[
                 (
                     source.guard_counter_block_pages,
                     source.dense_page_fraction,
                     source.guard_share_radius_blocks,
+                    source.guard_loss_decay_mode,
                     source.guard_allowed_loss_count,
                 )
             ] = source
         for point in source_points:
-            chosen_radius, chosen_allowed_loss = chosen_choice_by_block[
+            chosen_radius, chosen_loss_decay_mode, chosen_allowed_loss = chosen_choice_by_block[
                 point.guard_counter_block_pages
             ]
             if (
                 point.guard_share_radius_blocks != chosen_radius
+                or point.guard_loss_decay_mode != chosen_loss_decay_mode
                 or point.guard_allowed_loss_count != chosen_allowed_loss
             ):
                 continue
@@ -3808,6 +3855,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                     point.guard_counter_block_pages,
                     point.dense_page_fraction,
                     local_radius,
+                    chosen_loss_decay_mode,
                     chosen_allowed_loss,
                 ),
                 point,
@@ -3824,6 +3872,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                     tag_threshold=point.tag_threshold,
                     guard_counter_block_pages=point.guard_counter_block_pages,
                     chosen_share_radius_blocks=chosen_radius,
+                    chosen_loss_decay_mode=chosen_loss_decay_mode,
                     chosen_allowed_loss_count=chosen_allowed_loss,
                     target_dense_enable_rate=target,
                     local_dense_enable_rate=local_point.dense_enable_rate,
@@ -3850,18 +3899,21 @@ def run_wiki_memory_learned_guard_sharing_sweep(
             tag_thresholds=(tag_threshold,),
             guard_counter_block_page_options=clean_blocks,
             guard_share_radius_options=clean_radii,
+            guard_loss_decay_options=clean_loss_decay_modes,
             guard_allowed_loss_options=clean_allowed_losses,
             **eval_kwargs,
         )
         append_eval_points(eval_sweep.points, eval_seed)
 
     radius_bits = max(1, int(np.ceil(np.log2(max(clean_radii) + 1))))
+    decay_bits = max(1, int(np.ceil(np.log2(len(clean_loss_decay_modes)))))
     loss_bits = max(1, int(np.ceil(np.log2(max(clean_allowed_losses) + 1))))
-    radius_lut_bits = len(clean_blocks) * (radius_bits + loss_bits)
+    radius_lut_bits = len(clean_blocks) * (radius_bits + decay_bits + loss_bits)
     return WikiMemoryLearnedGuardSharingResult(
         policy=sweep.policy,
         radius_lut_state_bytes=radius_lut_bits / 8.0,
         radius_options=clean_radii,
+        loss_decay_options=clean_loss_decay_modes,
         allowed_loss_options=clean_allowed_losses,
         min_dense_fraction_to_enable=min_dense_fraction_to_enable,
         entries=tuple(entries),

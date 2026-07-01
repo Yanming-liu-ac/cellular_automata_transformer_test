@@ -80,6 +80,7 @@ python experiments/wiki_memory_mixed_guard_loss_decay_demo.py
 python experiments/wiki_memory_mixed_guard_stress_demo.py
 python experiments/wiki_memory_mixed_guard_noise_demo.py
 python experiments/wiki_memory_learned_guard_sharing_demo.py
+python experiments/wiki_memory_learned_guard_decay_demo.py
 python experiments/wiki_memory_learned_guard_audit_demo.py
 python experiments/wiki_memory_learned_guard_noise_matrix_demo.py
 python experiments/wiki_memory_learned_guard_random_noise_demo.py
@@ -144,7 +145,7 @@ The first experiments compare:
 - event-driven loss-decay sweeps for strict wiki-memory guard counters;
 - observation-window stress sweeps for the same shared guard counters;
 - update-noise stress sweeps for the shared guard counters;
-- learned low-bit sharing-radius/loss-tolerance LUTs for mixed-stream guard counters;
+- learned low-bit sharing-radius/loss-decay/tolerance LUTs for mixed-stream guard counters;
 - held-out loss-tolerance audits for learned wiki-memory guard counters;
 - update-noise matrix audits for learned wiki-memory guard loss tolerance;
 - deterministic randomized-noise audits for learned wiki-memory guard tolerance;

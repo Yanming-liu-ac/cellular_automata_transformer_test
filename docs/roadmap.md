@@ -476,17 +476,20 @@ false-enable at 0.00% from 128/64 through 1,024/512 query/update windows. The
 update-noise stress keeps the same 2/2 and 0.00% result with revision updates
 at 80%, cluster updates at 60%, and both together.
 
-The first learned guard LUT now exists. It trains on the mixed-stream counter
-sweep and maps guard block size to same-tag sharing radius plus a one-count
-loss tolerance: `256 -> radius 2/loss 1`, `512 -> radius 1/loss 1`,
-`1024 -> radius 0/loss 1`. The LUT is 1.125B for these three entries. It keeps
-25% dense off, restores 50% dense coverage from 50% local to 100% for 256 and
-512-page blocks, leaves 75% dense at 100%, and keeps sparse false-enable at
-0.00% on the training stream. Held-out seed testing now passes the former
-failure: seed 1501 has 99/1 dense wins/losses at 75% dense, and `loss <= 1`
-restores 100% learned dense coverage while sparse false-enable remains 0.00%.
-The next step is to expand the held-out seed/noise audit and then learn the win
-threshold jointly with loss decay, not just a fixed loss tolerance.
+The learned guard LUT now exists in controller form. It trains on the
+mixed-stream counter sweep and maps guard block size to same-tag sharing radius,
+event-driven loss decay, and loss tolerance:
+`256 -> radius 2/decay win/loss 0`,
+`512 -> radius 1/decay win/loss 0`, and
+`1024 -> radius 0/decay win/loss 0`. The LUT is 1.875B for these three
+entries. It keeps 25% dense off, restores 50% dense coverage from 50% local to
+100% for 256 and 512-page blocks, leaves 75% dense at 100%, and keeps sparse
+false-enable at 0.00% on the training stream. Held-out seed testing now passes
+the former failure without permanent tolerance: seed 1501 has 99/1 dense
+wins/losses at 75% dense, and decay-on-win plus strict `loss == 0` restores
+100% learned dense coverage while sparse false-enable remains 0.00%. The next
+step is to expand the held-out seed/noise audit and then learn the win
+threshold, not just radius/decay/loss choice.
 
 The first expanded audit is now a fixed 512-page/radius-1 regression test over
 seeds 1201, 1301, 1401, and 1501. Strict `loss=0` has one dense-on failure and
