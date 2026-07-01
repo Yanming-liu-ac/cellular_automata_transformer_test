@@ -599,6 +599,15 @@ above 94% and under-strict rate stays below 3%. The remaining roadmap item is
 still real data: generate labels from retrieval failures, stale-source probes,
 or citation/trust metadata in a compiled wiki.
 
+The trace-derived audit changes the feature boundary. A metadata-only classifier
+was not enough for stochastic query/update pressure, so the CA-native state is
+now a 2-bit local pressure bucket computed from query-count, update-count,
+stale-probe count, trust, and citation. A 1.00B pressure classifier plus the
+1.125B provenance LUT reaches 0/3 held-out failures on synthetic traces. The
+remaining roadmap item is narrower and harder: replace the synthetic pressure
+formula with labels from a compiled wiki, retrieval failures, contradiction
+buffers, and source freshness audits.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

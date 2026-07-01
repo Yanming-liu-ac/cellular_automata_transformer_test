@@ -1427,6 +1427,22 @@ target explicit:
 Keep useful next-token behavior inside a small amount of local low-bit traffic.
 ```
 
+## CA Wiki Cell Trace Controller
+
+The current LLM-Wiki-oriented CA Wiki Cell controller uses:
+
+- 8 bits/claim of static trust/citation/recency/query metadata;
+- a 2-bit local pressure bucket derived from query/update/stale-probe counters;
+- a 1.00B pressure-to-importance classifier LUT;
+- the existing 1.125B importance-to-provenance-repair LUT.
+
+On three 1024-claim held-out traces with 4096 query events and 1024 update
+events, the pressure controller selects strict mode for 31.25-32.62% of claims,
+keeps strict recall at 100.00%, and has 0.00% under-strict rate. Estimated
+provenance repair traffic is 8.44-8.54 touched cells/event. The classifier LUT
+is small because the expensive information is not in the table; it is in the
+local counters that the CA fabric maintains as events arrive.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

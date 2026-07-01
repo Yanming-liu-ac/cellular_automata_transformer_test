@@ -576,6 +576,18 @@ touch around 8.6 cells/event. This is the right failure mode: the controller is
 not pretending metadata is perfectly predictive, but it can price the failure
 that matters most for a memory chip.
 
+The LLM-Wiki framing changes what the next signal should be. Static metadata
+alone failed to predict a stochastic query/update/stale trace; the useful
+state is the local maintenance pressure accumulated by the cell. The current
+trace-derived audit therefore adds a 2-bit pressure bucket computed from
+query-count, update-count, stale-probe count, trust, and citation. A 1.00B
+classifier maps that pressure bucket to loose/normal/strict and reuses the
+1.125B provenance repair LUT. On three held-out traces it reaches 100% strict
+recall and 0% under-strict rate, with strict mode selected for about 31-33% of
+claims. This is a deliberately modest result: it says CA is a natural substrate
+for mutable knowledge maintenance, not that the model has learned real
+semantic importance yet.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

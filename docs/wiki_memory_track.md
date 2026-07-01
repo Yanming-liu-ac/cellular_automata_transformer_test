@@ -424,6 +424,21 @@ estimated provenance touch is 8.57-8.62 cells/event. This is a more honest
 result than the deterministic proxy: the tiny metadata LUT is not a perfect
 classifier, but it can be biased toward protecting high-importance pages.
 
+The Karpathy-style LLM-Wiki pivot makes the next audit more concrete: page
+importance should come from update/query history, not only static metadata. A
+metadata-only trace classifier was tried first and failed honestly: the 64B
+table could not predict stochastic stale-probe pressure from trust/citation/
+recency/query priors alone. The current diagnostic therefore promotes a more
+CA-native state variable: a 2-bit local pressure bucket derived from
+query-count, update-count, stale-probe count, trust, and citation. The
+pressure-bucket classifier is only 1.00B, and the existing provenance repair
+table is 1.125B. On three 1024-claim held-out traces with 4096 query events and
+1024 update events, it reaches 100.00% accuracy and 100.00% strict recall with
+0.00% under-strict rate. The strict mode rate is 31.25-32.62%, and estimated
+provenance touch is 8.44-8.54 cells/event. This is not a solved real-wiki
+importance model; it is a clean CA control primitive: local event counters ->
+local pressure bucket -> tiny importance LUT -> local provenance repair mode.
+
 ## Kill Criteria
 
 This track is not useful if:

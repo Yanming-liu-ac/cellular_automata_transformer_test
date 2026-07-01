@@ -1176,6 +1176,60 @@ class CAWikiCellNoisyMetadataImportanceResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellTraceMetadataImportanceLUTEntry:
+    """Trace-pressure bucket mapped to a page-importance mode."""
+
+    pressure_bucket: int
+    chosen_importance: str
+    training_count: int
+
+
+@dataclass(frozen=True)
+class CAWikiCellTraceMetadataImportancePoint:
+    """Evaluation point for trace-derived metadata importance."""
+
+    eval_seed: int
+    claim_count: int
+    query_events: int
+    update_events: int
+    local_pressure_bits_per_claim: int
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    loose_rate: float
+    normal_rate: float
+    strict_rate: float
+    mean_queries_per_claim: float
+    mean_updates_per_claim: float
+    mean_stale_probes_per_claim: float
+    estimated_touch_per_event: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellTraceMetadataImportanceResult:
+    """Trace-derived audit for local pressure -> provenance importance."""
+
+    claim_count: int
+    train_claim_count: int
+    query_events: int
+    update_events: int
+    metadata_bits_per_claim: int
+    local_pressure_bits_per_claim: int
+    classifier_lut_bytes: float
+    repair_lut_bytes: float
+    under_importance_weight: float
+    over_importance_weight: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    entries: Tuple[CAWikiCellTraceMetadataImportanceLUTEntry, ...]
+    points: Tuple[CAWikiCellTraceMetadataImportancePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -5843,6 +5897,86 @@ def _ca_wiki_metadata_noisy_teacher(
     return labels
 
 
+def _ca_wiki_trace_pressure_bucket(pressure: np.ndarray) -> np.ndarray:
+    buckets = np.zeros(pressure.shape[0], dtype=np.int64)
+    buckets[pressure >= 6.75] = 1
+    buckets[pressure >= 10.25] = 2
+    buckets[pressure >= 13.0] = 3
+    return buckets
+
+
+def _ca_wiki_metadata_trace_labels(
+    features: np.ndarray,
+    seed: int,
+    query_events: int,
+    update_events: int,
+    sources_per_claim: int = 16,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Derive importance from synthetic wiki query/update/stale pressure."""
+
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if sources_per_claim <= 0:
+        raise ValueError("sources_per_claim must be positive")
+    claim_count = int(features.shape[0])
+    if claim_count <= 0:
+        raise ValueError("features must contain at least one claim")
+
+    rng = np.random.default_rng(seed)
+    trust = features[:, 0].astype(np.float64)
+    citations = features[:, 1].astype(np.float64)
+    recency = features[:, 2].astype(np.float64)
+    query_bucket = features[:, 3].astype(np.float64)
+    query_weights = 1.0 + 2.0 * query_bucket + 0.75 * recency + 0.35 * citations
+    query_weights /= float(np.sum(query_weights))
+    update_weights = 0.5 + 1.8 * recency + 0.35 * query_bucket
+    update_weights /= float(np.sum(update_weights))
+
+    query_count = np.zeros(claim_count, dtype=np.int64)
+    update_count = np.zeros(claim_count, dtype=np.int64)
+    stale_probe_count = np.zeros(claim_count, dtype=np.int64)
+    source_rev = np.zeros((claim_count, sources_per_claim), dtype=np.int64)
+    summary_rev = np.zeros(claim_count, dtype=np.int64)
+    truth_rev = np.zeros(claim_count, dtype=np.int64)
+
+    events = np.concatenate(
+        (
+            np.zeros(int(query_events), dtype=np.bool_),
+            np.ones(int(update_events), dtype=np.bool_),
+        )
+    )
+    rng.shuffle(events)
+    for is_update in events:
+        if is_update:
+            claim = int(rng.choice(claim_count, p=update_weights))
+            source = int(rng.integers(0, sources_per_claim))
+            truth_rev[claim] += 1
+            source_rev[claim, source] = truth_rev[claim]
+            summary_rev[claim] = truth_rev[claim]
+            update_count[claim] += 1
+        else:
+            claim = int(rng.choice(claim_count, p=query_weights))
+            source = int(rng.integers(0, sources_per_claim))
+            query_count[claim] += 1
+            if source_rev[claim, source] != summary_rev[claim]:
+                stale_probe_count[claim] += 1
+
+    pressure = (
+        2.5 * stale_probe_count.astype(np.float64)
+        + 0.25 * query_count.astype(np.float64)
+        + 0.6 * update_count.astype(np.float64)
+        + 2.0 * trust
+        + citations
+    )
+    pressure_bucket = _ca_wiki_trace_pressure_bucket(pressure)
+    labels = np.zeros(claim_count, dtype=np.int64)
+    labels[pressure_bucket >= 1] = 1
+    labels[pressure_bucket >= 2] = 2
+    return labels, query_count, update_count, stale_probe_count, pressure_bucket
+
+
 def _ca_wiki_metadata_key_teacher(
     trust_bucket: int,
     citation_bucket: int,
@@ -6188,6 +6322,185 @@ def run_ca_wiki_cell_noisy_metadata_importance_sweep(
         classifier_lut_bytes=classifier_lut_bytes,
         repair_lut_bytes=provenance.lut_state_bytes,
         noise_std=noise_std,
+        under_importance_weight=under_importance_weight,
+        over_importance_weight=over_importance_weight,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
+        entries=tuple(entries),
+        points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_trace_metadata_importance_sweep(
+    *,
+    claim_count: int = 1024,
+    train_claim_count: int = 4096,
+    query_events: int = 4096,
+    update_events: int = 1024,
+    train_seeds: Tuple[int, ...] = (3601, 3701),
+    eval_seeds: Tuple[int, ...] = (3801, 3901, 4001),
+    under_importance_weight: float = 4.0,
+    over_importance_weight: float = 0.75,
+    min_accuracy: float = 0.65,
+    min_strict_recall: float = 0.90,
+    max_under_strict_rate: float = 0.06,
+) -> CAWikiCellTraceMetadataImportanceResult:
+    """Learn local pressure -> importance from query/update/stale traces."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if under_importance_weight < 0.0:
+        raise ValueError("under_importance_weight must be non-negative")
+    if over_importance_weight < 0.0:
+        raise ValueError("over_importance_weight must be non-negative")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts = np.zeros((bucket_count, mode_count), dtype=np.int64)
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        labels, _, _, _, pressure_bucket = _ca_wiki_metadata_trace_labels(
+            features,
+            seed + 31,
+            query_events,
+            update_events,
+        )
+        for bucket, label in zip(pressure_bucket, labels):
+            counts[int(bucket), int(label)] += 1
+
+    lut = np.zeros(bucket_count, dtype=np.int64)
+    entries: List[CAWikiCellTraceMetadataImportanceLUTEntry] = []
+    for pressure_bucket in range(bucket_count):
+        bucket_counts = counts[pressure_bucket]
+        training_count = int(np.sum(bucket_counts))
+        losses = []
+        for predicted in range(mode_count):
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (actual - predicted) * under_importance_weight * count
+                elif predicted > actual:
+                    loss += (predicted - actual) * over_importance_weight * count
+            losses.append(loss)
+        chosen_index = int(np.argmin(losses)) if training_count else min(pressure_bucket, 2)
+        lut[pressure_bucket] = chosen_index
+        entries.append(
+            CAWikiCellTraceMetadataImportanceLUTEntry(
+                pressure_bucket=pressure_bucket,
+                chosen_importance=modes[chosen_index],
+                training_count=training_count,
+            )
+        )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    classifier_bits = bucket_count * max(1, int(np.ceil(np.log2(mode_count))))
+    classifier_lut_bytes = classifier_bits / 8.0
+    eval_points: List[CAWikiCellTraceMetadataImportancePoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        (
+            teacher,
+            query_count,
+            update_count,
+            stale_probe_count,
+            pressure_bucket,
+        ) = _ca_wiki_metadata_trace_labels(
+            features,
+            seed + 31,
+            query_events,
+            update_events,
+        )
+        predicted = np.array(
+            [lut[int(bucket)] for bucket in pressure_bucket],
+            dtype=np.int64,
+        )
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(
+            mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count)
+        )
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        eval_points.append(
+            CAWikiCellTraceMetadataImportancePoint(
+                eval_seed=seed,
+                claim_count=claim_count,
+                query_events=query_events,
+                update_events=update_events,
+                local_pressure_bits_per_claim=2,
+                accuracy=accuracy,
+                strict_precision=strict_precision,
+                strict_recall=strict_recall,
+                over_strict_rate=over_strict / float(claim_count),
+                under_strict_rate=under_strict_rate,
+                loose_rate=mode_rates[0],
+                normal_rate=mode_rates[1],
+                strict_rate=mode_rates[2],
+                mean_queries_per_claim=float(np.mean(query_count)),
+                mean_updates_per_claim=float(np.mean(update_count)),
+                mean_stale_probes_per_claim=float(np.mean(stale_probe_count)),
+                estimated_touch_per_event=estimated_touch,
+                target_met=(
+                    accuracy >= min_accuracy
+                    and strict_recall >= min_strict_recall
+                    and under_strict_rate <= max_under_strict_rate
+                ),
+            )
+        )
+
+    return CAWikiCellTraceMetadataImportanceResult(
+        claim_count=claim_count,
+        train_claim_count=train_claim_count,
+        query_events=query_events,
+        update_events=update_events,
+        metadata_bits_per_claim=8,
+        local_pressure_bits_per_claim=2,
+        classifier_lut_bytes=classifier_lut_bytes,
+        repair_lut_bytes=provenance.lut_state_bytes,
         under_importance_weight=under_importance_weight,
         over_importance_weight=over_importance_weight,
         train_seeds=clean_train_seeds,
