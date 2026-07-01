@@ -62,6 +62,7 @@ python experiments/synthetic_lm_demo.py
 python experiments/synthetic_candidate_demand_sweep_demo.py
 python experiments/synthetic_candidate_reducer_demo.py
 python experiments/synthetic_hierarchical_candidate_reducer_demo.py
+python experiments/synthetic_group_summary_update_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -96,6 +97,8 @@ The first experiments compare:
   top-M content exposure before the exact gate;
 - hierarchical group-summary candidate reducers that avoid full-pool candidate
   scoring before top-M exposure;
+- group-summary maintenance diagnostics that estimate update cost for the
+  hierarchical reducer;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

@@ -374,6 +374,10 @@ Implement:
 - model group-summary update cost. The first hierarchical reducer cuts score
   reads to 256 cells/topic for top-16 and 384 for top-32, but it assumes local
   group max summaries are already maintained.
+- move group-summary maintenance from exact recompute to learned/lazy updates.
+  Exact maintenance for 16-row groups costs about 234 cells/topic and still
+  preserves a 76% net top-16 scoring reduction, but lazy dirty summaries may
+  reduce this further.
 
 First trainable target:
 

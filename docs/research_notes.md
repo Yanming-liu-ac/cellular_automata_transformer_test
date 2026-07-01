@@ -273,6 +273,15 @@ of top-64, while score reads are 384 per topic event. The content gate remains
 100.0% exact. This is the first evidence that candidate reduction can be
 hierarchical rather than full-pool.
 
+The group-summary maintenance diagnostic checks whether those summaries are
+too expensive to keep exact. For 16-row groups, each topic update touches about
+3.6 candidate rows and 3.4 groups on average. Exact summary maintenance costs
+about 234 score-equivalent cells/topic, including group recompute, summary
+writes, and decay shifts. Adding that to the hierarchical reducer gives about
+490 cells/topic for top-16 and 618 for top-32, still 76.1% and 69.8% below the
+2,048-cell full-pool scorer. Group size 16 is the current best balance; group
+size 8 scans more summaries, while group size 32 makes each recompute too wide.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

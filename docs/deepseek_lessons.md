@@ -374,6 +374,11 @@ The group-summary reducer is closer to that fabric. It gets top-32 demand to
 DeepSeek theme more directly: do not materialize every candidate path; summarize
 locally, route a small subset, then spend exact work only there.
 
+The update-cost estimate keeps the same conclusion honest. Maintaining exact
+16-row summaries costs about 234 score-equivalent cells/topic, but the
+hierarchical top-16 path still cuts total score work by about 76%. Compression
+has to include the update path, not only the read path.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

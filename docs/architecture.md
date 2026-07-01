@@ -269,6 +269,13 @@ reads 384 score cells/topic and keeps 93.6%. This suggests a two-stage output
 lane: local group summaries first, then exact row exposure only for the reduced
 set.
 
+Maintaining the summaries looks feasible at this scale. With 16-row groups, a
+topic update touches only about 3.4 groups on average. Exact local recompute
+adds about 234 score-equivalent cells/topic. Even after adding that maintenance,
+the hierarchical top-16 path costs about 490 score cells/topic, far below the
+2,048-cell full-pool scorer. This makes local group summaries a plausible
+hardware primitive rather than a free oracle.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

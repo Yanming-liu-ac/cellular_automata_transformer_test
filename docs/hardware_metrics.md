@@ -179,6 +179,14 @@ Top-32 with four selected groups reads 384 score cells per topic event, keeps
 candidate-score reads by 81%-88% before exact exposure. The unmodeled hardware
 question is how cheaply each group max summary can be maintained during updates.
 
+The exact maintenance estimate says the summary path still has margin. For
+16-row groups, summary state is about 64 bytes. A topic update impacts about
+3.4 groups on average, so exact recompute plus summary writes and decay shifts
+costs about 234 score-equivalent cells/topic. Including this maintenance,
+top-16 hierarchical scoring costs about 490 cells/topic and top-32 costs about
+618, versus 2,048 for full-pool scoring. The net reduction remains 76% and 70%,
+respectively.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

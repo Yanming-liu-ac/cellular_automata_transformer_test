@@ -348,6 +348,47 @@ class SyntheticLMHierarchicalCandidateReducerResult:
 
 
 @dataclass(frozen=True)
+class SyntheticLMGroupSummaryUpdatePoint:
+    """Maintenance cost estimate for candidate group summaries."""
+
+    group_size: int
+    total_groups: int
+    topic_events: int
+    summary_state_bytes: float
+    full_score_cells_per_topic_event: float
+    mean_impacted_candidate_rows: float
+    mean_impacted_groups: float
+    recompute_read_cells_per_topic_event: float
+    summary_write_cells_per_topic_event: float
+    summary_decay_cells_per_topic_event: float
+    maintenance_cells_per_topic_event: float
+    top16_score_cells_per_topic_event: float
+    top16_total_cells_per_topic_event: float
+    top16_total_reduction_rate: float
+    top32_score_cells_per_topic_event: float
+    top32_total_cells_per_topic_event: float
+    top32_total_reduction_rate: float
+
+
+@dataclass(frozen=True)
+class SyntheticLMGroupSummaryUpdateResult:
+    """Sweep over candidate group-summary update costs."""
+
+    fact_count: int
+    candidate_pool_size: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    dense_banks: int
+    dense_width: int
+    bits: int
+    decay_interval: int
+    seed: int
+    candidate_score_source: str
+    points: Tuple[SyntheticLMGroupSummaryUpdatePoint, ...]
+
+
+@dataclass(frozen=True)
 class SyntheticLMPhasedDemandGateLUT:
     """Synthetic LM LUT with exact/candidate phase and candidate-rank buckets."""
 
@@ -1383,6 +1424,178 @@ def make_hierarchical_candidate_reducer_demand_trace(
         fine_score_cells_per_topic_event=fine_score_cells / float(trace_config.topic_events),
         score_cells_per_topic_event=score_cells / float(trace_config.topic_events),
         score_cells_per_event=score_cells / float(total_events),
+    )
+
+
+def _candidate_groups_touched_by_update(
+    candidate_slots: np.ndarray,
+    token: int,
+    group_size: int,
+    dense_width: int,
+    changed_banks: Tuple[int, ...],
+) -> tuple[int, int]:
+    touched_rows = np.zeros(candidate_slots.shape[1], dtype=np.bool_)
+    for bank in changed_banks:
+        slot = keyed_hash(int(token), 1000 + bank) % dense_width
+        touched_rows |= candidate_slots[bank] == slot
+    row_count = int(np.count_nonzero(touched_rows))
+    if row_count == 0:
+        return 0, 0
+    groups = np.unique(np.nonzero(touched_rows)[0] // group_size)
+    return row_count, int(len(groups))
+
+
+def run_synthetic_lm_group_summary_update_sweep(
+    config: SyntheticLMConfig | None = None,
+    group_sizes: Tuple[int, ...] = (8, 16, 32),
+    seed: int = 37,
+) -> SyntheticLMGroupSummaryUpdateResult:
+    """Estimate exact maintenance cost for local candidate group summaries."""
+
+    summary_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+        candidate_score_source="topic_phase",
+    )
+    if summary_config.candidate_strategy != "static":
+        raise ValueError("group-summary update sweep requires static candidates")
+    if summary_config.candidate_score_source != "topic_phase":
+        raise ValueError("group-summary update sweep currently models topic_phase scores")
+
+    clean_group_sizes = tuple(
+        dict.fromkeys(
+            max(1, int(group_size))
+            for group_size in group_sizes
+            if int(group_size) > 0
+        )
+    )
+    if len(clean_group_sizes) == 0:
+        raise ValueError("group_sizes must contain at least one positive value")
+
+    lm = DualPathSyntheticLM(summary_config, seed=seed)
+    lm.prefill()
+    if lm.candidate_slots is None or lm.candidate_score_dense is None:
+        raise RuntimeError("candidate score state is not initialized")
+
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=summary_config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * summary_config.topic_events + ["query"] * summary_config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    group_count_by_size = {
+        group_size: (summary_config.candidate_pool_size + group_size - 1) // group_size
+        for group_size in clean_group_sizes
+    }
+    touched_rows_by_size = {group_size: 0 for group_size in clean_group_sizes}
+    touched_groups_by_size = {group_size: 0 for group_size in clean_group_sizes}
+    decay_events = 0
+    query_cursor = 0
+    max_value = (1 << summary_config.dense_bits) - 1
+
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(summary_config, lm.rng)
+            slots = [
+                keyed_hash(int(token), 1000 + bank) % summary_config.dense_width
+                for bank in range(summary_config.dense_banks)
+            ]
+            changed_banks = tuple(
+                bank
+                for bank, slot in enumerate(slots)
+                if int(lm.candidate_score_dense.counters[bank, slot]) < max_value
+            )
+            for group_size in clean_group_sizes:
+                row_count, group_count = _candidate_groups_touched_by_update(
+                    candidate_slots=lm.candidate_slots,
+                    token=token,
+                    group_size=group_size,
+                    dense_width=summary_config.dense_width,
+                    changed_banks=changed_banks,
+                )
+                touched_rows_by_size[group_size] += row_count
+                touched_groups_by_size[group_size] += group_count
+            before_steps = lm.candidate_score_dense.steps
+            lm.dense.update(token)
+            lm.candidate_score_dense.update(token)
+            if (before_steps + 1) % summary_config.dense_decay_interval == 0:
+                decay_events += 1
+            continue
+
+        fact_index = int(query_indices[query_cursor])
+        query_cursor += 1
+        key, expected = lm.facts[fact_index]
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    score_cells_per_candidate = float(summary_config.dense_banks)
+    full_score_cells = summary_config.candidate_pool_size * score_cells_per_candidate
+    summary_cells_per_group = score_cells_per_candidate
+    points = []
+    for group_size in clean_group_sizes:
+        total_groups = group_count_by_size[group_size]
+        mean_rows = touched_rows_by_size[group_size] / float(summary_config.topic_events)
+        mean_groups = touched_groups_by_size[group_size] / float(summary_config.topic_events)
+        recompute_read = mean_groups * group_size * score_cells_per_candidate
+        summary_write = mean_groups * summary_cells_per_group
+        summary_decay = (
+            decay_events
+            * total_groups
+            * summary_cells_per_group
+            / float(summary_config.topic_events)
+        )
+        maintenance = recompute_read + summary_write + summary_decay
+
+        top16_selected_groups = max(1, (32 + group_size - 1) // group_size)
+        top32_selected_groups = max(1, (64 + group_size - 1) // group_size)
+        group_scan = total_groups * summary_cells_per_group
+        top16_score = group_scan + top16_selected_groups * group_size * score_cells_per_candidate
+        top32_score = group_scan + top32_selected_groups * group_size * score_cells_per_candidate
+        top16_total = top16_score + maintenance
+        top32_total = top32_score + maintenance
+        points.append(
+            SyntheticLMGroupSummaryUpdatePoint(
+                group_size=group_size,
+                total_groups=total_groups,
+                topic_events=summary_config.topic_events,
+                summary_state_bytes=total_groups * summary_config.dense_banks * summary_config.dense_bits / 8,
+                full_score_cells_per_topic_event=full_score_cells,
+                mean_impacted_candidate_rows=mean_rows,
+                mean_impacted_groups=mean_groups,
+                recompute_read_cells_per_topic_event=recompute_read,
+                summary_write_cells_per_topic_event=summary_write,
+                summary_decay_cells_per_topic_event=summary_decay,
+                maintenance_cells_per_topic_event=maintenance,
+                top16_score_cells_per_topic_event=top16_score,
+                top16_total_cells_per_topic_event=top16_total,
+                top16_total_reduction_rate=1.0 - top16_total / full_score_cells,
+                top32_score_cells_per_topic_event=top32_score,
+                top32_total_cells_per_topic_event=top32_total,
+                top32_total_reduction_rate=1.0 - top32_total / full_score_cells,
+            )
+        )
+
+    return SyntheticLMGroupSummaryUpdateResult(
+        fact_count=summary_config.fact_count,
+        candidate_pool_size=summary_config.candidate_pool_size,
+        topic_events=summary_config.topic_events,
+        query_events=summary_config.query_events,
+        total_events=summary_config.topic_events + summary_config.query_events,
+        dense_banks=summary_config.dense_banks,
+        dense_width=summary_config.dense_width,
+        bits=summary_config.dense_bits,
+        decay_interval=summary_config.dense_decay_interval,
+        seed=seed,
+        candidate_score_source=summary_config.candidate_score_source,
+        points=tuple(points),
     )
 
 
