@@ -69,6 +69,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
     print("- learned_shift_selector adds a 60B multi-distribution selector LUT.")
     print("- two_branch_factor_selector pairs the 80B factor branch with a 30B coverage-repair LUT.")
     print("- two_branch_mixer_selector tests a small local arbiter between factor and learned branches.")
+    print("- regime_counter_selector adds a 64B tile-level regime LUT before branch selection.")
     print("- all factorized variants reuse the 64B baseline classifier.")
 
 

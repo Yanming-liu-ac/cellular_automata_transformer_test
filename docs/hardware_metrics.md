@@ -1553,6 +1553,7 @@ learned_shift_selector: 204B controller, 28.44% mean over-strict, 9.40 touch/eve
 two_branch_selector: 234B controller, 27.25% mean over-strict, 9.38 touch/event, 1/4 failures
 two_branch_factor_selector: 174B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/event, 1/4 failures
+regime_counter_selector: 238B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
@@ -1593,6 +1594,11 @@ two_branch_mixer_selector parser_x2:     65.82% accuracy, 98.57% strict recall, 
 two_branch_mixer_selector omit_x2:       75.44% accuracy, 97.49% strict recall, 1.71% under, 22.85% over, 0/2 pass
 two_branch_mixer_selector distractor_x2: 73.00% accuracy, 98.42% strict recall, 1.17% under, 25.83% over, 1/2 pass
 two_branch_mixer_selector large_2k:      73.14% accuracy, 98.12% strict recall, 1.27% under, 25.59% over, 1/2 pass
+regime_counter_selector default_1k:      73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
+regime_counter_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+regime_counter_selector omit_x2:         73.58% accuracy, 99.32% strict recall, 0.98% under, 25.44% over, 2/2 pass
+regime_counter_selector distractor_x2:   70.65% accuracy, 99.59% strict recall, 0.68% under, 28.66% over, 2/2 pass
+regime_counter_selector large_2k:        71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
 ```
 
 This separates efficiency from robustness. The 144B guard is efficient and
@@ -1611,6 +1617,14 @@ state still fails to choose the right branch consistently. The next hardware
 metric should therefore track a tiny rolling regime counter per region or tile:
 parser-miss excess should select the factor branch, while coverage-gap excess
 should select the repair branch.
+
+The first regime-counter version is the strongest hardware candidate so far for
+the paragraph controller. It adds a 64B tile-level regime LUT and closes the
+current five-scenario stress matrix at 238B total controller state. The cost is
+not lower traffic than `factor_vote80b`; it is robustness. The next metric
+should measure whether the same regime LUT holds under randomized mixed shifts,
+because a named-scenario table that fails interpolated noise would not be a
+chip primitive yet.
 
 ## Tile/Floorplan Metrics
 

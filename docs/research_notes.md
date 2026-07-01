@@ -734,6 +734,22 @@ coverage branch under omission shift. The next version needs a small
 event-level or region-level regime signal, such as rolling parser-miss excess
 versus rolling coverage-gap excess, before spending more SRAM on per-claim LUTs.
 
+That regime signal now exists as a first positive prototype. The
+`regime_counter_selector` adds a 64B tile-level LUT over five low-bit aggregate
+features: high parser-miss rate, high coverage-gap rate, high agreement-gap
+rate, observed error pressure, and a scale bit. It chooses between the
+parser-tolerant `factor_vote80b` branch and the coverage-repair
+`two_branch_factor_selector`; the per-claim branch logic is unchanged. Total
+controller state is 238B: 64B baseline classifier, 80B factor projections, 30B
+coverage-repair LUT, and 64B regime LUT. This is the first paragraph controller
+that closes the current stress matrix: default_1k, parser_x2, omit_x2,
+distractor_x2, and large_2k all pass 2/2. The key switch is exactly the desired
+one: parser_x2 chooses the factor branch and reaches 66.60% accuracy with
+98.47% strict recall, while omission/distractor/scale shift choose the repair
+branch and preserve strict recall above 99%. This is still a small synthetic
+matrix, so the next proof point should be a held-out randomized noise matrix
+that varies parser, omission, distractor, and scale together.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

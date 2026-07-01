@@ -187,6 +187,8 @@ The first experiments compare:
   multiple paragraph-noise distributions;
 - two-branch paragraph selector diagnostics that split parser-tolerant
   downgrades from coverage repair and expose the missing regime signal;
+- rolling-regime paragraph counters that choose between parser-tolerant and
+  coverage-repair branches using tile-level low-bit statistics;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

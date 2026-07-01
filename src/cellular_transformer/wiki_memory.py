@@ -10465,6 +10465,17 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     two_branch_mixer_over_importance_weight: float = 1.0,
     two_branch_mixer_coverage_profile_weight: float = 1.0,
     two_branch_mixer_parser_profile_weight: float = 1.0,
+    regime_counter_under_importance_weight: float = 10.0,
+    regime_counter_over_importance_weight: float = 1.0,
+    regime_counter_target_penalty_weight: float = 4.0,
+    regime_counter_repair_bias_weight: float = 0.04,
+    regime_counter_profiles: Tuple[str, ...] = (
+        "default",
+        "parser_x2",
+        "omit_x2",
+        "distractor_x2",
+        "large_2k",
+    ),
     learned_shift_selector_profiles: Tuple[str, ...] = (
         "default",
         "parser_x2",
@@ -10636,6 +10647,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         )
     if two_branch_mixer_parser_profile_weight < 0.0:
         raise ValueError("two_branch_mixer_parser_profile_weight must be non-negative")
+    if regime_counter_under_importance_weight < 0.0:
+        raise ValueError("regime_counter_under_importance_weight must be non-negative")
+    if regime_counter_over_importance_weight < 0.0:
+        raise ValueError("regime_counter_over_importance_weight must be non-negative")
+    if regime_counter_target_penalty_weight < 0.0:
+        raise ValueError("regime_counter_target_penalty_weight must be non-negative")
+    if regime_counter_repair_bias_weight < 0.0:
+        raise ValueError("regime_counter_repair_bias_weight must be non-negative")
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10666,6 +10685,23 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError(
             f"unknown learned_shift_selector_profiles: {unknown_selector_profiles}"
         )
+    clean_regime_profiles = tuple(
+        dict.fromkeys(str(value) for value in regime_counter_profiles)
+    )
+    if len(clean_regime_profiles) == 0:
+        raise ValueError("regime_counter_profiles must not be empty")
+    allowed_regime_profiles = {
+        "default",
+        "parser_x2",
+        "omit_x2",
+        "distractor_x2",
+        "large_2k",
+    }
+    unknown_regime_profiles = [
+        name for name in clean_regime_profiles if name not in allowed_regime_profiles
+    ]
+    if unknown_regime_profiles:
+        raise ValueError(f"unknown regime_counter_profiles: {unknown_regime_profiles}")
 
     modes = ("loose", "normal", "strict")
     mode_count = len(modes)
@@ -11046,6 +11082,21 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             min(1.0, clean_train_distractor_rate * 2.0),
         ),
     }
+
+    def make_selector_bucket_rows(trace: Tuple[np.ndarray, ...]) -> np.ndarray:
+        return np.stack(
+            (
+                _ca_wiki_weighted_signal_bucket(trace[8]),
+                _ca_wiki_count_bucket(trace[9]),
+                _ca_wiki_weighted_signal_bucket(trace[10]),
+                _ca_wiki_count_bucket(trace[11]),
+                _ca_wiki_weighted_signal_bucket(trace[13]),
+                _ca_wiki_weighted_signal_bucket(trace[14]),
+                _ca_wiki_weighted_signal_bucket(trace[15]),
+            ),
+            axis=1,
+        ).astype(np.int64)
+
     for profile in clean_selector_profiles:
         for seed in clean_train_seeds:
             features = _ca_wiki_metadata_features(train_claim_count, seed)
@@ -11057,18 +11108,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 train_compile_events,
                 *selector_profile_params[profile],
             )
-            selector_buckets = np.stack(
-                (
-                    _ca_wiki_weighted_signal_bucket(trace[8]),
-                    _ca_wiki_count_bucket(trace[9]),
-                    _ca_wiki_weighted_signal_bucket(trace[10]),
-                    _ca_wiki_count_bucket(trace[11]),
-                    _ca_wiki_weighted_signal_bucket(trace[13]),
-                    _ca_wiki_weighted_signal_bucket(trace[14]),
-                    _ca_wiki_weighted_signal_bucket(trace[15]),
-                ),
-                axis=1,
-            ).astype(np.int64)
+            selector_buckets = make_selector_bucket_rows(trace)
             add_selector_examples(selector_buckets, trace[0])
             selector_training_examples.append((profile, selector_buckets, trace[0]))
 
@@ -11339,6 +11379,177 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             losses.append(loss)
         branch_mixer_selector[index] = int(np.argmin(losses))
     branch_mixer_lut_bytes = float(np.prod(branch_mixer_selector.shape)) / 8.0
+
+    def predict_regime_branches(
+        bucket_rows: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        base_modes = np.array(
+            [
+                lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
+                for row in bucket_rows
+            ],
+            dtype=np.int64,
+        )
+        vote_counts = np.zeros(bucket_rows.shape[0], dtype=np.int64)
+        for projection, factor_guard in zip(selector_projections, selector_guards):
+            vote_counts += factor_guard[
+                tuple(bucket_rows[:, index] for index in projection)
+            ].astype(np.int64)
+        core_gap_buckets = np.minimum(
+            bucket_rows[:, 4] + bucket_rows[:, 5],
+            bucket_count - 1,
+        )
+        parser_miss_buckets = bucket_rows[:, 3]
+        factor_modes = base_modes.copy()
+        factor_modes[
+            (factor_modes == 2) & (vote_counts >= selector_vote_threshold)
+        ] = 1
+        repair_mask = (
+            coverage_repair_selector[
+                factor_modes,
+                vote_counts,
+                core_gap_buckets,
+                parser_miss_buckets,
+            ].astype(np.bool_)
+            & (factor_modes == 1)
+            & (core_gap_buckets >= two_branch_coverage_repair_min_core_gap_bucket)
+            & (parser_miss_buckets <= two_branch_coverage_repair_max_parser_miss_bucket)
+        )
+        repair_modes = factor_modes.copy()
+        repair_modes[repair_mask] = 2
+        return factor_modes, repair_modes
+
+    def regime_rate_bucket(value: float, thresholds: Tuple[float, float, float]) -> int:
+        if value >= thresholds[2]:
+            return 3
+        if value >= thresholds[1]:
+            return 2
+        if value >= thresholds[0]:
+            return 1
+        return 0
+
+    def regime_feature_index(bucket_rows: np.ndarray) -> Tuple[int, int, int, int, int]:
+        core_gap_buckets = np.minimum(
+            bucket_rows[:, 4] + bucket_rows[:, 5],
+            bucket_count - 1,
+        )
+        parser_high = float(np.mean(bucket_rows[:, 3] >= 2))
+        coverage_high = float(np.mean(core_gap_buckets >= 2))
+        agreement_high = float(np.mean(bucket_rows[:, 6] >= 2))
+        error_mean = float(np.mean(bucket_rows[:, 0]))
+        scale_bucket = 1 if bucket_rows.shape[0] >= 1536 else 0
+        return (
+            regime_rate_bucket(parser_high, (0.50, 0.70, 0.75)),
+            regime_rate_bucket(coverage_high, (0.30, 0.40, 0.45)),
+            regime_rate_bucket(agreement_high, (0.45, 0.56, 0.60)),
+            regime_rate_bucket(error_mean, (1.50, 1.60, 1.70)),
+            scale_bucket,
+        )
+
+    def regime_branch_loss(labels: np.ndarray, predicted: np.ndarray) -> float:
+        claim_total = float(labels.shape[0])
+        incorrect = float(np.sum(predicted != labels))
+        over_strict = float(np.sum(predicted > labels))
+        under_strict = float(np.sum(predicted < labels))
+        strict_true = labels == 2
+        strict_pred = predicted == 2
+        strict_true_count = int(np.sum(strict_true))
+        strict_recall = (
+            float(np.sum(strict_true & strict_pred)) / float(strict_true_count)
+            if strict_true_count
+            else 1.0
+        )
+        accuracy = 1.0 - incorrect / claim_total
+        under_strict_rate = under_strict / claim_total
+        loss = (
+            incorrect
+            + regime_counter_under_importance_weight * under_strict
+            + regime_counter_over_importance_weight * over_strict
+        )
+        if accuracy < min_accuracy:
+            loss += (
+                regime_counter_target_penalty_weight
+                * claim_total
+                * (min_accuracy - accuracy)
+            )
+        if strict_recall < min_strict_recall:
+            loss += (
+                regime_counter_target_penalty_weight
+                * claim_total
+                * (min_strict_recall - strict_recall)
+            )
+        if under_strict_rate > max_under_strict_rate:
+            loss += (
+                regime_counter_target_penalty_weight
+                * claim_total
+                * (under_strict_rate - max_under_strict_rate)
+            )
+        return float(loss)
+
+    regime_counter_losses = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
+        dtype=np.float64,
+    )
+    regime_counter_seen = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    for profile in clean_regime_profiles:
+        for seed in clean_train_seeds:
+            regime_claim_count = claim_count
+            regime_query_events = query_events
+            regime_update_events = update_events
+            regime_compile_events = compile_events
+            if profile == "large_2k":
+                regime_claim_count = max(2048, claim_count * 2)
+                regime_query_events = query_events * 2
+                regime_update_events = update_events * 2
+                regime_compile_events = compile_events * 2
+                profile_params = selector_profile_params["default"]
+            else:
+                profile_params = selector_profile_params[profile]
+            features = _ca_wiki_metadata_features(regime_claim_count, seed + 131)
+            trace = _ca_wiki_paragraph_text_trace_labels(
+                features,
+                seed + 149,
+                regime_query_events,
+                regime_update_events,
+                regime_compile_events,
+                *profile_params,
+            )
+            bucket_rows = make_selector_bucket_rows(trace)
+            factor_modes, repair_modes = predict_regime_branches(bucket_rows)
+            feature_index = regime_feature_index(bucket_rows)
+            regime_counter_losses[feature_index + (0,)] += regime_branch_loss(
+                trace[0],
+                factor_modes,
+            )
+            regime_counter_losses[feature_index + (1,)] += regime_branch_loss(
+                trace[0],
+                repair_modes,
+            ) - regime_counter_repair_bias_weight * float(trace[0].shape[0])
+            regime_counter_seen[feature_index] += 1
+
+    regime_counter_selector = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(regime_counter_selector.shape):
+        if int(regime_counter_seen[index]) > 0:
+            regime_counter_selector[index] = int(
+                np.argmin(regime_counter_losses[index])
+            )
+            continue
+        parser_bucket, _coverage_bucket, agreement_bucket, error_bucket, scale_bucket = (
+            int(value) for value in index
+        )
+        regime_counter_selector[index] = 0 if (
+            parser_bucket >= 3
+            and agreement_bucket >= 3
+            and error_bucket >= 2
+            and scale_bucket == 0
+        ) else 1
+    regime_counter_lut_bytes = float(np.prod(regime_counter_selector.shape)) / 8.0
 
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
     mode_touch = {}
@@ -11723,6 +11934,31 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum((base_predicted == 2) & (branch_mixer_predicted < 2))),
             )
         )
+        regime_counter_choose_repair = bool(
+            regime_counter_selector[regime_feature_index(split_buckets)]
+        )
+        regime_counter_predicted = (
+            two_branch_factor_predicted
+            if regime_counter_choose_repair
+            else factor80_predicted
+        )
+        eval_points.append(
+            make_point(
+                "regime_counter_selector",
+                seed,
+                teacher,
+                regime_counter_predicted,
+                trace,
+                classifier4_bytes,
+                (
+                    selector_guard_bytes
+                    + coverage_repair_lut_bytes
+                    + regime_counter_lut_bytes
+                ),
+                23,
+                int(np.sum((base_predicted == 2) & (regime_counter_predicted < 2))),
+            )
+        )
         split_lut_predicted = np.array(
             [
                 lut7[
@@ -11788,6 +12024,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "two_branch_selector",
             "two_branch_factor_selector",
             "two_branch_mixer_selector",
+            "regime_counter_selector",
             "split_lut7d",
         ),
         points=tuple(eval_points),
@@ -11831,6 +12068,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "two_branch_selector",
         "two_branch_factor_selector",
         "two_branch_mixer_selector",
+        "regime_counter_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
@@ -11850,6 +12088,17 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
     two_branch_mixer_over_importance_weight: float = 1.0,
     two_branch_mixer_coverage_profile_weight: float = 1.0,
     two_branch_mixer_parser_profile_weight: float = 1.0,
+    regime_counter_under_importance_weight: float = 10.0,
+    regime_counter_over_importance_weight: float = 1.0,
+    regime_counter_target_penalty_weight: float = 4.0,
+    regime_counter_repair_bias_weight: float = 0.04,
+    regime_counter_profiles: Tuple[str, ...] = (
+        "default",
+        "parser_x2",
+        "omit_x2",
+        "distractor_x2",
+        "large_2k",
+    ),
 ) -> CAWikiCellParagraphFactorizedGuardStressResult:
     """Stress factorized guards under eval-only paragraph distribution shifts."""
 
@@ -11977,6 +12226,17 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
             two_branch_mixer_parser_profile_weight=(
                 two_branch_mixer_parser_profile_weight
             ),
+            regime_counter_under_importance_weight=(
+                regime_counter_under_importance_weight
+            ),
+            regime_counter_over_importance_weight=(
+                regime_counter_over_importance_weight
+            ),
+            regime_counter_target_penalty_weight=(
+                regime_counter_target_penalty_weight
+            ),
+            regime_counter_repair_bias_weight=regime_counter_repair_bias_weight,
+            regime_counter_profiles=regime_counter_profiles,
         )
         for variant in clean_variants:
             variant_points = [

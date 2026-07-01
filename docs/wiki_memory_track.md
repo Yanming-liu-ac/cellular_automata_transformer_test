@@ -618,6 +618,18 @@ with vote count included. This is an important boundary: the current per-claim
 claim is in. The next CA-native feature should be a rolling regime counter,
 not a bigger monolithic per-claim LUT.
 
+The first rolling-regime version closes that specific gap. It adds a 64B
+tile-level regime LUT over aggregate parser-miss, coverage-gap,
+agreement-gap, observed-error, and scale buckets. The LUT chooses between the
+80B parser-tolerant factor branch and the 110B factor-plus-coverage-repair
+branch. Total control state is 238B including the 64B baseline classifier. On
+the default four-row evaluation it passes 4/4 with 72.58% accuracy, 99.44%
+strict recall, and 26.81% over-strict. More importantly, in the stress matrix
+it passes all five rows at 2/2: parser_x2 routes to factor_vote80b, while
+omit_x2, distractor_x2, and large_2k route to coverage repair. This is the
+first version where a small CA-native state variable, not a bigger per-claim
+table, resolves the parser-vs-coverage branch conflict.
+
 ## Kill Criteria
 
 This track is not useful if:

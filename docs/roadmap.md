@@ -713,6 +713,17 @@ branches still cannot close the matrix. The next roadmap item is a regime
 counter: a tiny rolling state that distinguishes parser-miss shift from
 coverage-omission shift before the per-claim selector fires.
 
+The first regime counter is now implemented. It is a 64B tile-level LUT over
+aggregate parser-miss, coverage-gap, agreement-gap, observed-error, and scale
+buckets. It chooses between the parser-tolerant factor branch and the
+coverage-repair factor branch, for 238B total controller state including the
+baseline classifier. On the current five-scenario stress matrix it is the first
+zero-failure controller: default_1k, parser_x2, omit_x2, distractor_x2, and
+large_2k all pass 2/2. The next roadmap item is no longer another selector
+variant; it is a randomized held-out stress matrix with mixed parser,
+omission, distractor, and scale shifts to test whether the regime counter
+generalizes beyond the named scenarios.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
