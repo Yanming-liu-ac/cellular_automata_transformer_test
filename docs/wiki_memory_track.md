@@ -241,10 +241,12 @@ windows. One 512-query / 256-update event stream feeds both regions and updates
 two 4-bit counters per guard block. The locality sweep tests 256, 512, and
 1,024-page blocks with same-tag sharing radii 0, 1, and 2. Sparse false-enable
 stays 0.00% for every tested setting. At 50% dense pages, local counters enable
-3/4, 1/2, and 1/1 dense blocks for 256, 512, and 1,024-page blocks; same-tag
-radius-1 sharing lifts the 256 and 512-page cases to 4/4 and 2/2. At 75% dense,
-256-page blocks rise from 5/6 to 6/6 with sharing, while 512 and 1,024-page
-blocks are already fully enabled. The hardware lesson is now sharper: density
+2/4, 1/2, and 1/1 dense blocks for 256, 512, and 1,024-page blocks. Same-tag
+radius-1 sharing lifts the 512-page case to 2/2, while the finer 256-page case
+needs radius 2 to reach 4/4. At 75% dense, all tested block sizes are already
+fully enabled locally. A 50% dense observation-window stress keeps shared
+coverage at 2/2 and sparse false-enable at 0.00% from 128/64 through
+1,024/512 query/update windows. The hardware lesson is now sharper: density
 tags should gate short-range counter sharing, not just local tile choice.
 
 ## Kill Criteria

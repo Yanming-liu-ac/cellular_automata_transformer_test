@@ -3223,6 +3223,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
     facts_per_tag_step: int = 8,
     quality_probe_queries: int = 512,
     quality_probe_updates: int = 256,
+    quality_probe_event_options: Tuple[Tuple[int, int], ...] | None = None,
     quality_probe_min_gain: float = 0.02,
     quality_probe_seed: int = 1201,
     guard_counter_bits: int = 4,
@@ -3254,6 +3255,19 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         raise ValueError("quality_probe_updates must be non-negative")
     if quality_probe_min_gain < 0.0:
         raise ValueError("quality_probe_min_gain must be non-negative")
+    clean_probe_event_options = (
+        ((int(quality_probe_queries), int(quality_probe_updates)),)
+        if quality_probe_event_options is None
+        else tuple(
+            dict.fromkeys((int(queries), int(updates)) for queries, updates in quality_probe_event_options)
+        )
+    )
+    if len(clean_probe_event_options) == 0:
+        raise ValueError("quality_probe_event_options must not be empty")
+    if any(queries <= 0 for queries, _ in clean_probe_event_options):
+        raise ValueError("all quality probe query options must be positive")
+    if any(updates < 0 for _, updates in clean_probe_event_options):
+        raise ValueError("all quality probe update options must be non-negative")
     if guard_counter_bits <= 0:
         raise ValueError("guard_counter_bits must be positive")
     if guard_counter_block_pages <= 0:
@@ -3369,149 +3383,150 @@ def run_wiki_memory_mixed_guard_counter_sweep(
             target_route_coverage=target_route_coverage,
         )
 
-        for counter_block_pages in clean_guard_counter_block_pages:
-            guard_required_win_count = int(
-                np.ceil(
-                    quality_probe_min_gain
-                    * quality_probe_queries
-                    * counter_block_pages
-                    / float(total_pages)
+        for probe_queries, probe_updates in clean_probe_event_options:
+            event_seed = quality_probe_seed + probe_queries * 37 + probe_updates * 101
+            for counter_block_pages in clean_guard_counter_block_pages:
+                guard_required_win_count = int(
+                    np.ceil(
+                        quality_probe_min_gain
+                        * probe_queries
+                        * counter_block_pages
+                        / float(total_pages)
+                    )
                 )
-            )
-            if quality_probe_min_gain > 0.0:
-                guard_required_win_count = max(1, guard_required_win_count)
-            stream = _mixed_density_guard_counter_stream(
-                policy=policy,
-                sparse_base_config=sparse_base,
-                sparse_dense_config=sparse_dense,
-                dense_base_config=dense_base,
-                dense_dense_config=dense_dense,
-                sparse_base_lut=sparse_base_lut,
-                sparse_dense_lut=sparse_dense_lut,
-                dense_base_lut=dense_base_lut,
-                dense_dense_lut=dense_dense_lut,
-                dense_query_weight=dense_query_weight,
-                seed=quality_probe_seed,
-                query_events=quality_probe_queries,
-                update_events=quality_probe_updates,
-                guard_counter_bits=guard_counter_bits,
-                guard_counter_block_pages=counter_block_pages,
-            )
-
-            sparse_slice = slice(0, stream.sparse_blocks)
-            dense_slice = slice(stream.sparse_blocks, stream.sparse_blocks + stream.dense_blocks)
-            sparse_pass = (
-                (stream.win_counters[sparse_slice] >= guard_required_win_count)
-                & (stream.loss_counters[sparse_slice] == 0)
-            )
-            dense_pass = (
-                (stream.win_counters[dense_slice] >= guard_required_win_count)
-                & (stream.loss_counters[dense_slice] == 0)
-            )
-            guard_counter_state_bytes = (
-                (stream.sparse_blocks + stream.dense_blocks) * 2 * guard_counter_bits / 8.0
-            )
-
-            for share_radius in clean_guard_share_radii:
-                sparse_shared_pass = _shared_counter_pass(
-                    stream.win_counters[sparse_slice],
-                    stream.loss_counters[sparse_slice],
-                    guard_required_win_count,
-                    share_radius,
-                )
-                dense_shared_pass = _shared_counter_pass(
-                    stream.win_counters[dense_slice],
-                    stream.loss_counters[dense_slice],
-                    guard_required_win_count,
-                    share_radius,
+                if quality_probe_min_gain > 0.0:
+                    guard_required_win_count = max(1, guard_required_win_count)
+                stream = _mixed_density_guard_counter_stream(
+                    policy=policy,
+                    sparse_base_config=sparse_base,
+                    sparse_dense_config=sparse_dense,
+                    dense_base_config=dense_base,
+                    dense_dense_config=dense_dense,
+                    sparse_base_lut=sparse_base_lut,
+                    sparse_dense_lut=sparse_dense_lut,
+                    dense_base_lut=dense_base_lut,
+                    dense_dense_lut=dense_dense_lut,
+                    dense_query_weight=dense_query_weight,
+                    seed=event_seed,
+                    query_events=probe_queries,
+                    update_events=probe_updates,
+                    guard_counter_bits=guard_counter_bits,
+                    guard_counter_block_pages=counter_block_pages,
                 )
 
-                for threshold in clean_thresholds:
-                    sparse_enabled = (
-                        int(np.count_nonzero(sparse_pass)) if sparse_tag >= threshold else 0
+                sparse_slice = slice(0, stream.sparse_blocks)
+                dense_slice = slice(stream.sparse_blocks, stream.sparse_blocks + stream.dense_blocks)
+                sparse_pass = (
+                    (stream.win_counters[sparse_slice] >= guard_required_win_count)
+                    & (stream.loss_counters[sparse_slice] == 0)
+                )
+                dense_pass = (
+                    (stream.win_counters[dense_slice] >= guard_required_win_count)
+                    & (stream.loss_counters[dense_slice] == 0)
+                )
+                guard_counter_state_bytes = (
+                    (stream.sparse_blocks + stream.dense_blocks) * 2 * guard_counter_bits / 8.0
+                )
+
+                for share_radius in clean_guard_share_radii:
+                    sparse_shared_pass = _shared_counter_pass(
+                        stream.win_counters[sparse_slice],
+                        stream.loss_counters[sparse_slice],
+                        guard_required_win_count,
+                        share_radius,
                     )
-                    dense_enabled = (
-                        int(np.count_nonzero(dense_pass)) if dense_tag >= threshold else 0
+                    dense_shared_pass = _shared_counter_pass(
+                        stream.win_counters[dense_slice],
+                        stream.loss_counters[dense_slice],
+                        guard_required_win_count,
+                        share_radius,
                     )
-                    sparse_shared_enabled = (
-                        int(np.count_nonzero(sparse_shared_pass))
-                        if sparse_tag >= threshold
-                        else 0
-                    )
-                    dense_shared_enabled = (
-                        int(np.count_nonzero(dense_shared_pass))
-                        if dense_tag >= threshold
-                        else 0
-                    )
-                    points.append(
-                        WikiMemoryMixedGuardCounterPoint(
-                            total_pages=total_pages,
-                            dense_page_fraction=dense_pages / float(total_pages),
-                            tag_threshold=threshold,
-                            sparse_density_tag=sparse_tag,
-                            dense_density_tag=dense_tag,
-                            guard_counter_block_pages=counter_block_pages,
-                            guard_counter_bits=guard_counter_bits,
-                            guard_share_radius_blocks=share_radius,
-                            guard_required_win_count=guard_required_win_count,
-                            guard_counter_state_bytes=guard_counter_state_bytes,
-                            probe_queries=quality_probe_queries,
-                            probe_updates=quality_probe_updates,
-                            sparse_probe_queries=stream.sparse_queries,
-                            dense_probe_queries=stream.dense_queries,
-                            sparse_guard_blocks=stream.sparse_blocks,
-                            dense_guard_blocks=stream.dense_blocks,
-                            sparse_enabled_blocks=sparse_enabled,
-                            dense_enabled_blocks=dense_enabled,
-                            sparse_shared_enabled_blocks=sparse_shared_enabled,
-                            dense_shared_enabled_blocks=dense_shared_enabled,
-                            sparse_raw_wins=int(np.sum(stream.raw_wins[sparse_slice])),
-                            sparse_raw_losses=int(np.sum(stream.raw_losses[sparse_slice])),
-                            dense_raw_wins=int(np.sum(stream.raw_wins[dense_slice])),
-                            dense_raw_losses=int(np.sum(stream.raw_losses[dense_slice])),
-                            sparse_max_win_counter=(
-                                int(np.max(stream.win_counters[sparse_slice]))
-                                if stream.sparse_blocks
-                                else 0
-                            ),
-                            sparse_max_loss_counter=(
-                                int(np.max(stream.loss_counters[sparse_slice]))
-                                if stream.sparse_blocks
-                                else 0
-                            ),
-                            dense_max_win_counter=(
-                                int(np.max(stream.win_counters[dense_slice]))
-                                if stream.dense_blocks
-                                else 0
-                            ),
-                            dense_max_loss_counter=(
-                                int(np.max(stream.loss_counters[dense_slice]))
-                                if stream.dense_blocks
-                                else 0
-                            ),
-                            sparse_false_enable_rate=(
-                                sparse_enabled / float(stream.sparse_blocks)
-                                if stream.sparse_blocks
-                                else 0.0
-                            ),
-                            dense_enable_rate=(
-                                dense_enabled / float(stream.dense_blocks)
-                                if stream.dense_blocks
-                                else 0.0
-                            ),
-                            sparse_shared_false_enable_rate=(
-                                sparse_shared_enabled / float(stream.sparse_blocks)
-                                if stream.sparse_blocks
-                                else 0.0
-                            ),
-                            dense_shared_enable_rate=(
-                                dense_shared_enabled / float(stream.dense_blocks)
-                                if stream.dense_blocks
-                                else 0.0
-                            ),
+
+                    for threshold in clean_thresholds:
+                        sparse_enabled = (
+                            int(np.count_nonzero(sparse_pass)) if sparse_tag >= threshold else 0
                         )
-                    )
-
+                        dense_enabled = (
+                            int(np.count_nonzero(dense_pass)) if dense_tag >= threshold else 0
+                        )
+                        sparse_shared_enabled = (
+                            int(np.count_nonzero(sparse_shared_pass))
+                            if sparse_tag >= threshold
+                            else 0
+                        )
+                        dense_shared_enabled = (
+                            int(np.count_nonzero(dense_shared_pass))
+                            if dense_tag >= threshold
+                            else 0
+                        )
+                        points.append(
+                            WikiMemoryMixedGuardCounterPoint(
+                                total_pages=total_pages,
+                                dense_page_fraction=dense_pages / float(total_pages),
+                                tag_threshold=threshold,
+                                sparse_density_tag=sparse_tag,
+                                dense_density_tag=dense_tag,
+                                guard_counter_block_pages=counter_block_pages,
+                                guard_counter_bits=guard_counter_bits,
+                                guard_share_radius_blocks=share_radius,
+                                guard_required_win_count=guard_required_win_count,
+                                guard_counter_state_bytes=guard_counter_state_bytes,
+                                probe_queries=probe_queries,
+                                probe_updates=probe_updates,
+                                sparse_probe_queries=stream.sparse_queries,
+                                dense_probe_queries=stream.dense_queries,
+                                sparse_guard_blocks=stream.sparse_blocks,
+                                dense_guard_blocks=stream.dense_blocks,
+                                sparse_enabled_blocks=sparse_enabled,
+                                dense_enabled_blocks=dense_enabled,
+                                sparse_shared_enabled_blocks=sparse_shared_enabled,
+                                dense_shared_enabled_blocks=dense_shared_enabled,
+                                sparse_raw_wins=int(np.sum(stream.raw_wins[sparse_slice])),
+                                sparse_raw_losses=int(np.sum(stream.raw_losses[sparse_slice])),
+                                dense_raw_wins=int(np.sum(stream.raw_wins[dense_slice])),
+                                dense_raw_losses=int(np.sum(stream.raw_losses[dense_slice])),
+                                sparse_max_win_counter=(
+                                    int(np.max(stream.win_counters[sparse_slice]))
+                                    if stream.sparse_blocks
+                                    else 0
+                                ),
+                                sparse_max_loss_counter=(
+                                    int(np.max(stream.loss_counters[sparse_slice]))
+                                    if stream.sparse_blocks
+                                    else 0
+                                ),
+                                dense_max_win_counter=(
+                                    int(np.max(stream.win_counters[dense_slice]))
+                                    if stream.dense_blocks
+                                    else 0
+                                ),
+                                dense_max_loss_counter=(
+                                    int(np.max(stream.loss_counters[dense_slice]))
+                                    if stream.dense_blocks
+                                    else 0
+                                ),
+                                sparse_false_enable_rate=(
+                                    sparse_enabled / float(stream.sparse_blocks)
+                                    if stream.sparse_blocks
+                                    else 0.0
+                                ),
+                                dense_enable_rate=(
+                                    dense_enabled / float(stream.dense_blocks)
+                                    if stream.dense_blocks
+                                    else 0.0
+                                ),
+                                sparse_shared_false_enable_rate=(
+                                    sparse_shared_enabled / float(stream.sparse_blocks)
+                                    if stream.sparse_blocks
+                                    else 0.0
+                                ),
+                                dense_shared_enable_rate=(
+                                    dense_shared_enabled / float(stream.dense_blocks)
+                                    if stream.dense_blocks
+                                    else 0.0
+                                ),
+                            )
+                        )
     return WikiMemoryMixedGuardCounterResult(
         policy=policy.name,
         target_route_coverage=target_route_coverage,

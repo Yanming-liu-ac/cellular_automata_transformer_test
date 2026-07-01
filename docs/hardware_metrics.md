@@ -304,11 +304,12 @@ The mixed-stream counter diagnostic changes the state accounting. Using two
 4-bit counters per 512-page guard block, the 2,048-page mixed stream needs only
 4B of counter state. The locality sweep keeps sparse false-enable at 0.00%
 across 256, 512, and 1,024-page guard blocks. At 50% dense, local dense
-coverage is 3/4, 1/2, and 1/1 for those block sizes; same-tag radius-1 sharing
-raises the first two to 4/4 and 2/2. At 75% dense, 256-page blocks rise from
-5/6 to 6/6 with sharing, while 512 and 1,024-page blocks are already full. The
-state is cheap enough; the hardware problem is now controlled evidence sharing
-across local blocks.
+coverage is 2/4, 1/2, and 1/1 for those block sizes; same-tag sharing raises
+the 512-page case to 2/2 at radius 1 and the 256-page case to 4/4 at radius 2.
+At 75% dense, all three block sizes are already full locally. In the 50% dense,
+512-page, radius-1 stress, shared dense coverage stays 2/2 across 128/64 to
+1,024/512 query/update windows. The state is cheap enough; the hardware problem
+is now controlled evidence sharing across local blocks.
 
 ## Retrieval-Lane Metrics
 

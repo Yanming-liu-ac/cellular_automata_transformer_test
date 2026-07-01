@@ -467,11 +467,13 @@ The first true mixed-stream counter diagnostic now exists. With a single
 512-query / 256-update sparse/dense stream and two 4-bit counters per guard
 block, sparse false-enable stays 0.00% across 256, 512, and 1,024-page block
 sizes and sharing radii 0, 1, and 2. Local dense coverage is incomplete for
-finer blocks: at 50% dense, 256-page blocks reach 3/4 and 512-page blocks reach
-1/2. Same-tag radius-1 sharing lifts them to 4/4 and 2/2; at 75% dense, it
-lifts 256-page blocks from 5/6 to 6/6. The next step is to learn the
-shared-counter threshold and test whether the same rule survives longer streams
-and noisier update mixes.
+finer blocks: at 50% dense, 256-page blocks reach 2/4 and 512-page blocks reach
+1/2. Same-tag radius-1 sharing lifts the 512-page case to 2/2, while 256-page
+blocks need radius 2 to reach 4/4. At 75% dense, all tested block sizes are
+already full locally. The first observation-window stress on the 50% dense,
+512-page, radius-1 setting keeps shared dense coverage at 2/2 and sparse
+false-enable at 0.00% from 128/64 through 1,024/512 query/update windows. The
+next step is to learn the shared-counter threshold under noisier update mixes.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

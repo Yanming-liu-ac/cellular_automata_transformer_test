@@ -421,9 +421,12 @@ feeds sparse and dense regions from one 512-query / 256-update stream and stores
 two 4-bit counters per guard block. The locality sweep is encouraging: sparse
 false-enable remains 0.00% across 256, 512, and 1,024-page blocks and sharing
 radii 0, 1, and 2. Purely local counters under-cover finer dense blocks: at
-50% dense, 256-page blocks reach 3/4 and 512-page blocks reach 1/2. Same-tag
-radius-1 sharing repairs both to full dense coverage without opening sparse
-blocks. This says the next CA rule should learn when to share local evidence,
+50% dense, 256-page blocks reach 2/4 and 512-page blocks reach 1/2. Same-tag
+radius-1 sharing repairs the 512-page case to full dense coverage without
+opening sparse blocks; 256-page blocks need radius 2. On the 50% dense,
+512-page, radius-1 setting, shared coverage stays 2/2 across 128/64, 256/128,
+512/256, and 1,024/512 query/update windows with sparse false-enable still
+0.00%. This says the next CA rule should learn when to share local evidence,
 not just when to flip a tile.
 
 ## First Retrieval Prototype
