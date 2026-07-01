@@ -311,6 +311,26 @@ tolerant gate did not introduce measured false-enable on randomized update
 rates, while a larger randomized sweep is still needed to estimate rare failure
 probability.
 
+CA Wiki Cell v0 now makes the LLM-Wiki idea more literal. Instead of only
+measuring page-summary routing, it stores each mutable claim across eight
+source-page cells, with local source links and one 4-bit error-book counter per
+claim. An update writes one source page first; a CA repair policy then spreads
+the newer revision through local source links. In the default 128-claim,
+1,024-query, 256-update diagnostic, sparse reads without repair reach only
+38.38% recall because most recent queries miss the newest source. Flat scan
+over all eight source pages reaches 100.00% recall, but query work is
+8.00 source cells/query and the memory remains internally stale: only 16.41%
+of claims are fully consistent at the end, with 73.14% stale source cells.
+`tile_update_ca` uses one tile-local update pulse, keeps query reads at
+2.00 source cells/query, reaches 100.00% recall, and leaves zero stale source
+cells. The cost is visible: total local touch is 16.00 cells/event versus
+7.24 for flat scan, because repair traffic has moved from query time into
+background local maintenance. The lazy `error_book_ca` point is cheaper than
+full tile repair but reaches only 83.59% recall; the hybrid error-book point
+reaches 96.00%. The honest conclusion is that CA is already a better shape for
+low-latency mutable reads, but repair scheduling must be learned before claiming
+a total traffic win.
+
 ## Kill Criteria
 
 This track is not useful if:

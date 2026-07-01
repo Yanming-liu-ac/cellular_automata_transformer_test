@@ -486,6 +486,22 @@ does not prove the tolerant rule is sufficient, but it is useful negative
 evidence against the main hardware risk, namely that tolerance would start
 opening sparse/off regions under varied update noise.
 
+CA Wiki Cell v0 is the first explicitly cell-level version of the LLM-Wiki
+track. A claim is held in eight source-page cells, with local source links,
+low-bit revision/value/confidence fields, and a 4-bit error-book counter. The
+default run uses 128 claims, 1,024 sparse queries, 256 updates, and two source
+reads per sparse query. Without repair, recall is only 38.38%. A flat scan over
+all eight source cells reaches 100.00% recall, but it does not repair the wiki:
+only 16.41% of claims are internally consistent and 73.14% of source cells are
+stale at the end. A one-pulse tile-local CA update reaches 100.00% recall with
+only two source reads/query and zero stale source cells, but total local touch
+rises to 16.00 cells/event versus 7.24 for flat scan because background repair
+traffic is now explicit. Lazy error-book repair reaches 83.59% recall, and the
+hybrid narrow-pulse/error-book policy reaches 96.00%. This is a useful result
+precisely because it is not an unqualified win: the query critical path looks
+very CA-friendly, while the next research target is learned repair scheduling
+to reduce maintenance traffic.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -527,6 +527,19 @@ does not replace the fixed seed1501 regression because no dense-loss failure
 appears in this sample; it mainly checks that the tolerant guard is not causing
 false-enable under varied update rates.
 
+The first CA Wiki Cell v0 diagnostic now exists for the Karpathy-style
+LLM-Wiki direction. It stores each mutable claim across eight low-bit source
+cells with local links and a 4-bit error-book counter. Sparse reads without
+repair reach only 38.38% recall. Flat scan over all source cells reaches
+100.00% recall at 8.00 source reads/query, but leaves 73.14% source cells
+stale because it answers by reading around inconsistency. A one-pulse
+tile-local CA update reaches 100.00% recall with 2.00 source reads/query and
+zero stale source cells, but total local touch is 16.00 cells/event versus
+7.24 for flat scan. The roadmap implication is specific: the wiki-memory chip
+path should learn repair scheduling and local pulse radius, not just retrieval
+fanout. Query latency already has the right CA shape; maintenance traffic is
+the next bottleneck.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

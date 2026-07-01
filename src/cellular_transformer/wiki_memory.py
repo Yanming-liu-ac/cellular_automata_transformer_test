@@ -695,6 +695,148 @@ class WikiMemoryLearnedGuardSharingResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellConfig:
+    """Low-bit cell-level mutable wiki geometry.
+
+    A claim is stored across several source pages. An update writes one source
+    page first; local CA repair ticks then spread the newer revision through
+    source links without scanning the whole wiki.
+    """
+
+    claim_count: int = 128
+    sources_per_claim: int = 8
+    query_events: int = 1024
+    update_events: int = 256
+    read_sources: int = 2
+    recent_query_rate: float = 0.55
+    value_bits: int = 8
+    revision_bits: int = 8
+    confidence_bits: int = 2
+    tag_bits: int = 2
+    counter_bits: int = 4
+    link_bits: int = 8
+
+    def __post_init__(self) -> None:
+        if self.claim_count <= 0:
+            raise ValueError("claim_count must be positive")
+        if self.sources_per_claim <= 1:
+            raise ValueError("sources_per_claim must be greater than one")
+        if self.query_events <= 0:
+            raise ValueError("query_events must be positive")
+        if self.update_events < 0:
+            raise ValueError("update_events must be non-negative")
+        if not 0 < self.read_sources <= self.sources_per_claim:
+            raise ValueError("read_sources must fit sources_per_claim")
+        if not 0.0 <= self.recent_query_rate <= 1.0:
+            raise ValueError("recent_query_rate must be in [0, 1]")
+        for field_name, value in (
+            ("value_bits", self.value_bits),
+            ("revision_bits", self.revision_bits),
+            ("confidence_bits", self.confidence_bits),
+            ("tag_bits", self.tag_bits),
+            ("counter_bits", self.counter_bits),
+            ("link_bits", self.link_bits),
+        ):
+            if value <= 0:
+                raise ValueError(f"{field_name} must be positive")
+
+    @property
+    def page_count(self) -> int:
+        return self.claim_count * self.sources_per_claim
+
+    @property
+    def max_counter_value(self) -> int:
+        return (1 << self.counter_bits) - 1
+
+    @property
+    def max_confidence_value(self) -> int:
+        return (1 << self.confidence_bits) - 1
+
+    @property
+    def state_bytes(self) -> float:
+        page_bits = self.page_count * (
+            self.value_bits
+            + self.revision_bits
+            + self.confidence_bits
+            + self.tag_bits
+            + 1
+        )
+        local_link_bits = self.page_count * 2 * self.link_bits
+        error_book_bits = self.claim_count * self.counter_bits
+        claim_tag_bits = self.claim_count * self.tag_bits
+        return (page_bits + local_link_bits + error_book_bits + claim_tag_bits) / 8.0
+
+
+@dataclass(frozen=True)
+class CAWikiCellPolicy:
+    """A cell-local repair/read policy for mutable wiki claims."""
+
+    name: str
+    read_sources: int
+    scan_all_sources: bool = False
+    update_repair_ticks: int = 0
+    error_repair_ticks: int = 0
+    local_radius: int = 1
+    error_threshold: int = 1
+    decay_counter_on_consistency: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("name must not be empty")
+        if self.read_sources <= 0:
+            raise ValueError("read_sources must be positive")
+        if self.update_repair_ticks < 0:
+            raise ValueError("update_repair_ticks must be non-negative")
+        if self.error_repair_ticks < 0:
+            raise ValueError("error_repair_ticks must be non-negative")
+        if self.local_radius <= 0:
+            raise ValueError("local_radius must be positive")
+        if self.error_threshold <= 0:
+            raise ValueError("error_threshold must be positive")
+
+
+@dataclass(frozen=True)
+class CAWikiCellPoint:
+    """One low-bit CA wiki-cell policy measurement."""
+
+    policy: str
+    claim_count: int
+    sources_per_claim: int
+    read_sources: int
+    scan_all_sources: bool
+    local_radius: int
+    update_repair_ticks: int
+    error_repair_ticks: int
+    error_threshold: int
+    queries: int
+    updates: int
+    recall: float
+    recent_recall: float
+    stale_answer_rate: float
+    disagreement_rate: float
+    error_book_trigger_rate: float
+    consistent_claim_rate: float
+    stale_source_rate: float
+    cells_read_per_query: float
+    repair_cells_read_per_event: float
+    cells_written_per_update: float
+    cells_touched_per_event: float
+    repair_ticks: int
+    page_writes: int
+    counter_writes: int
+    state_bytes: float
+
+
+@dataclass(frozen=True)
+class CAWikiCellSweepResult:
+    """Cell-level CA wiki-memory sweep."""
+
+    config: CAWikiCellConfig
+    seed: int
+    points: Tuple[CAWikiCellPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -3981,3 +4123,285 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         entries=tuple(entries),
         points=tuple(eval_points),
     )
+
+
+def run_ca_wiki_cell_sweep(
+    config: CAWikiCellConfig | None = None,
+    policies: Tuple[CAWikiCellPolicy, ...] | None = None,
+    seed: int = 2101,
+) -> CAWikiCellSweepResult:
+    """Evaluate a low-bit CA cell fabric for mutable wiki claims.
+
+    The diagnostic is deliberately small and mechanistic. Each claim is copied
+    across several source pages. A fact update writes only one source page, then
+    local repair ticks propagate the newer revision around the source-link ring.
+    Queries read a sparse subset of sources unless a policy chooses flat scan.
+    """
+
+    cfg = config if config is not None else CAWikiCellConfig()
+    if policies is None:
+        tile_radius = min(4, cfg.sources_per_claim - 1)
+        narrow_radius = 2 if cfg.sources_per_claim >= 8 else 1
+        policies = (
+            CAWikiCellPolicy(
+                name="sample_no_repair",
+                read_sources=cfg.read_sources,
+            ),
+            CAWikiCellPolicy(
+                name="flat_scan",
+                read_sources=cfg.sources_per_claim,
+                scan_all_sources=True,
+            ),
+            CAWikiCellPolicy(
+                name="tile_update_ca",
+                read_sources=cfg.read_sources,
+                update_repair_ticks=1,
+                error_repair_ticks=0,
+                local_radius=tile_radius,
+            ),
+            CAWikiCellPolicy(
+                name="error_book_ca",
+                read_sources=cfg.read_sources,
+                update_repair_ticks=0,
+                error_repair_ticks=1,
+                local_radius=tile_radius,
+                error_threshold=1,
+            ),
+            CAWikiCellPolicy(
+                name="hybrid_error_book_ca",
+                read_sources=cfg.read_sources,
+                update_repair_ticks=1,
+                error_repair_ticks=3,
+                local_radius=narrow_radius,
+                error_threshold=1,
+            ),
+        )
+    for policy in policies:
+        if policy.read_sources > cfg.sources_per_claim:
+            raise ValueError("policy read_sources must fit sources_per_claim")
+        if policy.error_threshold > cfg.max_counter_value:
+            raise ValueError("policy error_threshold must fit counter_bits")
+
+    base_rng = np.random.default_rng(seed)
+    event_stream = np.array(
+        [1] * cfg.update_events + [0] * cfg.query_events,
+        dtype=np.int8,
+    )
+    base_rng.shuffle(event_stream)
+    update_claims = base_rng.integers(0, cfg.claim_count, size=cfg.update_events)
+    update_sources = base_rng.integers(0, cfg.sources_per_claim, size=cfg.update_events)
+    query_claims = base_rng.integers(0, cfg.claim_count, size=cfg.query_events)
+    query_recent_draws = base_rng.random(cfg.query_events)
+    query_source_scores = base_rng.random((cfg.query_events, cfg.sources_per_claim))
+    value_deltas = base_rng.integers(1, 251, size=cfg.update_events)
+
+    max_value = 1 << min(cfg.value_bits, 30)
+    initial_values = base_rng.integers(0, max_value, size=cfg.claim_count, dtype=np.int64)
+
+    points: List[CAWikiCellPoint] = []
+    for policy in policies:
+        truth_values = initial_values.copy()
+        truth_revisions = np.zeros(cfg.claim_count, dtype=np.int64)
+        values = np.repeat(truth_values[:, None], cfg.sources_per_claim, axis=1)
+        revisions = np.zeros((cfg.claim_count, cfg.sources_per_claim), dtype=np.int64)
+        confidence = np.full(
+            (cfg.claim_count, cfg.sources_per_claim),
+            cfg.max_confidence_value,
+            dtype=np.int64,
+        )
+        error_counters = np.zeros(cfg.claim_count, dtype=np.int64)
+        recent_claims: List[int] = []
+
+        query_index = 0
+        update_index = 0
+        hits = 0
+        recent_hits = 0
+        recent_queries = 0
+        stale_answers = 0
+        disagreements = 0
+        error_triggers = 0
+        query_read_cells = 0
+        repair_read_cells = 0
+        page_writes = 0
+        counter_writes = 0
+        repair_ticks = 0
+
+        radius = min(policy.local_radius, cfg.sources_per_claim - 1)
+        source_indices = np.arange(cfg.sources_per_claim)
+
+        def is_consistent(claim: int) -> bool:
+            return bool(
+                np.all(revisions[claim] == truth_revisions[claim])
+                and np.all(values[claim] == truth_values[claim])
+            )
+
+        def run_repair_ticks(claim: int, ticks: int) -> None:
+            nonlocal repair_read_cells, page_writes, counter_writes, repair_ticks
+            if ticks <= 0:
+                return
+            for _ in range(ticks):
+                old_revisions = revisions[claim].copy()
+                old_values = values[claim].copy()
+                old_confidence = confidence[claim].copy()
+                next_revisions = old_revisions.copy()
+                next_values = old_values.copy()
+                next_confidence = old_confidence.copy()
+                tick_writes = 0
+                for source in range(cfg.sources_per_claim):
+                    neighbors = tuple(
+                        dict.fromkeys(
+                            (source + offset) % cfg.sources_per_claim
+                            for offset in range(-radius, radius + 1)
+                        )
+                    )
+                    repair_read_cells += len(neighbors)
+                    best = max(
+                        neighbors,
+                        key=lambda idx: (old_revisions[idx], old_confidence[idx]),
+                    )
+                    if old_revisions[best] > old_revisions[source]:
+                        next_revisions[source] = old_revisions[best]
+                        next_values[source] = old_values[best]
+                        next_confidence[source] = min(
+                            cfg.max_confidence_value,
+                            max(old_confidence[source], old_confidence[best]),
+                        )
+                        tick_writes += 1
+                revisions[claim] = next_revisions
+                values[claim] = next_values
+                confidence[claim] = next_confidence
+                page_writes += tick_writes
+                repair_ticks += 1
+                if is_consistent(claim):
+                    if (
+                        policy.decay_counter_on_consistency
+                        and error_counters[claim] > 0
+                    ):
+                        error_counters[claim] -= 1
+                        counter_writes += 1
+                    break
+                if tick_writes == 0:
+                    break
+
+        for event in event_stream:
+            if event:
+                claim = int(update_claims[update_index])
+                source = int(update_sources[update_index])
+                truth_revisions[claim] += 1
+                truth_values[claim] = (
+                    truth_values[claim] + int(value_deltas[update_index])
+                ) % max_value
+                values[claim, source] = truth_values[claim]
+                revisions[claim, source] = truth_revisions[claim]
+                confidence[claim, source] = cfg.max_confidence_value
+                page_writes += 1
+                update_index += 1
+                recent_claims.append(claim)
+                if len(recent_claims) > 64:
+                    del recent_claims[: len(recent_claims) - 64]
+                run_repair_ticks(claim, policy.update_repair_ticks)
+                continue
+
+            use_recent = (
+                len(recent_claims) > 0
+                and query_recent_draws[query_index] < cfg.recent_query_rate
+            )
+            if use_recent:
+                claim = recent_claims[
+                    int(query_source_scores[query_index, 0] * len(recent_claims))
+                    % len(recent_claims)
+                ]
+                recent_queries += 1
+            else:
+                claim = int(query_claims[query_index])
+
+            if policy.scan_all_sources:
+                selected_sources = source_indices
+            else:
+                selected_sources = np.argsort(query_source_scores[query_index])[
+                    : policy.read_sources
+                ]
+            query_read_cells += int(len(selected_sources))
+
+            selected_revisions = revisions[claim, selected_sources]
+            selected_values = values[claim, selected_sources]
+            best_offset = int(np.argmax(selected_revisions))
+            answer_revision = int(selected_revisions[best_offset])
+            answer_value = int(selected_values[best_offset])
+            hit = (
+                answer_revision == int(truth_revisions[claim])
+                and answer_value == int(truth_values[claim])
+            )
+            if hit:
+                hits += 1
+                if use_recent:
+                    recent_hits += 1
+            else:
+                stale_answers += 1
+
+            pair_count = len(
+                {
+                    (int(revision), int(value))
+                    for revision, value in zip(selected_revisions, selected_values)
+                }
+            )
+            disagreement = pair_count > 1
+            if disagreement:
+                disagreements += 1
+            if not hit or disagreement:
+                if error_counters[claim] < cfg.max_counter_value:
+                    error_counters[claim] += 1
+                    counter_writes += 1
+                error_triggers += 1
+                if error_counters[claim] >= policy.error_threshold:
+                    run_repair_ticks(claim, policy.error_repair_ticks)
+            elif policy.decay_counter_on_consistency and error_counters[claim] > 0:
+                error_counters[claim] -= 1
+                counter_writes += 1
+            query_index += 1
+
+        consistent_claims = sum(1 for claim in range(cfg.claim_count) if is_consistent(claim))
+        stale_sources = int(
+            np.sum(
+                (revisions != truth_revisions[:, None])
+                | (values != truth_values[:, None])
+            )
+        )
+        total_events = cfg.query_events + cfg.update_events
+        total_touched = query_read_cells + repair_read_cells + page_writes + counter_writes
+        points.append(
+            CAWikiCellPoint(
+                policy=policy.name,
+                claim_count=cfg.claim_count,
+                sources_per_claim=cfg.sources_per_claim,
+                read_sources=cfg.sources_per_claim
+                if policy.scan_all_sources
+                else policy.read_sources,
+                scan_all_sources=policy.scan_all_sources,
+                local_radius=policy.local_radius,
+                update_repair_ticks=policy.update_repair_ticks,
+                error_repair_ticks=policy.error_repair_ticks,
+                error_threshold=policy.error_threshold,
+                queries=cfg.query_events,
+                updates=cfg.update_events,
+                recall=hits / float(cfg.query_events),
+                recent_recall=(
+                    recent_hits / float(recent_queries) if recent_queries else 0.0
+                ),
+                stale_answer_rate=stale_answers / float(cfg.query_events),
+                disagreement_rate=disagreements / float(cfg.query_events),
+                error_book_trigger_rate=error_triggers / float(cfg.query_events),
+                consistent_claim_rate=consistent_claims / float(cfg.claim_count),
+                stale_source_rate=stale_sources / float(cfg.page_count),
+                cells_read_per_query=query_read_cells / float(cfg.query_events),
+                repair_cells_read_per_event=repair_read_cells / float(total_events),
+                cells_written_per_update=page_writes / float(max(1, cfg.update_events)),
+                cells_touched_per_event=total_touched / float(total_events),
+                repair_ticks=repair_ticks,
+                page_writes=page_writes,
+                counter_writes=counter_writes,
+                state_bytes=cfg.state_bytes,
+            )
+        )
+
+    return CAWikiCellSweepResult(config=cfg, seed=seed, points=tuple(points))

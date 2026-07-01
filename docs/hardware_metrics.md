@@ -1194,6 +1194,30 @@ magnitude without routing all traffic into one overloaded rule bank.
 
 This is a chip metric, not a language quality metric.
 
+## CA Wiki Cell v0 Metrics
+
+The LLM-Wiki direction now has a cell-level mutable-memory proxy. The default
+configuration stores 128 claims across eight source-page cells each, with
+low-bit value/revision/confidence fields, local source links, and one 4-bit
+error-book counter per claim. Total state is about 4.72KB.
+
+The measured tradeoff separates query critical path from background repair:
+
+```text
+sample_no_repair:      38.38% recall, 2.00 source reads/query, 2.44 touch/event
+flat_scan:            100.00% recall, 8.00 source reads/query, 7.24 touch/event
+tile_update_ca:       100.00% recall, 2.00 source reads/query, 16.00 touch/event
+error_book_ca:         83.59% recall, 2.00 source reads/query, 14.35 touch/event
+hybrid_error_book_ca:  96.00% recall, 2.00 source reads/query, 17.49 touch/event
+```
+
+`tile_update_ca` also leaves zero stale source cells, while flat scan still
+leaves 73.14% stale source cells because it answers by reading around
+inconsistency. The chip metric lesson is therefore not "CA already wins total
+traffic." It is: CA gives the lower-latency sparse query path and explicit
+local consistency repair, but the next controller must learn when repair pulses
+are worth their maintenance traffic.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

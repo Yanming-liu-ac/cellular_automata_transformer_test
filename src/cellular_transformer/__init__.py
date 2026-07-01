@@ -242,6 +242,10 @@ from .synthetic_lm import (
     train_synthetic_lm_phased_demand_gate_lut,
 )
 from .wiki_memory import (
+    CAWikiCellConfig,
+    CAWikiCellPoint,
+    CAWikiCellPolicy,
+    CAWikiCellSweepResult,
     WikiMemoryConfig,
     WikiMemoryDenseTilePoint,
     WikiMemoryDenseTileResult,
@@ -276,12 +280,17 @@ from .wiki_memory import (
     run_wiki_memory_learned_guard_sharing_sweep,
     run_wiki_memory_scaling_sweep,
     run_wiki_memory_sweep,
+    run_ca_wiki_cell_sweep,
     train_wiki_memory_fanout_lut,
 )
 
 __all__ = [
     "CellularMoE",
     "CellularMoEConfig",
+    "CAWikiCellConfig",
+    "CAWikiCellPoint",
+    "CAWikiCellPolicy",
+    "CAWikiCellSweepResult",
     "CandidateCacheConfig",
     "CandidateIndexerTrialResult",
     "CandidateTensorDiagnosticResult",
@@ -501,6 +510,7 @@ __all__ = [
     "run_compressed_block_budget_sweep",
     "run_compressed_block_index_trial",
     "run_csa_hca_policy_trial",
+    "run_ca_wiki_cell_sweep",
     "run_hca_decay_quality_sweep",
     "run_hca_lazy_decay_trial",
     "run_hca_lazy_metadata_sweep",
