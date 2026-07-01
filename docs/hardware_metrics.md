@@ -241,6 +241,15 @@ width-128 summaries, collision pressure hurts both paths, and flat recall at
 hierarchical CA routing, but page-density scaling requires adaptive fanout or
 wider/more structured summaries.
 
+Adaptive fanout is the first concrete density repair. At 1,024 pages and 16
+facts/page, fixed four-group routing reads about 644 cells/query but only
+answers 30.47% of queries. Fixed 32-group routing reaches 99.80% recall at
+about 2,445 cells/query. Adaptive `g4_max32_margin1` reaches the same 99.80%
+recall at about 1,991 cells/query, while the flat page-summary scan reads about
+4,237 cells/query. The hardware target is therefore not a larger fixed fanout;
+it is a low-bit ambiguity detector that increases local group reads only when
+summary scores are tied or near-tied.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

@@ -167,6 +167,16 @@ falls to 59.96% at 32 facts/page. The conclusion is architectural rather than
 negative: dense pages need adaptive group fanout, wider/multi-feature summaries,
 or a page-internal second stage.
 
+The first adaptive group-fanout sweep validates that diagnosis. On the 1,024
+page, 16 facts/page, width-256 stress case, fixed `selected_groups=4` reaches
+only 30.47% CA recall at about 644 cells/query. Raising fixed fanout to 32
+restores 99.80% recall but costs about 2,445 cells/query. Adaptive fanout starts
+from four groups, expands on near-tied group-summary scores, caps at 32 groups,
+and with margin 1 reaches the same 99.80% recall at about 1,991 cells/query.
+That is 53.0% fewer reads than the flat page-summary scan and less traffic than
+fixed 32-group routing. The next step is to learn this fanout decision from
+local low-bit metadata rather than hand-setting the margin.
+
 ## Kill Criteria
 
 This track is not useful if:

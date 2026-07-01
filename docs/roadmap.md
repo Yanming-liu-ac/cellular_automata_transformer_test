@@ -424,7 +424,10 @@ CA costs about 804 cells/query while flat scan costs about 8,228, a 90.2%
 reduction. The density sweep then finds the boundary: at 1,024 pages and
 width-256 summaries, CA recall falls from 98.83% at four facts/page to 19.92%
 at 32 facts/page, while flat scan stays near 99.8% but reads more than 4K
-summary cells/query. The next step is adaptive group fanout or stronger
+summary cells/query. The first adaptive group-fanout version repairs the
+16 facts/page stress point: `g4_max32_margin1` reaches 99.80% recall at about
+1,991 cells/query, versus 2,445 for fixed 32-group routing and 4,237 for flat
+page-summary scan. The next step is a learned local fanout policy or stronger
 multi-feature summaries for dense pages.
 
 The first NumPy version of this target is the learned admission LUT. It is not a

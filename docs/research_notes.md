@@ -351,6 +351,16 @@ CA recall is only 11.72%. This is useful evidence against a too-small fixed
 fanout: dense pages need adaptive group selection or stronger summaries before
 this becomes a credible memory chip path.
 
+The adaptive group-fanout follow-up is the first repair for that failure mode.
+On the same 1,024-page, 16 facts/page, width-256 stress point, fixed four-group
+routing reaches only 30.47% recall at about 644 cells/query. Fixed 32-group
+routing recovers 99.80% recall at about 2,445 cells/query. The adaptive rule
+starts at four groups, expands only when group-summary scores are within a
+low-bit margin, and caps at 32 groups; with margin 1 it also reaches 99.80%
+recall at about 1,991 cells/query. This is still a hand rule, but it is the
+right hardware shape: a small local comparator spends extra reads only when
+summary evidence is ambiguous.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

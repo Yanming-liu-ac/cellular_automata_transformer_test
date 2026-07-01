@@ -28,6 +28,8 @@ class WikiMemoryConfig:
     group_size: int = 16
     selected_groups: int = 4
     selected_pages: int = 8
+    adaptive_max_groups: int = 32
+    adaptive_score_margin: int = 0
     summary_banks: int = 4
     summary_width: int = 256
     summary_bits: int = 4
@@ -59,6 +61,10 @@ class WikiMemoryConfig:
             raise ValueError("selected_groups must be positive")
         if self.selected_pages <= 0:
             raise ValueError("selected_pages must be positive")
+        if self.adaptive_max_groups <= 0:
+            raise ValueError("adaptive_max_groups must be positive")
+        if self.adaptive_score_margin < 0:
+            raise ValueError("adaptive_score_margin must be non-negative")
         if self.summary_banks <= 0:
             raise ValueError("summary_banks must be positive")
         if self.summary_width <= 0:
@@ -272,6 +278,38 @@ class WikiMemoryDensityResult:
     summary_banks: int
     summary_bits: int
     points: Tuple[WikiMemoryDensityPoint, ...]
+
+
+@dataclass(frozen=True)
+class WikiMemoryFanoutPoint:
+    """One fixed or adaptive group-fanout route point."""
+
+    route_label: str
+    selected_groups: int
+    adaptive_max_groups: int
+    adaptive_score_margin: int
+    ca_overall_recall: float
+    flat_overall_recall: float
+    ca_cluster_consistency_rate: float
+    ca_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    exact_scan_cells_per_query: float
+    ca_cells_written_per_update: float
+    ca_read_reduction_vs_flat: float
+    ca_read_reduction_vs_exact_scan: float
+
+
+@dataclass(frozen=True)
+class WikiMemoryFanoutResult:
+    """Fixed versus adaptive group-fanout sweep for dense pages."""
+
+    policy: str
+    page_count: int
+    facts_per_page: int
+    summary_width: int
+    query_events: int
+    update_events: int
+    points: Tuple[WikiMemoryFanoutPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -544,11 +582,14 @@ class _SyntheticWikiMemory:
         order = np.lexsort((tiebreaker, scores))[::-1]
         return order[: min(count, len(order))].astype(np.int32)
 
-    def route_key(self, key: int) -> _RouteResult:
-        group_scores = self._score_groups(key)
-        group_local = self._top_indices(group_scores, self.config.selected_groups)
+    def _hierarchical_route_from_groups(
+        self,
+        key: int,
+        group_indices: np.ndarray,
+        group_scan_cells: int,
+    ) -> _RouteResult:
         candidate_pages: List[int] = []
-        for group in group_local:
+        for group in group_indices:
             start = int(group) * self.config.group_size
             candidate_pages.extend(range(start, start + self.config.group_size))
         candidate_array = np.array(candidate_pages, dtype=np.int32)
@@ -556,7 +597,7 @@ class _SyntheticWikiMemory:
         page_local = self._top_indices(page_scores, self.config.selected_pages)
         selected_pages = tuple(int(candidate_array[index]) for index in page_local)
         cells_read = (
-            self.config.group_count * self.config.summary_banks
+            group_scan_cells
             + len(candidate_array) * self.config.summary_banks
             + len(selected_pages) * self.config.facts_per_page
         )
@@ -564,6 +605,35 @@ class _SyntheticWikiMemory:
             if bool(np.any(self.fact_keys[page] == int(key))):
                 return _RouteResult(True, cells_read, selected_pages, page)
         return _RouteResult(False, cells_read, selected_pages, None)
+
+    def route_key(self, key: int) -> _RouteResult:
+        group_scores = self._score_groups(key)
+        group_local = self._top_indices(group_scores, self.config.selected_groups)
+        group_scan_cells = self.config.group_count * self.config.summary_banks
+        return self._hierarchical_route_from_groups(key, group_local, group_scan_cells)
+
+    def adaptive_route_key(self, key: int) -> _RouteResult:
+        group_scores = self._score_groups(key)
+        group_scan_cells = self.config.group_count * self.config.summary_banks
+        group_order = self._top_indices(group_scores, len(group_scores))
+        if len(group_order) == 0:
+            return self._hierarchical_route_from_groups(key, group_order, group_scan_cells)
+
+        base_count = min(self.config.selected_groups, len(group_order))
+        max_count = min(self.config.adaptive_max_groups, len(group_order))
+        kth_score = int(group_scores[group_order[base_count - 1]])
+        top_score = int(group_scores[group_order[0]])
+        if top_score <= 0:
+            selected_count = base_count
+        else:
+            threshold = max(1, kth_score - self.config.adaptive_score_margin)
+            near_tie_count = int(np.count_nonzero(group_scores[group_order] >= threshold))
+            selected_count = min(max_count, max(base_count, near_tie_count))
+        return self._hierarchical_route_from_groups(
+            key,
+            group_order[:selected_count],
+            group_scan_cells,
+        )
 
     def flat_route_key(self, key: int) -> _RouteResult:
         page_array = np.arange(self.config.page_count, dtype=np.int32)
@@ -712,10 +782,12 @@ class _SyntheticWikiMemory:
     def answer_query(self, query: _WikiQuery, route_mode: str = "hierarchical") -> _AnswerResult:
         if route_mode == "hierarchical":
             routed = self.route_key(query.route_key)
+        elif route_mode == "adaptive":
+            routed = self.adaptive_route_key(query.route_key)
         elif route_mode == "flat":
             routed = self.flat_route_key(query.route_key)
         else:
-            raise ValueError("route_mode must be hierarchical or flat")
+            raise ValueError("route_mode must be hierarchical, adaptive, or flat")
         cells_read = routed.cells_read
         if not routed.found:
             return _AnswerResult(False, self._query_stale(query), False, cells_read, False)
@@ -1203,5 +1275,169 @@ def run_wiki_memory_density_sweep(
         update_events=first_config.update_events,
         summary_banks=first_config.summary_banks,
         summary_bits=first_config.summary_bits,
+        points=tuple(points),
+    )
+
+
+def run_wiki_memory_fanout_sweep(
+    page_count: int = 1024,
+    facts_per_page: int = 16,
+    summary_width: int = 256,
+    fixed_group_values: Tuple[int, ...] = (4, 8, 16, 32),
+    adaptive_settings: Tuple[Tuple[int, int, int], ...] = (
+        (4, 16, 0),
+        (4, 16, 1),
+        (4, 32, 0),
+        (4, 32, 1),
+    ),
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryFanoutResult:
+    """Compare fixed group fanout with adaptive near-tie fanout."""
+
+    points = []
+    flat_config = _density_config(page_count, facts_per_page, summary_width)
+    flat_point = _trial(
+        policy=policy,
+        config=flat_config,
+        seed=seed,
+        route_mode="flat",
+    )
+    exact_scan = float(flat_config.page_count * flat_config.facts_per_page)
+
+    for selected_groups in tuple(dict.fromkeys(int(value) for value in fixed_group_values)):
+        config = _density_config(page_count, facts_per_page, summary_width)
+        config = WikiMemoryConfig(
+            page_count=config.page_count,
+            facts_per_page=config.facts_per_page,
+            topic_count=config.topic_count,
+            links_per_page=config.links_per_page,
+            group_size=config.group_size,
+            selected_groups=selected_groups,
+            selected_pages=config.selected_pages,
+            adaptive_max_groups=max(selected_groups, config.adaptive_max_groups),
+            adaptive_score_margin=config.adaptive_score_margin,
+            summary_banks=config.summary_banks,
+            summary_width=config.summary_width,
+            summary_bits=config.summary_bits,
+            query_events=config.query_events,
+            update_events=config.update_events,
+            multihop_query_rate=config.multihop_query_rate,
+            recent_update_query_rate=config.recent_update_query_rate,
+            revision_update_rate=config.revision_update_rate,
+            error_probe_query_rate=config.error_probe_query_rate,
+            contradiction_clusters=config.contradiction_clusters,
+            cluster_sources=config.cluster_sources,
+            cluster_update_rate=config.cluster_update_rate,
+            cluster_query_rate=config.cluster_query_rate,
+        )
+        ca_point = _trial(
+            policy=policy,
+            config=config,
+            seed=seed,
+            route_mode="hierarchical",
+        )
+        points.append(
+            WikiMemoryFanoutPoint(
+                route_label=f"fixed_g{selected_groups}",
+                selected_groups=selected_groups,
+                adaptive_max_groups=selected_groups,
+                adaptive_score_margin=0,
+                ca_overall_recall=ca_point.overall_recall,
+                flat_overall_recall=flat_point.overall_recall,
+                ca_cluster_consistency_rate=ca_point.cluster_consistency_rate,
+                ca_cells_read_per_query=ca_point.cells_read_per_query,
+                flat_cells_read_per_query=flat_point.cells_read_per_query,
+                exact_scan_cells_per_query=exact_scan,
+                ca_cells_written_per_update=ca_point.cells_written_per_update,
+                ca_read_reduction_vs_flat=(
+                    1.0 - ca_point.cells_read_per_query / flat_point.cells_read_per_query
+                    if flat_point.cells_read_per_query > 0.0
+                    else 0.0
+                ),
+                ca_read_reduction_vs_exact_scan=(
+                    1.0 - ca_point.cells_read_per_query / exact_scan
+                    if exact_scan > 0.0
+                    else 0.0
+                ),
+            )
+        )
+
+    for base_groups, max_groups, margin in tuple(
+        dict.fromkeys(
+            (int(base), int(maximum), int(score_margin))
+            for base, maximum, score_margin in adaptive_settings
+        )
+    ):
+        config = _density_config(page_count, facts_per_page, summary_width)
+        config = WikiMemoryConfig(
+            page_count=config.page_count,
+            facts_per_page=config.facts_per_page,
+            topic_count=config.topic_count,
+            links_per_page=config.links_per_page,
+            group_size=config.group_size,
+            selected_groups=base_groups,
+            selected_pages=config.selected_pages,
+            adaptive_max_groups=max_groups,
+            adaptive_score_margin=margin,
+            summary_banks=config.summary_banks,
+            summary_width=config.summary_width,
+            summary_bits=config.summary_bits,
+            query_events=config.query_events,
+            update_events=config.update_events,
+            multihop_query_rate=config.multihop_query_rate,
+            recent_update_query_rate=config.recent_update_query_rate,
+            revision_update_rate=config.revision_update_rate,
+            error_probe_query_rate=config.error_probe_query_rate,
+            contradiction_clusters=config.contradiction_clusters,
+            cluster_sources=config.cluster_sources,
+            cluster_update_rate=config.cluster_update_rate,
+            cluster_query_rate=config.cluster_query_rate,
+        )
+        ca_point = _trial(
+            policy=policy,
+            config=config,
+            seed=seed,
+            route_mode="adaptive",
+        )
+        points.append(
+            WikiMemoryFanoutPoint(
+                route_label=f"adaptive_g{base_groups}_max{max_groups}_m{margin}",
+                selected_groups=base_groups,
+                adaptive_max_groups=max_groups,
+                adaptive_score_margin=margin,
+                ca_overall_recall=ca_point.overall_recall,
+                flat_overall_recall=flat_point.overall_recall,
+                ca_cluster_consistency_rate=ca_point.cluster_consistency_rate,
+                ca_cells_read_per_query=ca_point.cells_read_per_query,
+                flat_cells_read_per_query=flat_point.cells_read_per_query,
+                exact_scan_cells_per_query=exact_scan,
+                ca_cells_written_per_update=ca_point.cells_written_per_update,
+                ca_read_reduction_vs_flat=(
+                    1.0 - ca_point.cells_read_per_query / flat_point.cells_read_per_query
+                    if flat_point.cells_read_per_query > 0.0
+                    else 0.0
+                ),
+                ca_read_reduction_vs_exact_scan=(
+                    1.0 - ca_point.cells_read_per_query / exact_scan
+                    if exact_scan > 0.0
+                    else 0.0
+                ),
+            )
+        )
+
+    return WikiMemoryFanoutResult(
+        policy=policy.name,
+        page_count=page_count,
+        facts_per_page=facts_per_page,
+        summary_width=summary_width,
+        query_events=flat_config.query_events,
+        update_events=flat_config.update_events,
         points=tuple(points),
     )
