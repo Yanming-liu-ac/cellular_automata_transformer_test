@@ -539,6 +539,16 @@ should not force answer recall and source freshness through the same mechanism:
 summary cells should serve the fast answer path, and local CA repair should
 serve provenance freshness.
 
+Source-subtile repair tests the next provenance mechanism. Keeping the claim
+summary as the answer path, 16 source cells are split into four-source tiles.
+One-probe whole-claim repair costs 10.19 cells/event and leaves 14.65% stale
+sources. One-probe subtile repair costs 7.02 cells/event but leaves 42.97%
+stale sources. Two-probe subtile repair costs 9.68 cells/event and leaves
+27.39% stale sources; four probes cost 12.27 cells/event and leave 19.48%.
+The result is not "subtiles dominate." It is more precise: subtile repair gives
+a local provenance-freshness knob for ordinary pages, while near-complete
+freshness still needs either whole-claim repair or a stronger learned probe.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

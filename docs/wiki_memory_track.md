@@ -378,6 +378,20 @@ This is the cleaner architecture for high fan-in claims: a summary lane answers
 fast, while background CA repair handles source freshness according to the
 strict/budget mode bit.
 
+Source-subtile repair is now measured behind that summary lane. With 16
+sources/claim split into four-source subtiles, all tested policies keep
+100.00% answer recall because the claim summary remains the answer path.
+Whole-claim error repair (`claim_error_repair`) uses one source probe and
+refreshes all 16 sources when the probe finds staleness; it costs
+10.19 touch/event and leaves 14.65% stale sources. One-probe subtile repair
+refreshes only the touched four-source tile, dropping cost to
+7.02 touch/event but leaving 42.97% stale sources. Two probes improve
+freshness to 27.39% stale sources at 9.68 touch/event, and four probes reach
+19.48% stale sources at 12.27 touch/event. This is the right shape for
+provenance freshness: a local knob over probe count and tile repair scope,
+not a forced whole-claim repair. It also shows the limit: once provenance needs
+near-whole-claim freshness, claim-level repair is still competitive.
+
 ## Kill Criteria
 
 This track is not useful if:

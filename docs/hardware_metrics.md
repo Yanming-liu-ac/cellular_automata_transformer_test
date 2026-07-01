@@ -1276,6 +1276,22 @@ The summary lane adds 336B for 128 claims in this diagnostic. It is therefore a
 better answer-path primitive than whole-source repair, but it leaves provenance
 freshness as a separate background CA problem.
 
+Source-subtile repair measures that background provenance path. With 16 sources
+split into four-source subtiles:
+
+```text
+claim_error_repair:      100.00% recall, 2.00 reads/query, 10.19 touch/event, 14.65% stale sources
+subtile_error_repair:    100.00% recall, 2.00 reads/query,  7.02 touch/event, 42.97% stale sources
+subtile_probe2_repair:   100.00% recall, 3.00 reads/query,  9.68 touch/event, 27.39% stale sources
+subtile_probe4_repair:   100.00% recall, 5.00 reads/query, 12.27 touch/event, 19.48% stale sources
+subtile_period4_repair:  100.00% recall, 2.00 reads/query,  7.30 touch/event, 40.62% stale sources
+subtile_update_repair:   100.00% recall, 2.00 reads/query,  4.20 touch/event, 65.62% stale sources
+```
+
+The answer path remains fixed through the claim summary, so the metric is now
+source freshness per local maintenance byte. That is the right chip-facing
+objective for provenance lanes.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

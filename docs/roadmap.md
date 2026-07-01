@@ -570,6 +570,14 @@ without background repair, and falls to 13.18% with query-triggered repair at
 repair behind the summary lane, so provenance freshness can improve without
 reverting to whole-claim repair.
 
+The first source-subtile repair sweep now exists. Four-source subtiles behind
+the 16-source claim summary preserve 100% answer recall and expose a provenance
+tradeoff: one-probe subtile repair costs 7.02 cells/event but leaves 42.97%
+stale sources; two-probe repair costs 9.68 cells/event and leaves 27.39%;
+whole-claim error repair costs 10.19 cells/event and leaves 14.65%. The next
+roadmap item is to learn the probe count and repair scope from page importance,
+rather than fixing one provenance policy globally.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

@@ -970,6 +970,80 @@ class CAWikiCellSummarySweepResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellSubtilePolicy:
+    """Source-subtile repair policy behind a claim-summary answer lane."""
+
+    name: str
+    subtile_size: int = 4
+    read_sources: int = 1
+    repair_scope: str = "subtile"
+    update_repair_ticks: int = 0
+    update_repair_period: int = 1
+    error_repair_ticks: int = 0
+    error_threshold: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("name must not be empty")
+        if self.subtile_size <= 0:
+            raise ValueError("subtile_size must be positive")
+        if self.read_sources < 0:
+            raise ValueError("read_sources must be non-negative")
+        if self.repair_scope not in ("subtile", "claim"):
+            raise ValueError("repair_scope must be subtile or claim")
+        if self.update_repair_ticks < 0:
+            raise ValueError("update_repair_ticks must be non-negative")
+        if self.update_repair_period <= 0:
+            raise ValueError("update_repair_period must be positive")
+        if self.error_repair_ticks < 0:
+            raise ValueError("error_repair_ticks must be non-negative")
+        if self.error_threshold <= 0:
+            raise ValueError("error_threshold must be positive")
+
+
+@dataclass(frozen=True)
+class CAWikiCellSubtilePoint:
+    """One source-subtile repair measurement."""
+
+    policy: str
+    claim_count: int
+    sources_per_claim: int
+    subtile_size: int
+    subtile_count: int
+    read_sources: int
+    repair_scope: str
+    update_repair_ticks: int
+    update_repair_period: int
+    error_repair_ticks: int
+    queries: int
+    updates: int
+    recall: float
+    recent_recall: float
+    stale_source_rate: float
+    consistent_claim_rate: float
+    fresh_subtile_rate: float
+    cells_read_per_query: float
+    repair_cells_read_per_event: float
+    cells_written_per_update: float
+    cells_touched_per_event: float
+    repair_ticks: int
+    repaired_source_cells: int
+    summary_writes: int
+    counter_writes: int
+    state_bytes: float
+
+
+@dataclass(frozen=True)
+class CAWikiCellSubtileSweepResult:
+    """Source-subtile repair sweep behind claim-summary answers."""
+
+    config: CAWikiCellConfig
+    seed: int
+    summary_state_bytes: float
+    points: Tuple[CAWikiCellSubtilePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -5082,6 +5156,319 @@ def run_ca_wiki_cell_summary_sweep(
         )
 
     return CAWikiCellSummarySweepResult(
+        config=cfg,
+        seed=seed,
+        summary_state_bytes=summary_state_bytes,
+        points=tuple(points),
+    )
+
+
+def run_ca_wiki_cell_subtile_repair_sweep(
+    config: CAWikiCellConfig | None = None,
+    policies: Tuple[CAWikiCellSubtilePolicy, ...] | None = None,
+    seed: int = 2601,
+) -> CAWikiCellSubtileSweepResult:
+    """Evaluate local source-subtile repair behind claim-summary answers."""
+
+    cfg = config if config is not None else CAWikiCellConfig(sources_per_claim=16)
+    if policies is None:
+        policies = (
+            CAWikiCellSubtilePolicy(
+                name="claim_error_repair",
+                subtile_size=cfg.sources_per_claim,
+                read_sources=1,
+                repair_scope="claim",
+                error_repair_ticks=1,
+            ),
+            CAWikiCellSubtilePolicy(
+                name="subtile_error_repair",
+                subtile_size=4,
+                read_sources=1,
+                repair_scope="subtile",
+                error_repair_ticks=1,
+            ),
+            CAWikiCellSubtilePolicy(
+                name="subtile_probe2_repair",
+                subtile_size=4,
+                read_sources=2,
+                repair_scope="subtile",
+                error_repair_ticks=1,
+            ),
+            CAWikiCellSubtilePolicy(
+                name="subtile_probe4_repair",
+                subtile_size=4,
+                read_sources=4,
+                repair_scope="subtile",
+                error_repair_ticks=1,
+            ),
+            CAWikiCellSubtilePolicy(
+                name="subtile_period4_repair",
+                subtile_size=4,
+                read_sources=1,
+                repair_scope="subtile",
+                update_repair_ticks=1,
+                update_repair_period=4,
+                error_repair_ticks=1,
+            ),
+            CAWikiCellSubtilePolicy(
+                name="subtile_update_repair",
+                subtile_size=4,
+                read_sources=1,
+                repair_scope="subtile",
+                update_repair_ticks=1,
+                update_repair_period=1,
+                error_repair_ticks=0,
+            ),
+        )
+    for policy in policies:
+        if policy.read_sources > cfg.sources_per_claim:
+            raise ValueError("policy read_sources must fit sources_per_claim")
+        if policy.subtile_size > cfg.sources_per_claim:
+            raise ValueError("policy subtile_size must fit sources_per_claim")
+        if cfg.sources_per_claim % policy.subtile_size != 0:
+            raise ValueError("sources_per_claim must be divisible by subtile_size")
+        if policy.error_threshold > cfg.max_counter_value:
+            raise ValueError("policy error_threshold must fit counter_bits")
+
+    base_rng = np.random.default_rng(seed)
+    event_stream = np.array(
+        [1] * cfg.update_events + [0] * cfg.query_events,
+        dtype=np.int8,
+    )
+    base_rng.shuffle(event_stream)
+    update_claims = base_rng.integers(0, cfg.claim_count, size=cfg.update_events)
+    update_sources = base_rng.integers(0, cfg.sources_per_claim, size=cfg.update_events)
+    query_claims = base_rng.integers(0, cfg.claim_count, size=cfg.query_events)
+    query_recent_draws = base_rng.random(cfg.query_events)
+    query_source_scores = base_rng.random((cfg.query_events, cfg.sources_per_claim))
+    value_deltas = base_rng.integers(1, 251, size=cfg.update_events)
+
+    max_value = 1 << min(cfg.value_bits, 30)
+    initial_values = base_rng.integers(0, max_value, size=cfg.claim_count, dtype=np.int64)
+    summary_cell_bits = (
+        cfg.value_bits + cfg.revision_bits + cfg.confidence_bits + cfg.tag_bits + 1
+    )
+    summary_state_bytes = cfg.claim_count * summary_cell_bits / 8.0
+
+    points: List[CAWikiCellSubtilePoint] = []
+    for policy in policies:
+        truth_values = initial_values.copy()
+        truth_revisions = np.zeros(cfg.claim_count, dtype=np.int64)
+        values = np.repeat(truth_values[:, None], cfg.sources_per_claim, axis=1)
+        revisions = np.zeros((cfg.claim_count, cfg.sources_per_claim), dtype=np.int64)
+        summary_values = truth_values.copy()
+        summary_revisions = np.zeros(cfg.claim_count, dtype=np.int64)
+        error_counters = np.zeros(cfg.claim_count, dtype=np.int64)
+        recent_claims: List[int] = []
+
+        query_index = 0
+        update_index = 0
+        hits = 0
+        recent_hits = 0
+        recent_queries = 0
+        query_read_cells = 0
+        repair_read_cells = 0
+        source_writes = 0
+        repaired_source_cells = 0
+        summary_writes = 0
+        counter_writes = 0
+        repair_ticks = 0
+
+        def subtile_sources(source: int) -> np.ndarray:
+            start = (source // policy.subtile_size) * policy.subtile_size
+            stop = start + policy.subtile_size
+            return np.arange(start, stop)
+
+        def claim_sources() -> np.ndarray:
+            return np.arange(cfg.sources_per_claim)
+
+        def repair_indices_for_source(source: int) -> np.ndarray:
+            if policy.repair_scope == "claim":
+                return claim_sources()
+            return subtile_sources(source)
+
+        def source_consistent(claim: int) -> bool:
+            return bool(
+                np.all(revisions[claim] == truth_revisions[claim])
+                and np.all(values[claim] == truth_values[claim])
+            )
+
+        def repair_sources(claim: int, indices: np.ndarray, ticks: int) -> None:
+            nonlocal repair_read_cells, source_writes, repaired_source_cells, repair_ticks
+            nonlocal counter_writes
+            if ticks <= 0 or len(indices) == 0:
+                return
+            for _ in range(ticks):
+                repair_read_cells += int(len(indices)) * 2
+                stale = (
+                    (revisions[claim, indices] < summary_revisions[claim])
+                    | (values[claim, indices] != summary_values[claim])
+                )
+                stale_indices = indices[stale]
+                writes = int(len(stale_indices))
+                if writes:
+                    revisions[claim, stale_indices] = summary_revisions[claim]
+                    values[claim, stale_indices] = summary_values[claim]
+                    source_writes += writes
+                    repaired_source_cells += writes
+                repair_ticks += 1
+                if source_consistent(claim):
+                    if error_counters[claim] > 0:
+                        error_counters[claim] -= 1
+                        counter_writes += 1
+                    break
+                if writes == 0:
+                    break
+
+        for event in event_stream:
+            if event:
+                claim = int(update_claims[update_index])
+                source = int(update_sources[update_index])
+                current_update_index = update_index
+                truth_revisions[claim] += 1
+                truth_values[claim] = (
+                    truth_values[claim] + int(value_deltas[update_index])
+                ) % max_value
+                values[claim, source] = truth_values[claim]
+                revisions[claim, source] = truth_revisions[claim]
+                source_writes += 1
+                summary_values[claim] = truth_values[claim]
+                summary_revisions[claim] = truth_revisions[claim]
+                summary_writes += 1
+                update_index += 1
+                recent_claims.append(claim)
+                if len(recent_claims) > 64:
+                    del recent_claims[: len(recent_claims) - 64]
+                if current_update_index % policy.update_repair_period == 0:
+                    repair_sources(
+                        claim,
+                        repair_indices_for_source(source),
+                        policy.update_repair_ticks,
+                    )
+                continue
+
+            use_recent = (
+                len(recent_claims) > 0
+                and query_recent_draws[query_index] < cfg.recent_query_rate
+            )
+            if use_recent:
+                claim = recent_claims[
+                    int(query_source_scores[query_index, 0] * len(recent_claims))
+                    % len(recent_claims)
+                ]
+                recent_queries += 1
+            else:
+                claim = int(query_claims[query_index])
+
+            selected_sources = np.argsort(query_source_scores[query_index])[
+                : policy.read_sources
+            ]
+            query_read_cells += 1 + int(len(selected_sources))
+            answer_revision = int(summary_revisions[claim])
+            answer_value = int(summary_values[claim])
+            hit = (
+                answer_revision == int(truth_revisions[claim])
+                and answer_value == int(truth_values[claim])
+            )
+            if hit:
+                hits += 1
+                if use_recent:
+                    recent_hits += 1
+
+            stale_probe_sources = [
+                int(source)
+                for source in selected_sources
+                if (
+                    int(revisions[claim, source]) != int(summary_revisions[claim])
+                    or int(values[claim, source]) != int(summary_values[claim])
+                )
+            ]
+            if stale_probe_sources and policy.error_repair_ticks > 0:
+                if error_counters[claim] < cfg.max_counter_value:
+                    error_counters[claim] += 1
+                    counter_writes += 1
+                if error_counters[claim] >= policy.error_threshold:
+                    repair_targets = []
+                    seen_sources = set()
+                    for source in stale_probe_sources:
+                        for repair_source in repair_indices_for_source(source):
+                            repair_int = int(repair_source)
+                            if repair_int not in seen_sources:
+                                repair_targets.append(repair_int)
+                                seen_sources.add(repair_int)
+                    repair_sources(
+                        claim,
+                        np.array(repair_targets, dtype=np.int64),
+                        policy.error_repair_ticks,
+                    )
+            elif error_counters[claim] > 0 and source_consistent(claim):
+                error_counters[claim] -= 1
+                counter_writes += 1
+            query_index += 1
+
+        consistent_claims = sum(1 for claim in range(cfg.claim_count) if source_consistent(claim))
+        stale_sources = int(
+            np.sum(
+                (revisions != truth_revisions[:, None])
+                | (values != truth_values[:, None])
+            )
+        )
+        subtile_count = cfg.sources_per_claim // policy.subtile_size
+        fresh_subtiles = 0
+        for claim in range(cfg.claim_count):
+            for subtile in range(subtile_count):
+                start = subtile * policy.subtile_size
+                stop = start + policy.subtile_size
+                if (
+                    np.all(revisions[claim, start:stop] == truth_revisions[claim])
+                    and np.all(values[claim, start:stop] == truth_values[claim])
+                ):
+                    fresh_subtiles += 1
+
+        total_events = cfg.query_events + cfg.update_events
+        total_touched = (
+            query_read_cells
+            + repair_read_cells
+            + source_writes
+            + summary_writes
+            + counter_writes
+        )
+        points.append(
+            CAWikiCellSubtilePoint(
+                policy=policy.name,
+                claim_count=cfg.claim_count,
+                sources_per_claim=cfg.sources_per_claim,
+                subtile_size=policy.subtile_size,
+                subtile_count=subtile_count,
+                read_sources=policy.read_sources,
+                repair_scope=policy.repair_scope,
+                update_repair_ticks=policy.update_repair_ticks,
+                update_repair_period=policy.update_repair_period,
+                error_repair_ticks=policy.error_repair_ticks,
+                queries=cfg.query_events,
+                updates=cfg.update_events,
+                recall=hits / float(cfg.query_events),
+                recent_recall=(
+                    recent_hits / float(recent_queries) if recent_queries else 0.0
+                ),
+                stale_source_rate=stale_sources / float(cfg.page_count),
+                consistent_claim_rate=consistent_claims / float(cfg.claim_count),
+                fresh_subtile_rate=fresh_subtiles / float(cfg.claim_count * subtile_count),
+                cells_read_per_query=query_read_cells / float(cfg.query_events),
+                repair_cells_read_per_event=repair_read_cells / float(total_events),
+                cells_written_per_update=(
+                    (source_writes + summary_writes) / float(max(1, cfg.update_events))
+                ),
+                cells_touched_per_event=total_touched / float(total_events),
+                repair_ticks=repair_ticks,
+                repaired_source_cells=repaired_source_cells,
+                summary_writes=summary_writes,
+                counter_writes=counter_writes,
+                state_bytes=cfg.state_bytes + summary_state_bytes,
+            )
+        )
+
+    return CAWikiCellSubtileSweepResult(
         config=cfg,
         seed=seed,
         summary_state_bytes=summary_state_bytes,
