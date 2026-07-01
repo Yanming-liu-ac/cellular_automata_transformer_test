@@ -535,6 +535,18 @@ one coverage bucket is not enough to solve paragraph over-repair. The next
 compiler-side signals should separate summary coverage, source coverage, and
 core-field agreement rather than compressing all missing fields into one bucket.
 
+The split-confidence follow-up does that separation. It keeps the 64B 4D
+paragraph controller and adds three 2-bit confidence buckets: missing summary
+core fields, missing source core fields, and weak source/summary agreement on
+core fields. The useful point is not a direct high-dimensional classifier. A
+4.00KB 7D LUT lowers mean over-strict to 26.39%, but misses the safety gate on
+one held-out row. The better hardware shape is a conservative one-bit 7D guard
+after the 64B baseline: total controller state is 2.06KB, held-out failures are
+0/4, mean over-strict falls from 27.49% to 25.73%, and mean touch falls from
+9.37 to 9.34 cells/event. The lesson is that split confidence is real, but it
+should gate a proven conservative policy rather than replace it with a sparse
+7D classifier.
+
 ## Kill Criteria
 
 This track is not useful if:

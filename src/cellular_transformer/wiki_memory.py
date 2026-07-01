@@ -1602,6 +1602,54 @@ class CAWikiCellParagraphCoverageResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellParagraphSplitConfidencePoint:
+    """Evaluation point for split paragraph confidence controller variants."""
+
+    variant: str
+    eval_seed: int
+    classifier_lut_bytes: float
+    guard_lut_bytes: float
+    local_signal_bits_per_claim: int
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    loose_rate: float
+    normal_rate: float
+    strict_rate: float
+    mean_summary_core_gap_per_claim: float
+    mean_source_core_gap_per_claim: float
+    mean_agreement_gap_per_claim: float
+    estimated_touch_per_event: float
+    downgraded_strict_claims: int
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellParagraphSplitConfidenceResult:
+    """Split summary/source/agreement confidence controller tradeoff."""
+
+    claim_count: int
+    train_claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    parser_misread_rate: float
+    parser_drop_rate: float
+    source_core_omit_rate: float
+    source_weak_omit_rate: float
+    summary_core_omit_rate: float
+    summary_weak_omit_rate: float
+    distractor_rate: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    variants: Tuple[str, ...]
+    points: Tuple[CAWikiCellParagraphSplitConfidencePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -6498,9 +6546,27 @@ def _ca_wiki_multifield_weighted_diff(left: np.ndarray, right: np.ndarray) -> fl
 
 def _ca_wiki_multifield_weighted_missing(values: np.ndarray) -> float:
     missing = np.asarray(values) < 0
+    weights = _CA_WIKI_MULTI_FIELD_WEIGHTS[: missing.shape[-1]]
     if missing.ndim == 1:
-        return float(np.sum(_CA_WIKI_MULTI_FIELD_WEIGHTS[missing]))
-    return float(np.sum(missing.astype(np.float64) * _CA_WIKI_MULTI_FIELD_WEIGHTS))
+        return float(np.sum(weights[missing]))
+    return float(np.sum(missing.astype(np.float64) * weights))
+
+
+def _ca_wiki_multifield_core_agreement_gap(
+    summary: np.ndarray,
+    source_values: np.ndarray,
+) -> float:
+    gap = 0.0
+    for field_index in range(2):
+        present = source_values[:, field_index][source_values[:, field_index] >= 0]
+        summary_value = int(summary[field_index])
+        if len(present) < 2:
+            gap += float(_CA_WIKI_MULTI_FIELD_WEIGHTS[field_index])
+        elif len(set(int(value) for value in present)) > 1:
+            gap += float(_CA_WIKI_MULTI_FIELD_WEIGHTS[field_index])
+        elif summary_value >= 0 and summary_value != int(present[0]):
+            gap += float(_CA_WIKI_MULTI_FIELD_WEIGHTS[field_index])
+    return gap
 
 
 def _ca_wiki_multifield_core_conflict(values: np.ndarray, truth: np.ndarray) -> int:
@@ -6754,6 +6820,9 @@ def _ca_wiki_text_compiled_trace_labels(
     sources_per_claim: int = 16,
     audit_probes: int = 2,
 ) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
     np.ndarray,
     np.ndarray,
     np.ndarray,
@@ -7470,6 +7539,9 @@ def _ca_wiki_paragraph_text_trace_labels(
     observed_weighted_stale = np.zeros(claim_count, dtype=np.float64)
     parser_miss_count = np.zeros(claim_count, dtype=np.int64)
     observed_coverage_gap = np.zeros(claim_count, dtype=np.float64)
+    observed_summary_core_gap = np.zeros(claim_count, dtype=np.float64)
+    observed_source_core_gap = np.zeros(claim_count, dtype=np.float64)
+    observed_agreement_gap = np.zeros(claim_count, dtype=np.float64)
 
     events = np.concatenate(
         (
@@ -7586,6 +7658,9 @@ def _ca_wiki_paragraph_text_trace_labels(
             observed_coverage_gap[claim] += _ca_wiki_multifield_weighted_missing(
                 observed_summary
             )
+            observed_summary_core_gap[claim] += _ca_wiki_multifield_weighted_missing(
+                observed_summary[:2]
+            )
             observed_weighted_error[claim] += _ca_wiki_multifield_weighted_diff(
                 observed_summary,
                 truth_values[claim],
@@ -7602,8 +7677,15 @@ def _ca_wiki_paragraph_text_trace_labels(
                 observed_coverage_gap[claim] += _ca_wiki_multifield_weighted_missing(
                     observed_value
                 )
+                observed_source_core_gap[claim] += _ca_wiki_multifield_weighted_missing(
+                    observed_value[:2]
+                )
                 observed_values.append(observed_value)
             observed_values_array = np.array(observed_values, dtype=np.int64)
+            observed_agreement_gap[claim] += _ca_wiki_multifield_core_agreement_gap(
+                observed_summary,
+                observed_values_array,
+            )
             observed_weighted_stale[claim] += sum(
                 _ca_wiki_multifield_weighted_diff(values, observed_summary)
                 for values in observed_values_array
@@ -7638,6 +7720,9 @@ def _ca_wiki_paragraph_text_trace_labels(
         observed_weighted_stale,
         parser_miss_count,
         observed_coverage_gap,
+        observed_summary_core_gap,
+        observed_source_core_gap,
+        observed_agreement_gap,
     )
 
 
@@ -10169,5 +10254,506 @@ def run_ca_wiki_cell_paragraph_coverage_sweep(
         eval_seeds=clean_eval_seeds,
         importance_modes=modes,
         variants=("baseline_4d", "coverage_guard", "coverage_lut5d"),
+        points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_paragraph_split_confidence_sweep(
+    *,
+    claim_count: int = 1024,
+    train_claim_count: int = 4096,
+    query_events: int = 4096,
+    update_events: int = 2048,
+    compile_events: int = 512,
+    parser_misread_rate: float = 0.06,
+    parser_drop_rate: float = 0.03,
+    source_core_omit_rate: float = 0.03,
+    source_weak_omit_rate: float = 0.06,
+    summary_core_omit_rate: float = 0.01,
+    summary_weak_omit_rate: float = 0.03,
+    distractor_rate: float = 0.12,
+    train_seeds: Tuple[int, ...] = (6701, 6801, 6901),
+    eval_seeds: Tuple[int, ...] = (7001, 7101, 7201, 7301),
+    under_importance_weight: float = 10.0,
+    over_importance_weight: float = 0.75,
+    coverage_lut_under_importance_weight: float = 9.5,
+    split_lut_under_importance_weight: float = 12.0,
+    split_guard_min_count: int = 8,
+    split_guard_max_strict_fraction: float = 0.10,
+    min_accuracy: float = 0.66,
+    min_strict_recall: float = 0.98,
+    max_under_strict_rate: float = 0.015,
+) -> CAWikiCellParagraphSplitConfidenceResult:
+    """Compare split summary/source/agreement confidence controllers."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    for name, value in (
+        ("parser_misread_rate", parser_misread_rate),
+        ("parser_drop_rate", parser_drop_rate),
+        ("source_core_omit_rate", source_core_omit_rate),
+        ("source_weak_omit_rate", source_weak_omit_rate),
+        ("summary_core_omit_rate", summary_core_omit_rate),
+        ("summary_weak_omit_rate", summary_weak_omit_rate),
+        ("distractor_rate", distractor_rate),
+    ):
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"{name} must be in [0, 1]")
+    if under_importance_weight < 0.0:
+        raise ValueError("under_importance_weight must be non-negative")
+    if over_importance_weight < 0.0:
+        raise ValueError("over_importance_weight must be non-negative")
+    if coverage_lut_under_importance_weight < 0.0:
+        raise ValueError("coverage_lut_under_importance_weight must be non-negative")
+    if split_lut_under_importance_weight < 0.0:
+        raise ValueError("split_lut_under_importance_weight must be non-negative")
+    if split_guard_min_count < 0:
+        raise ValueError("split_guard_min_count must be non-negative")
+    if not 0.0 <= split_guard_max_strict_fraction <= 1.0:
+        raise ValueError("split_guard_max_strict_fraction must be in [0, 1]")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts4 = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+    counts5 = np.zeros(
+        (
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            mode_count,
+        ),
+        dtype=np.int64,
+    )
+    counts7 = np.zeros(
+        (
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            mode_count,
+        ),
+        dtype=np.int64,
+    )
+    train_event_scale = train_claim_count / float(claim_count)
+    train_query_events = int(round(query_events * train_event_scale))
+    train_update_events = int(round(update_events * train_event_scale))
+    train_compile_events = int(round(compile_events * train_event_scale))
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        trace = _ca_wiki_paragraph_text_trace_labels(
+            features,
+            seed + 97,
+            train_query_events,
+            train_update_events,
+            train_compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+            source_core_omit_rate,
+            source_weak_omit_rate,
+            summary_core_omit_rate,
+            summary_weak_omit_rate,
+            distractor_rate,
+        )
+        labels = trace[0]
+        weighted_error_bucket = _ca_wiki_weighted_signal_bucket(trace[8])
+        core_conflict_bucket = _ca_wiki_count_bucket(trace[9])
+        weighted_stale_bucket = _ca_wiki_weighted_signal_bucket(trace[10])
+        parser_miss_bucket = _ca_wiki_count_bucket(trace[11])
+        coverage_gap_bucket = _ca_wiki_weighted_signal_bucket(trace[12])
+        summary_core_bucket = _ca_wiki_weighted_signal_bucket(trace[13])
+        source_core_bucket = _ca_wiki_weighted_signal_bucket(trace[14])
+        agreement_bucket = _ca_wiki_weighted_signal_bucket(trace[15])
+        for buckets, label in zip(
+            zip(
+                weighted_error_bucket,
+                core_conflict_bucket,
+                weighted_stale_bucket,
+                parser_miss_bucket,
+                coverage_gap_bucket,
+                summary_core_bucket,
+                source_core_bucket,
+                agreement_bucket,
+            ),
+            labels,
+        ):
+            counts4[
+                int(buckets[0]),
+                int(buckets[1]),
+                int(buckets[2]),
+                int(buckets[3]),
+                int(label),
+            ] += 1
+            counts5[
+                int(buckets[0]),
+                int(buckets[1]),
+                int(buckets[2]),
+                int(buckets[3]),
+                int(buckets[4]),
+                int(label),
+            ] += 1
+            counts7[
+                int(buckets[0]),
+                int(buckets[1]),
+                int(buckets[2]),
+                int(buckets[3]),
+                int(buckets[5]),
+                int(buckets[6]),
+                int(buckets[7]),
+                int(label),
+            ] += 1
+
+    def choose_mode(
+        bucket_counts: np.ndarray,
+        buckets: Tuple[int, ...],
+        under_weight: float,
+        *,
+        use_coverage_fallback: bool,
+    ) -> int:
+        training_count = int(np.sum(bucket_counts))
+        losses = []
+        for predicted in range(mode_count):
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (actual - predicted) * under_weight * count
+                elif predicted > actual:
+                    loss += (predicted - actual) * over_importance_weight * count
+            losses.append(loss)
+        if training_count:
+            return int(np.argmin(losses))
+        fallback_score = 2 * buckets[0] + buckets[1] + buckets[2]
+        if use_coverage_fallback and len(buckets) >= 5:
+            fallback_score += buckets[4]
+        return 2 if fallback_score >= 4 else 1 if fallback_score >= 2 else 0
+
+    lut4 = np.zeros((bucket_count, bucket_count, bucket_count, bucket_count), dtype=np.int64)
+    for index in np.ndindex(lut4.shape):
+        lut4[index] = choose_mode(
+            counts4[index],
+            index,
+            under_importance_weight,
+            use_coverage_fallback=False,
+        )
+
+    lut5 = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, bucket_count),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(lut5.shape):
+        lut5[index] = choose_mode(
+            counts5[index],
+            index,
+            coverage_lut_under_importance_weight,
+            use_coverage_fallback=True,
+        )
+
+    lut7 = np.zeros(
+        (
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+        ),
+        dtype=np.int64,
+    )
+    downgrade_guard = np.zeros(lut7.shape, dtype=np.bool_)
+    for index in np.ndindex(lut7.shape):
+        bucket_counts = counts7[index]
+        lut7[index] = choose_mode(
+            bucket_counts,
+            index,
+            split_lut_under_importance_weight,
+            use_coverage_fallback=False,
+        )
+        total = int(np.sum(bucket_counts))
+        strict_fraction = bucket_counts[2] / float(total) if total else 1.0
+        downgrade_guard[index] = (
+            total >= split_guard_min_count
+            and strict_fraction <= split_guard_max_strict_fraction
+        )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    def make_point(
+        variant: str,
+        seed: int,
+        teacher: np.ndarray,
+        predicted: np.ndarray,
+        trace: Tuple[np.ndarray, ...],
+        classifier_lut_bytes: float,
+        guard_lut_bytes: float,
+        local_signal_bits: int,
+        downgraded: int,
+    ) -> CAWikiCellParagraphSplitConfidencePoint:
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(
+            mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count)
+        )
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        return CAWikiCellParagraphSplitConfidencePoint(
+            variant=variant,
+            eval_seed=seed,
+            classifier_lut_bytes=classifier_lut_bytes,
+            guard_lut_bytes=guard_lut_bytes,
+            local_signal_bits_per_claim=local_signal_bits,
+            accuracy=accuracy,
+            strict_precision=strict_precision,
+            strict_recall=strict_recall,
+            over_strict_rate=over_strict / float(claim_count),
+            under_strict_rate=under_strict_rate,
+            loose_rate=mode_rates[0],
+            normal_rate=mode_rates[1],
+            strict_rate=mode_rates[2],
+            mean_summary_core_gap_per_claim=float(np.mean(trace[13])),
+            mean_source_core_gap_per_claim=float(np.mean(trace[14])),
+            mean_agreement_gap_per_claim=float(np.mean(trace[15])),
+            estimated_touch_per_event=estimated_touch,
+            downgraded_strict_claims=downgraded,
+            target_met=(
+                accuracy >= min_accuracy
+                and strict_recall >= min_strict_recall
+                and under_strict_rate <= max_under_strict_rate
+            ),
+        )
+
+    classifier4_bytes = bucket_count**4 * max(1, int(np.ceil(np.log2(mode_count)))) / 8.0
+    classifier5_bytes = bucket_count**5 * max(1, int(np.ceil(np.log2(mode_count)))) / 8.0
+    classifier7_bytes = bucket_count**7 * max(1, int(np.ceil(np.log2(mode_count)))) / 8.0
+    guard7_bytes = bucket_count**7 / 8.0
+    eval_points: List[CAWikiCellParagraphSplitConfidencePoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        trace = _ca_wiki_paragraph_text_trace_labels(
+            features,
+            seed + 97,
+            query_events,
+            update_events,
+            compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+            source_core_omit_rate,
+            source_weak_omit_rate,
+            summary_core_omit_rate,
+            summary_weak_omit_rate,
+            distractor_rate,
+        )
+        teacher = trace[0]
+        weighted_error_bucket = _ca_wiki_weighted_signal_bucket(trace[8])
+        core_conflict_bucket = _ca_wiki_count_bucket(trace[9])
+        weighted_stale_bucket = _ca_wiki_weighted_signal_bucket(trace[10])
+        parser_miss_bucket = _ca_wiki_count_bucket(trace[11])
+        coverage_gap_bucket = _ca_wiki_weighted_signal_bucket(trace[12])
+        summary_core_bucket = _ca_wiki_weighted_signal_bucket(trace[13])
+        source_core_bucket = _ca_wiki_weighted_signal_bucket(trace[14])
+        agreement_bucket = _ca_wiki_weighted_signal_bucket(trace[15])
+        base_predicted = np.array(
+            [
+                lut4[
+                    int(error_bucket),
+                    int(conflict_bucket),
+                    int(stale_bucket),
+                    int(miss_bucket),
+                ]
+                for error_bucket, conflict_bucket, stale_bucket, miss_bucket in zip(
+                    weighted_error_bucket,
+                    core_conflict_bucket,
+                    weighted_stale_bucket,
+                    parser_miss_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        eval_points.append(
+            make_point(
+                "baseline_4d",
+                seed,
+                teacher,
+                base_predicted,
+                trace,
+                classifier4_bytes,
+                0.0,
+                8,
+                0,
+            )
+        )
+        coverage_predicted = np.array(
+            [
+                lut5[
+                    int(error_bucket),
+                    int(conflict_bucket),
+                    int(stale_bucket),
+                    int(miss_bucket),
+                    int(coverage_bucket),
+                ]
+                for error_bucket, conflict_bucket, stale_bucket, miss_bucket, coverage_bucket in zip(
+                    weighted_error_bucket,
+                    core_conflict_bucket,
+                    weighted_stale_bucket,
+                    parser_miss_bucket,
+                    coverage_gap_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        eval_points.append(
+            make_point(
+                "coverage_lut5d",
+                seed,
+                teacher,
+                coverage_predicted,
+                trace,
+                classifier5_bytes,
+                0.0,
+                10,
+                int(np.sum((base_predicted == 2) & (coverage_predicted < 2))),
+            )
+        )
+        split_guard_predicted = base_predicted.copy()
+        downgrade_mask = np.array(
+            [
+                split_guard_predicted[index] == 2
+                and downgrade_guard[
+                    int(weighted_error_bucket[index]),
+                    int(core_conflict_bucket[index]),
+                    int(weighted_stale_bucket[index]),
+                    int(parser_miss_bucket[index]),
+                    int(summary_core_bucket[index]),
+                    int(source_core_bucket[index]),
+                    int(agreement_bucket[index]),
+                ]
+                for index in range(claim_count)
+            ],
+            dtype=np.bool_,
+        )
+        split_guard_predicted[downgrade_mask] = 1
+        eval_points.append(
+            make_point(
+                "split_guard7d",
+                seed,
+                teacher,
+                split_guard_predicted,
+                trace,
+                classifier4_bytes,
+                guard7_bytes,
+                14,
+                int(np.sum(downgrade_mask)),
+            )
+        )
+        split_lut_predicted = np.array(
+            [
+                lut7[
+                    int(error_bucket),
+                    int(conflict_bucket),
+                    int(stale_bucket),
+                    int(miss_bucket),
+                    int(summary_bucket),
+                    int(source_bucket),
+                    int(agreement_value),
+                ]
+                for error_bucket, conflict_bucket, stale_bucket, miss_bucket, summary_bucket, source_bucket, agreement_value in zip(
+                    weighted_error_bucket,
+                    core_conflict_bucket,
+                    weighted_stale_bucket,
+                    parser_miss_bucket,
+                    summary_core_bucket,
+                    source_core_bucket,
+                    agreement_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        eval_points.append(
+            make_point(
+                "split_lut7d",
+                seed,
+                teacher,
+                split_lut_predicted,
+                trace,
+                classifier7_bytes,
+                0.0,
+                14,
+                int(np.sum((base_predicted == 2) & (split_lut_predicted < 2))),
+            )
+        )
+
+    return CAWikiCellParagraphSplitConfidenceResult(
+        claim_count=claim_count,
+        train_claim_count=train_claim_count,
+        query_events=query_events,
+        update_events=update_events,
+        compile_events=compile_events,
+        parser_misread_rate=parser_misread_rate,
+        parser_drop_rate=parser_drop_rate,
+        source_core_omit_rate=source_core_omit_rate,
+        source_weak_omit_rate=source_weak_omit_rate,
+        summary_core_omit_rate=summary_core_omit_rate,
+        summary_weak_omit_rate=summary_weak_omit_rate,
+        distractor_rate=distractor_rate,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
+        variants=(
+            "baseline_4d",
+            "coverage_lut5d",
+            "split_guard7d",
+            "split_lut7d",
+        ),
         points=tuple(eval_points),
     )

@@ -1538,6 +1538,21 @@ state does not buy a large traffic reduction, so the next hardware metric
 should split field coverage into separate summary-core and source-core
 confidence counters before spending more LUT dimensions.
 
+The split-confidence metric is stronger. It separates the extra signal into
+summary-core coverage, source-core coverage, and source/summary agreement:
+
+```text
+baseline_4d:     64B controller, 27.49% mean over-strict, 9.37 touch/event, 0/4 failures
+coverage_lut5d: 256B controller, 26.93% mean over-strict, 9.35 touch/event, 0/4 failures
+split_guard7d:  2.06KB controller, 25.73% mean over-strict, 9.34 touch/event, 0/4 failures
+split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
+```
+
+The direct 7D LUT is not the right default despite being larger. The safer
+hardware primitive is a small conservative classifier plus a sparse confidence
+guard that only downgrades strict repair when the split confidence buckets have
+enough supporting training examples.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

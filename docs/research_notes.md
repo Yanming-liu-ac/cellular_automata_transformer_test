@@ -656,6 +656,17 @@ coverage is a real feature, but over-repair is not caused by a single missing
 field-count axis. The next diagnostic should split coverage into summary/core,
 source/core, and agreement-confidence channels.
 
+The split-confidence diagnostic confirms that diagnosis. Splitting the signal
+into summary-core coverage, source-core coverage, and source/summary agreement
+gives the controller more useful information, but the form matters. A direct
+4.00KB 7D LUT is too sparse/aggressive in this sample: it lowers mean
+over-strict to 26.39% but fails one held-out row. The 2.06KB guarded version is
+the better CA-chip primitive. It keeps the 64B conservative paragraph
+classifier, adds a one-bit guard indexed by the three split confidence buckets,
+passes 4/4 held-out rows, lowers mean over-strict to 25.73%, and lowers touch
+to 9.34 cells/event. This is a more defensible hardware pattern than simply
+adding dimensions to the main classifier.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
