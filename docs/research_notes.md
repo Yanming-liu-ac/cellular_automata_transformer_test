@@ -341,6 +341,16 @@ while recall remains matched by construction. This supports the architectural
 claim that wiki memory should be routed through local summaries rather than
 global page-summary scans.
 
+The density sweep adds the first failure mode. At 1,024 pages with 4x256x4-bit
+summaries, increasing facts/page from 4 to 8, 16, and 32 drops CA recall from
+98.83% to 77.93%, 30.47%, and 19.92%. Flat page-summary scan remains near
+99.8% at width 256 because it scores every page, but still reads about 4.1K
+page-summary cells/query. Narrowing summaries to width 128 makes collisions
+visible even for flat scan: flat recall falls to 59.96% at 32 facts/page, while
+CA recall is only 11.72%. This is useful evidence against a too-small fixed
+fanout: dense pages need adaptive group selection or stronger summaries before
+this becomes a credible memory chip path.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

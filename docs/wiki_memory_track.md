@@ -155,6 +155,18 @@ for flat scan. The CA read reduction versus flat scan grows from 66.3% to
 90.2%, while exact fact scan grows to 8,192 cells/query. This is the first
 evidence that the wiki-memory route has the scaling shape we want.
 
+The density sweep is the first hard warning. Holding pages at 1,024 and
+increasing facts/page from 4 to 32, the current four-group CA route loses
+accuracy under page-summary collision pressure. With 4x256x4-bit summaries,
+CA recall falls from 98.83% at four facts/page to 77.93%, 30.47%, and 19.92%
+at 8, 16, and 32 facts/page. Flat page-summary scan stays near 99.8% at width
+256 because it can rank every page summary globally, though it pays about
+4,132-4,378 cells/query. At width 128, both collision pressure and CA group
+selection hurt: CA recall is already 72.46% at four facts/page, and flat scan
+falls to 59.96% at 32 facts/page. The conclusion is architectural rather than
+negative: dense pages need adaptive group fanout, wider/multi-feature summaries,
+or a page-internal second stage.
+
 ## Kill Criteria
 
 This track is not useful if:

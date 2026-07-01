@@ -232,6 +232,15 @@ cuts flat-scan reads by 66.3%, 79.9%, 86.7%, and 90.2%, respectively. Writes
 are the same under the same repair policy, so this sweep isolates routing
 traffic.
 
+Density pressure changes the story. At 1,024 pages, facts/page 4, 8, 16, and 32
+with width-256 summaries give CA reads of about 548, 582, 644, and 773
+cells/query, but recall drops from 98.83% to 77.93%, 30.47%, and 19.92%. Flat
+scan reads about 4.1K-4.4K cells/query and keeps high recall at width 256. With
+width-128 summaries, collision pressure hurts both paths, and flat recall at
+32 facts/page falls to 59.96%. Hardware implication: page-count scaling favors
+hierarchical CA routing, but page-density scaling requires adaptive fanout or
+wider/more structured summaries.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

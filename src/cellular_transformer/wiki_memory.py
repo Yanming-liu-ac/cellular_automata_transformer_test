@@ -240,6 +240,41 @@ class WikiMemoryScalingResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryDensityPoint:
+    """One facts-per-page and summary-width pressure point."""
+
+    page_count: int
+    facts_per_page: int
+    summary_width: int
+    contradiction_clusters: int
+    state_bytes: float
+    ca_overall_recall: float
+    flat_overall_recall: float
+    ca_cluster_consistency_rate: float
+    flat_cluster_consistency_rate: float
+    ca_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    exact_scan_cells_per_query: float
+    ca_cells_written_per_update: float
+    flat_cells_written_per_update: float
+    ca_read_reduction_vs_flat: float
+    ca_read_reduction_vs_exact_scan: float
+
+
+@dataclass(frozen=True)
+class WikiMemoryDensityResult:
+    """Facts-per-page and summary-width pressure sweep."""
+
+    policy: str
+    page_count: int
+    query_events: int
+    update_events: int
+    summary_banks: int
+    summary_bits: int
+    points: Tuple[WikiMemoryDensityPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -986,6 +1021,32 @@ def _scaling_config(page_count: int) -> WikiMemoryConfig:
     )
 
 
+def _density_config(
+    page_count: int,
+    facts_per_page: int,
+    summary_width: int,
+) -> WikiMemoryConfig:
+    group_size = 16
+    cluster_sources = 3
+    contradiction_clusters = max(1, min(page_count // 8, page_count // cluster_sources))
+    return WikiMemoryConfig(
+        page_count=page_count,
+        facts_per_page=facts_per_page,
+        topic_count=max(8, min(256, page_count // 4)),
+        links_per_page=4,
+        group_size=group_size,
+        selected_groups=4,
+        selected_pages=8,
+        summary_banks=4,
+        summary_width=summary_width,
+        summary_bits=4,
+        query_events=512,
+        update_events=256,
+        contradiction_clusters=contradiction_clusters,
+        cluster_sources=cluster_sources,
+    )
+
+
 def run_wiki_memory_scaling_sweep(
     page_counts: Tuple[int, ...] = (256, 512, 1024, 2048),
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
@@ -1057,6 +1118,90 @@ def run_wiki_memory_scaling_sweep(
         update_events=first_config.update_events,
         summary_banks=first_config.summary_banks,
         summary_width=first_config.summary_width,
+        summary_bits=first_config.summary_bits,
+        points=tuple(points),
+    )
+
+
+def run_wiki_memory_density_sweep(
+    page_count: int = 1024,
+    facts_per_page_values: Tuple[int, ...] = (4, 8, 16, 32),
+    summary_width_values: Tuple[int, ...] = (128, 256),
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryDensityResult:
+    """Pressure-test page density and low-bit summary width."""
+
+    clean_facts = tuple(dict.fromkeys(int(value) for value in facts_per_page_values))
+    clean_widths = tuple(dict.fromkeys(int(value) for value in summary_width_values))
+    if len(clean_facts) == 0:
+        raise ValueError("facts_per_page_values must not be empty")
+    if len(clean_widths) == 0:
+        raise ValueError("summary_width_values must not be empty")
+
+    points = []
+    for summary_width in clean_widths:
+        for facts_per_page in clean_facts:
+            config = _density_config(
+                page_count=page_count,
+                facts_per_page=facts_per_page,
+                summary_width=summary_width,
+            )
+            ca_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="hierarchical",
+            )
+            flat_point = _trial(
+                policy=policy,
+                config=config,
+                seed=seed,
+                route_mode="flat",
+            )
+            exact_scan = float(config.page_count * config.facts_per_page)
+            points.append(
+                WikiMemoryDensityPoint(
+                    page_count=config.page_count,
+                    facts_per_page=config.facts_per_page,
+                    summary_width=config.summary_width,
+                    contradiction_clusters=config.contradiction_clusters,
+                    state_bytes=config.state_bytes,
+                    ca_overall_recall=ca_point.overall_recall,
+                    flat_overall_recall=flat_point.overall_recall,
+                    ca_cluster_consistency_rate=ca_point.cluster_consistency_rate,
+                    flat_cluster_consistency_rate=flat_point.cluster_consistency_rate,
+                    ca_cells_read_per_query=ca_point.cells_read_per_query,
+                    flat_cells_read_per_query=flat_point.cells_read_per_query,
+                    exact_scan_cells_per_query=exact_scan,
+                    ca_cells_written_per_update=ca_point.cells_written_per_update,
+                    flat_cells_written_per_update=flat_point.cells_written_per_update,
+                    ca_read_reduction_vs_flat=(
+                        1.0 - ca_point.cells_read_per_query / flat_point.cells_read_per_query
+                        if flat_point.cells_read_per_query > 0.0
+                        else 0.0
+                    ),
+                    ca_read_reduction_vs_exact_scan=(
+                        1.0 - ca_point.cells_read_per_query / exact_scan
+                        if exact_scan > 0.0
+                        else 0.0
+                    ),
+                )
+            )
+
+    first_config = _density_config(page_count, clean_facts[0], clean_widths[0])
+    return WikiMemoryDensityResult(
+        policy=policy.name,
+        page_count=page_count,
+        query_events=first_config.query_events,
+        update_events=first_config.update_events,
+        summary_banks=first_config.summary_banks,
         summary_bits=first_config.summary_bits,
         points=tuple(points),
     )

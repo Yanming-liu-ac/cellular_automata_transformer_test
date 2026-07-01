@@ -421,8 +421,11 @@ about 14,914 cells/update. A flat/RAG-style all-page-summary scan matches those
 accuracy points but costs about 1,061 cells/query, while the CA hierarchical
 route costs about 356-357 cells/query. Scaling to 2,048 pages widens the gap:
 CA costs about 804 cells/query while flat scan costs about 8,228, a 90.2%
-reduction. The next step is to increase facts/page and summary pressure, because
-the current sweep scales pages more than per-page content density.
+reduction. The density sweep then finds the boundary: at 1,024 pages and
+width-256 summaries, CA recall falls from 98.83% at four facts/page to 19.92%
+at 32 facts/page, while flat scan stays near 99.8% but reads more than 4K
+summary cells/query. The next step is adaptive group fanout or stronger
+multi-feature summaries for dense pages.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
