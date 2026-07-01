@@ -590,6 +590,20 @@ over these local thresholds found no 0-failure hand rule. This points the next
 step toward a learned factorized selector or multi-distribution teacher, not
 more manual threshold tuning.
 
+The learned-selector follow-up is the first version of that next step. It keeps
+the 64B baseline classifier and 80B factor projections, then adds a 60B
+selector LUT over base mode, factor vote count, core coverage gap, and parser
+miss bucket. Training mixes default, doubled parser-noise, doubled omission,
+and doubled distractor traces. On the default four-row evaluation it passes
+4/4, but it is deliberately more conservative than `factor_vote80b`: 204B
+total state, 70.97% accuracy, 99.29% strict recall, 0.59% under-strict, and
+28.44% over-strict. In the stress matrix it closes the coverage-side failures:
+omit_x2, distractor_x2, and large_2k all pass 2/2. Parser_x2 remains 0/2
+because the selector stays too strict and accuracy falls to 63.57%. The result
+splits the problem cleanly: multi-distribution training can learn
+"uncertain coverage means stricter repair", but parser-noise shift needs a
+separate over-strict relief branch or a different teacher.
+
 ## Kill Criteria
 
 This track is not useful if:
@@ -619,3 +633,15 @@ knowledge substrate: local pages, local dirty summaries, local disagreement
 counters, and low-bit learned guards that decide when facts are queryable or
 need repair. That is a more natural first chip target than trying to replace
 all dense attention and MLP computation at once.
+
+The 2026 external signal supports this narrower first target. LLM-Wiki treats
+retrieval as a compilable, linked, self-correcting structure rather than a flat
+embedding index. WikiKV then makes the storage layer explicit: hierarchical
+wiki memory wants path-indexed storage, continuous schema evolution, and
+consistent reads during offline rewrites. DeepSeek-V4 points in the same
+hardware direction from the model side: long-context efficiency comes from
+compressed/sparse attention paths, KV hierarchy, low precision, and
+deterministic kernels. The CA-chip opportunity is therefore not "replace the
+whole LLM tomorrow"; it is a local, low-bit, update-native wiki fabric that
+serves a decoder faster and with less energy than repeatedly scanning or
+rewriting context.

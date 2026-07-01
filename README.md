@@ -183,6 +183,8 @@ The first experiments compare:
   small projected vote tables;
 - distribution-shift stress sweeps for those factorized guards under higher
   parser noise, omitted fields, distractors, and larger claim counts;
+- learned paragraph shift selectors that train a small local LUT across
+  multiple paragraph-noise distributions;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

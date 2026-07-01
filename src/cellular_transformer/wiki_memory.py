@@ -10448,6 +10448,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     factor_guard80_covsafe_parser_miss_relief: int = 1,
     factor_guard80_covsafe_parser_max_core_gap_sum: int = 2,
     factor_guard80_shiftguard_min_core_gap_sum: int = 3,
+    learned_shift_selector_under_importance_weight: float = 8.0,
+    learned_shift_selector_over_importance_weight: float = 0.75,
+    learned_shift_selector_profiles: Tuple[str, ...] = (
+        "default",
+        "parser_x2",
+        "omit_x2",
+        "distractor_x2",
+    ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
@@ -10551,6 +10559,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError(
             "factor_guard80_shiftguard_min_core_gap_sum must be non-negative"
         )
+    if learned_shift_selector_under_importance_weight < 0.0:
+        raise ValueError(
+            "learned_shift_selector_under_importance_weight must be non-negative"
+        )
+    if learned_shift_selector_over_importance_weight < 0.0:
+        raise ValueError(
+            "learned_shift_selector_over_importance_weight must be non-negative"
+        )
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10563,6 +10579,24 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("train_seeds must not be empty")
     if len(clean_eval_seeds) == 0:
         raise ValueError("eval_seeds must not be empty")
+    clean_selector_profiles = tuple(
+        dict.fromkeys(str(value) for value in learned_shift_selector_profiles)
+    )
+    if len(clean_selector_profiles) == 0:
+        raise ValueError("learned_shift_selector_profiles must not be empty")
+    allowed_selector_profiles = {
+        "default",
+        "parser_x2",
+        "omit_x2",
+        "distractor_x2",
+    }
+    unknown_selector_profiles = [
+        name for name in clean_selector_profiles if name not in allowed_selector_profiles
+    ]
+    if unknown_selector_profiles:
+        raise ValueError(
+            f"unknown learned_shift_selector_profiles: {unknown_selector_profiles}"
+        )
 
     modes = ("loose", "normal", "strict")
     mode_count = len(modes)
@@ -10872,6 +10906,130 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             )
         )
 
+    factor80_variant = next(
+        variant for variant in factor_guard_variants if variant[0] == "factor_vote80b"
+    )
+    selector_projections = factor80_variant[1]
+    selector_guards = factor80_variant[3]
+    selector_guard_bytes = float(factor80_variant[4])
+    selector_counts = np.zeros(
+        (mode_count, 5, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+
+    def add_selector_examples(bucket_rows: np.ndarray, labels: np.ndarray) -> None:
+        for row, label in zip(bucket_rows, labels):
+            base_mode = int(
+                lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
+            )
+            vote_count = 0
+            for projection, factor_guard in zip(selector_projections, selector_guards):
+                vote_count += int(
+                    factor_guard[tuple(int(row[index]) for index in projection)]
+                )
+            core_gap_bucket = min(int(row[4]) + int(row[5]), bucket_count - 1)
+            parser_miss_bucket = int(row[3])
+            selector_counts[
+                base_mode,
+                vote_count,
+                core_gap_bucket,
+                parser_miss_bucket,
+                int(label),
+            ] += 1
+
+    selector_profile_params = {
+        "default": (
+            clean_train_parser_misread_rate,
+            clean_train_parser_drop_rate,
+            clean_train_source_core_omit_rate,
+            clean_train_source_weak_omit_rate,
+            clean_train_summary_core_omit_rate,
+            clean_train_summary_weak_omit_rate,
+            clean_train_distractor_rate,
+        ),
+        "parser_x2": (
+            min(1.0, clean_train_parser_misread_rate * 2.0),
+            min(1.0, clean_train_parser_drop_rate * 2.0),
+            clean_train_source_core_omit_rate,
+            clean_train_source_weak_omit_rate,
+            clean_train_summary_core_omit_rate,
+            clean_train_summary_weak_omit_rate,
+            clean_train_distractor_rate,
+        ),
+        "omit_x2": (
+            clean_train_parser_misread_rate,
+            clean_train_parser_drop_rate,
+            min(1.0, clean_train_source_core_omit_rate * 2.0),
+            min(1.0, clean_train_source_weak_omit_rate * 2.0),
+            min(1.0, clean_train_summary_core_omit_rate * 2.0),
+            min(1.0, clean_train_summary_weak_omit_rate * 2.0),
+            clean_train_distractor_rate,
+        ),
+        "distractor_x2": (
+            clean_train_parser_misread_rate,
+            clean_train_parser_drop_rate,
+            clean_train_source_core_omit_rate,
+            clean_train_source_weak_omit_rate,
+            clean_train_summary_core_omit_rate,
+            clean_train_summary_weak_omit_rate,
+            min(1.0, clean_train_distractor_rate * 2.0),
+        ),
+    }
+    for profile in clean_selector_profiles:
+        for seed in clean_train_seeds:
+            features = _ca_wiki_metadata_features(train_claim_count, seed)
+            trace = _ca_wiki_paragraph_text_trace_labels(
+                features,
+                seed + 97,
+                train_query_events,
+                train_update_events,
+                train_compile_events,
+                *selector_profile_params[profile],
+            )
+            selector_buckets = np.stack(
+                (
+                    _ca_wiki_weighted_signal_bucket(trace[8]),
+                    _ca_wiki_count_bucket(trace[9]),
+                    _ca_wiki_weighted_signal_bucket(trace[10]),
+                    _ca_wiki_count_bucket(trace[11]),
+                    _ca_wiki_weighted_signal_bucket(trace[13]),
+                    _ca_wiki_weighted_signal_bucket(trace[14]),
+                    _ca_wiki_weighted_signal_bucket(trace[15]),
+                ),
+                axis=1,
+            ).astype(np.int64)
+            add_selector_examples(selector_buckets, trace[0])
+
+    learned_shift_selector = np.ones(
+        (mode_count, 5, bucket_count, bucket_count),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(learned_shift_selector.shape):
+        bucket_counts = selector_counts[index]
+        if not int(np.sum(bucket_counts)):
+            continue
+        base_mode = int(index[0])
+        losses = []
+        for delta in (-1, 0, 1):
+            predicted = max(0, min(mode_count - 1, base_mode + delta))
+            loss = 0.0
+            for actual, count in enumerate(bucket_counts):
+                if predicted < actual:
+                    loss += (
+                        (actual - predicted)
+                        * learned_shift_selector_under_importance_weight
+                        * count
+                    )
+                elif predicted > actual:
+                    loss += (
+                        (predicted - actual)
+                        * learned_shift_selector_over_importance_weight
+                        * count
+                    )
+            losses.append(loss)
+        learned_shift_selector[index] = int(np.argmin(losses))
+    selector_lut_bytes = float(np.prod(learned_shift_selector.shape)) * 2.0 / 8.0
+
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
     mode_touch = {}
     for mode in modes:
@@ -11135,6 +11293,42 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                     int(np.sum(factor_downgrade_mask)),
                 )
             )
+        selector_votes = np.zeros(claim_count, dtype=np.int64)
+        for projection, factor_guard in zip(selector_projections, selector_guards):
+            selector_votes += factor_guard[
+                tuple(split_buckets[:, index] for index in projection)
+            ].astype(np.int64)
+        selector_core_gap = np.minimum(
+            summary_core_bucket + source_core_bucket,
+            bucket_count - 1,
+        )
+        selector_actions = (
+            learned_shift_selector[
+                base_predicted,
+                selector_votes,
+                selector_core_gap,
+                parser_miss_bucket,
+            ]
+            - 1
+        )
+        selector_predicted = np.clip(
+            base_predicted + selector_actions,
+            0,
+            mode_count - 1,
+        ).astype(np.int64)
+        eval_points.append(
+            make_point(
+                "learned_shift_selector",
+                seed,
+                teacher,
+                selector_predicted,
+                trace,
+                classifier4_bytes,
+                selector_guard_bytes + selector_lut_bytes,
+                14,
+                int(np.sum((base_predicted == 2) & (selector_predicted < 2))),
+            )
+        )
         split_lut_predicted = np.array(
             [
                 lut7[
@@ -11196,6 +11390,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "factor_vote80b",
             "factor_vote80b_covsafe",
             "factor_vote80b_shiftguard",
+            "learned_shift_selector",
             "split_lut7d",
         ),
         points=tuple(eval_points),
@@ -11235,6 +11430,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "factor_vote80b",
         "factor_vote80b_covsafe",
         "factor_vote80b_shiftguard",
+        "learned_shift_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,

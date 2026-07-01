@@ -704,6 +704,19 @@ search over parser-miss/core-gap thresholds also found no zero-failure hand
 rule. The next robust version should therefore learn a selector or train a
 factorized guard against multiple paragraph-noise distributions.
 
+The learned selector now exists as a diagnostic. It adds a 60B selector table
+on top of the 64B baseline classifier and 80B factor projections. Inputs are
+all local: baseline mode, factor vote count, capped summary/source core gap,
+and parser-miss bucket. Training uses default, parser_x2, omit_x2, and
+distractor_x2 traces. The selector passes the default four held-out rows, but
+it is more conservative than the 80B vote guard: 70.97% mean accuracy, 99.29%
+strict recall, 0.59% under-strict, and 28.44% over-strict. Its stress behavior
+is the useful part. It repairs the omission-side problem, passing omit_x2,
+distractor_x2, and large_2k at 2/2 each, while parser_x2 remains 0/2 because
+accuracy is only 63.57% under doubled parser noise. This says the next teacher
+must explicitly distinguish "parser is uncertain, downgrade excess strict" from
+"coverage is missing, keep or raise strict".
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -66,6 +66,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
     print("- factor_vote56b uses four small projections, 56B of one-bit guard state.")
     print("- factor_vote80b uses two 4D and two 3D projections, 80B of guard state.")
     print("- covsafe/shiftguard add hand-coded coverage-shift protection diagnostics.")
+    print("- learned_shift_selector adds a 60B multi-distribution selector LUT.")
     print("- all factorized variants reuse the 64B baseline classifier.")
 
 

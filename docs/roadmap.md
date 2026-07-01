@@ -693,6 +693,15 @@ distractor_x2, and large_2k still have failures. The next attempt should learn
 the selector from multi-distribution traces or add an explicit teacher for
 "uncertain coverage means stricter repair" instead of hand tuning thresholds.
 
+The first learned selector is now implemented. It is a 60B local LUT on top of
+the 64B baseline and 80B factor projections, trained on default, parser_x2,
+omit_x2, and distractor_x2 traces. It passes default, omit_x2, distractor_x2,
+and large_2k, but still fails parser_x2 because it keeps too many claims strict
+and accuracy stays at 63.57%. The next roadmap item is therefore a two-branch
+teacher: one branch for coverage uncertainty that keeps or raises strict
+repair, and one branch for parser-noise uncertainty that allows safe downgrade
+of excess strict repair.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

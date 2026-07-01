@@ -1549,6 +1549,7 @@ factor_vote56b: 120B controller, 24.58% mean over-strict, 9.35 touch/event, 0/4 
 factor_vote80b: 144B controller, 23.83% mean over-strict, 9.32 touch/event, 0/4 failures
 factor_vote80b_covsafe: 144B controller, 24.22% mean over-strict, 9.32 touch/event, 0/4 failures
 factor_vote80b_shiftguard: 144B controller, 24.29% mean over-strict, 9.33 touch/event, 0/4 failures
+learned_shift_selector: 204B controller, 28.44% mean over-strict, 9.40 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
@@ -1574,14 +1575,21 @@ factor_vote80b_shiftguard parser_x2:     66.06% accuracy, 98.57% strict recall, 
 factor_vote80b_shiftguard omit_x2:       75.54% accuracy, 97.40% strict recall, 1.95% under, 22.51% over, 0/2 pass
 factor_vote80b_shiftguard distractor_x2: 73.14% accuracy, 98.42% strict recall, 1.22% under, 25.63% over, 1/2 pass
 factor_vote80b_shiftguard large_2k:      73.36% accuracy, 98.17% strict recall, 1.27% under, 25.37% over, 1/2 pass
+learned_shift_selector default_1k:       71.29% accuracy, 99.09% strict recall, 0.68% under, 28.03% over, 2/2 pass
+learned_shift_selector parser_x2:        63.57% accuracy, 99.39% strict recall, 0.39% under, 36.04% over, 0/2 pass
+learned_shift_selector omit_x2:          72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
+learned_shift_selector distractor_x2:    70.07% accuracy, 99.47% strict recall, 0.49% under, 29.44% over, 2/2 pass
+learned_shift_selector large_2k:         70.07% accuracy, 98.74% strict recall, 0.93% under, 29.00% over, 2/2 pass
 ```
 
 This separates efficiency from robustness. The 144B guard is efficient and
 survives parser-noise shift, but field-coverage shift can make it downgrade too
 many strict claims. The hand-coded shiftguard does not solve that matrix; it
 mainly shows that manual core-gap/parser-miss thresholds are too brittle. A
-chip-facing version should therefore learn a selector or train against shifted
-omission statistics before fixing the projection tables.
+multi-distribution learned selector solves the coverage-shift rows but stays
+too strict under parser-noise shift. A chip-facing version should therefore use
+a two-branch teacher: coverage uncertainty raises repair, parser uncertainty
+suppresses false strict repair.
 
 ## Tile/Floorplan Metrics
 
