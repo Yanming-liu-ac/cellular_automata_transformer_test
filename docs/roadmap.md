@@ -481,8 +481,11 @@ counter sweep and maps guard block size to same-tag sharing radius:
 `256 -> 2`, `512 -> 1`, `1024 -> 0`. The LUT is 0.75B for these three entries.
 It keeps 25% dense off, restores 50% dense coverage from 50% local to 100% for
 256 and 512-page blocks, leaves 75% dense at 100%, and keeps sparse
-false-enable at 0.00%. The next step is to learn the win threshold jointly with
-radius and test on held-out seeds rather than the same deterministic stream.
+false-enable at 0.00% on the training stream. Held-out seed testing now exists:
+seeds 1301 and 1401 pass, but seed 1501 exposes a failure at 75% dense where
+99/1 dense wins/losses trigger the strict zero-loss gate and reduce coverage.
+The next step is to learn the win threshold jointly with a loss tolerance or
+loss-decay rule, then retest on held-out seeds.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

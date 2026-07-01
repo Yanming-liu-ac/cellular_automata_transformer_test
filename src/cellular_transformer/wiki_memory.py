@@ -654,6 +654,7 @@ class WikiMemoryGuardSharingLUTEntry:
 class WikiMemoryLearnedGuardSharingPoint:
     """One evaluation point for the learned guard-sharing LUT."""
 
+    eval_seed: int
     dense_page_fraction: float
     tag_threshold: int
     guard_counter_block_pages: int
@@ -3610,6 +3611,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
     min_dense_fraction_to_enable: float = 0.50,
     false_enable_weight: float = 8.0,
     radius_cost_weight: float = 0.01,
+    eval_seeds: Tuple[int, ...] = (),
     **mixed_sweep_kwargs: object,
 ) -> WikiMemoryLearnedGuardSharingResult:
     """Learn a tiny LUT choosing same-tag guard-counter sharing radius."""
@@ -3620,6 +3622,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         raise ValueError("false_enable_weight must be non-negative")
     if radius_cost_weight < 0.0:
         raise ValueError("radius_cost_weight must be non-negative")
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
     clean_blocks = tuple(dict.fromkeys(int(value) for value in guard_counter_block_page_options))
     clean_radii = tuple(dict.fromkeys(int(value) for value in guard_share_radius_options))
     if len(clean_blocks) == 0:
@@ -3636,16 +3639,11 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         **mixed_sweep_kwargs,
     )
     by_block_radius: dict[tuple[int, int], list[WikiMemoryMixedGuardCounterPoint]] = {}
-    local_by_block_fraction: dict[tuple[int, float], WikiMemoryMixedGuardCounterPoint] = {}
     for point in sweep.points:
         by_block_radius.setdefault(
             (point.guard_counter_block_pages, point.guard_share_radius_blocks),
             [],
         ).append(point)
-        if point.guard_share_radius_blocks == 0:
-            local_by_block_fraction[
-                (point.guard_counter_block_pages, point.dense_page_fraction)
-            ] = point
 
     entries = []
     chosen_radius_by_block: dict[int, int] = {}
@@ -3679,30 +3677,66 @@ def run_wiki_memory_learned_guard_sharing_sweep(
             )
         )
 
-    eval_points = []
-    for point in sweep.points:
-        chosen_radius = chosen_radius_by_block[point.guard_counter_block_pages]
-        if point.guard_share_radius_blocks != chosen_radius:
-            continue
-        local_point = local_by_block_fraction[
-            (point.guard_counter_block_pages, point.dense_page_fraction)
-        ]
-        target = 1.0 if point.dense_page_fraction >= min_dense_fraction_to_enable else 0.0
-        eval_points.append(
-            WikiMemoryLearnedGuardSharingPoint(
-                dense_page_fraction=point.dense_page_fraction,
-                tag_threshold=point.tag_threshold,
-                guard_counter_block_pages=point.guard_counter_block_pages,
-                chosen_share_radius_blocks=chosen_radius,
-                target_dense_enable_rate=target,
-                local_dense_enable_rate=local_point.dense_enable_rate,
-                learned_dense_enable_rate=point.dense_shared_enable_rate,
-                local_sparse_false_enable_rate=local_point.sparse_false_enable_rate,
-                learned_sparse_false_enable_rate=point.sparse_shared_false_enable_rate,
-                dense_raw_wins=point.dense_raw_wins,
-                dense_raw_losses=point.dense_raw_losses,
+    def append_eval_points(
+        source_points: Tuple[WikiMemoryMixedGuardCounterPoint, ...],
+        eval_seed: int,
+    ) -> None:
+        by_fraction: dict[tuple[int, float, int], WikiMemoryMixedGuardCounterPoint] = {}
+        for source in source_points:
+            by_fraction[
+                (
+                    source.guard_counter_block_pages,
+                    source.dense_page_fraction,
+                    source.guard_share_radius_blocks,
+                )
+            ] = source
+        for point in source_points:
+            chosen_radius = chosen_radius_by_block[point.guard_counter_block_pages]
+            if point.guard_share_radius_blocks != chosen_radius:
+                continue
+            local_point = by_fraction[
+                (point.guard_counter_block_pages, point.dense_page_fraction, 0)
+            ]
+            target = (
+                1.0
+                if point.dense_page_fraction >= min_dense_fraction_to_enable
+                else 0.0
             )
+            eval_points.append(
+                WikiMemoryLearnedGuardSharingPoint(
+                    eval_seed=eval_seed,
+                    dense_page_fraction=point.dense_page_fraction,
+                    tag_threshold=point.tag_threshold,
+                    guard_counter_block_pages=point.guard_counter_block_pages,
+                    chosen_share_radius_blocks=chosen_radius,
+                    target_dense_enable_rate=target,
+                    local_dense_enable_rate=local_point.dense_enable_rate,
+                    learned_dense_enable_rate=point.dense_shared_enable_rate,
+                    local_sparse_false_enable_rate=local_point.sparse_false_enable_rate,
+                    learned_sparse_false_enable_rate=point.sparse_shared_false_enable_rate,
+                    dense_raw_wins=point.dense_raw_wins,
+                    dense_raw_losses=point.dense_raw_losses,
+                )
+            )
+
+    eval_points = []
+    train_seed = int(mixed_sweep_kwargs.get("quality_probe_seed", 1201))
+    append_eval_points(sweep.points, train_seed)
+
+    for eval_seed in clean_eval_seeds:
+        if eval_seed == train_seed:
+            continue
+        eval_kwargs = dict(mixed_sweep_kwargs)
+        eval_kwargs["quality_probe_seed"] = eval_seed
+        eval_sweep = run_wiki_memory_mixed_guard_counter_sweep(
+            total_pages=total_pages,
+            dense_page_fractions=dense_page_fractions,
+            tag_thresholds=(tag_threshold,),
+            guard_counter_block_page_options=clean_blocks,
+            guard_share_radius_options=clean_radii,
+            **eval_kwargs,
         )
+        append_eval_points(eval_sweep.points, eval_seed)
 
     radius_lut_bits = len(clean_blocks) * max(1, int(np.ceil(np.log2(max(clean_radii) + 1))))
     return WikiMemoryLearnedGuardSharingResult(

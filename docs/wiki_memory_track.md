@@ -255,10 +255,14 @@ local tile choice.
 The first learned sharing-radius LUT replaces that hand choice. Training on the
 25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and 1,024
 learns `256 -> radius 2`, `512 -> radius 1`, and `1024 -> radius 0`. The table
-is only 0.75B for these three geometry entries. Evaluation hits the target:
-25% dense stays off, 50% dense rises from 50% local dense-block coverage to
-100% for 256 and 512-page blocks, 75% dense remains 100%, and sparse
-false-enable stays 0.00%.
+is only 0.75B for these three geometry entries. Training-seed evaluation hits
+the target: 25% dense stays off, 50% dense rises from 50% local dense-block
+coverage to 100% for 256 and 512-page blocks, 75% dense remains 100%, and
+sparse false-enable stays 0.00%. The held-out seed audit is the first real
+failure case: seeds 1301 and 1401 generalize, but seed 1501 has 99/1 dense
+wins/losses at 75% dense, and the strict `loss == 0` guard collapses dense
+coverage despite sparse false-enable staying 0.00%. The next control variable
+is therefore loss tolerance or loss decay, not only sharing radius.
 
 ## Kill Criteria
 

@@ -46,6 +46,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
     print()
     print("Evaluation")
     headers = [
+        "seed",
         "dense%",
         "blk_pg",
         "radius",
@@ -61,6 +62,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
     print("-" * len(header_line))
     for point in result.points:
         row = [
+            f"{point.eval_seed}",
             fmt_pct(point.dense_page_fraction),
             f"{point.guard_counter_block_pages}",
             f"{point.chosen_share_radius_blocks}",
@@ -87,6 +89,7 @@ def main() -> None:
             guard_counter_block_page_options=(256, 512, 1024),
             guard_share_radius_options=(0, 1, 2),
             quality_probe_event_options=((512, 256),),
+            eval_seeds=(1201, 1301, 1401, 1501),
         )
     )
 
