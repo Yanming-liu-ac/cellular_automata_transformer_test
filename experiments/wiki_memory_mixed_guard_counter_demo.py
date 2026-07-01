@@ -34,7 +34,8 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
         f"summary={result.summary_banks}x{result.summary_width}x"
         f"{result.summary_bits}-bit, tag_bits={result.density_tag_bits}, "
         f"counter={first.guard_counter_bits}b/{first.guard_counter_block_pages}p/"
-        f"need{first.guard_required_win_count}"
+        f"need{first.guard_required_win_count}, "
+        f"share_r={first.guard_share_radius_blocks}"
     )
     headers = [
         "dense%",
@@ -47,8 +48,12 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
         "blk_d",
         "en_s",
         "en_d",
+        "sh_s",
+        "sh_d",
         "s_false",
         "d_on",
+        "sh_false",
+        "sh_on",
         "s_w/l",
         "d_w/l",
         "s_cmax",
@@ -70,8 +75,12 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
             f"{point.dense_guard_blocks}",
             f"{point.sparse_enabled_blocks}",
             f"{point.dense_enabled_blocks}",
+            f"{point.sparse_shared_enabled_blocks}",
+            f"{point.dense_shared_enabled_blocks}",
             fmt_pct(point.sparse_false_enable_rate),
             fmt_pct(point.dense_enable_rate),
+            fmt_pct(point.sparse_shared_false_enable_rate),
+            fmt_pct(point.dense_shared_enable_rate),
             f"{point.sparse_raw_wins}/{point.sparse_raw_losses}",
             f"{point.dense_raw_wins}/{point.dense_raw_losses}",
             f"{point.sparse_max_win_counter}/{point.sparse_max_loss_counter}",
@@ -83,8 +92,8 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
     print()
     print("Interpretation:")
     print("- One mixed event stream feeds sparse and dense guard blocks together.")
-    print("- en_s/en_d count blocks whose low-bit counters pass the tag+guard rule.")
-    print("- s_false should stay near zero; d_on shows dense block coverage.")
+    print("- en_s/en_d are local counters; sh_s/sh_d add same-tag neighbor sharing.")
+    print("- false columns should stay near zero; on columns show dense block coverage.")
     print("- cmax columns are max saturated win/loss counters within sparse/dense blocks.")
 
 

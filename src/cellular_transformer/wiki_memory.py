@@ -597,6 +597,7 @@ class WikiMemoryMixedGuardCounterPoint:
     dense_density_tag: int
     guard_counter_block_pages: int
     guard_counter_bits: int
+    guard_share_radius_blocks: int
     guard_required_win_count: int
     guard_counter_state_bytes: float
     probe_queries: int
@@ -607,6 +608,8 @@ class WikiMemoryMixedGuardCounterPoint:
     dense_guard_blocks: int
     sparse_enabled_blocks: int
     dense_enabled_blocks: int
+    sparse_shared_enabled_blocks: int
+    dense_shared_enabled_blocks: int
     sparse_raw_wins: int
     sparse_raw_losses: int
     dense_raw_wins: int
@@ -617,6 +620,8 @@ class WikiMemoryMixedGuardCounterPoint:
     dense_max_loss_counter: int
     sparse_false_enable_rate: float
     dense_enable_rate: float
+    sparse_shared_false_enable_rate: float
+    dense_shared_enable_rate: float
 
 
 @dataclass(frozen=True)
@@ -2835,6 +2840,24 @@ def _saturating_count(value: int, counter_bits: int) -> int:
     return min(max_value, max(0, int(value)))
 
 
+def _shared_counter_pass(
+    win_counters: np.ndarray,
+    loss_counters: np.ndarray,
+    required_win_count: int,
+    share_radius_blocks: int,
+) -> np.ndarray:
+    if share_radius_blocks < 0:
+        raise ValueError("share_radius_blocks must be non-negative")
+    pass_mask = np.zeros(len(win_counters), dtype=np.bool_)
+    for index in range(len(win_counters)):
+        start = max(0, index - share_radius_blocks)
+        end = min(len(win_counters), index + share_radius_blocks + 1)
+        shared_win = int(np.max(win_counters[start:end])) if end > start else 0
+        shared_loss = int(np.max(loss_counters[start:end])) if end > start else 0
+        pass_mask[index] = shared_win >= required_win_count and shared_loss == 0
+    return pass_mask
+
+
 def run_wiki_memory_density_tag_sweep(
     total_pages: int = 2048,
     dense_page_fractions: Tuple[float, ...] = (0.25, 0.50, 0.75),
@@ -3204,6 +3227,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
     quality_probe_seed: int = 1201,
     guard_counter_bits: int = 4,
     guard_counter_block_pages: int = 512,
+    guard_share_radius_blocks: int = 1,
     target_route_coverage: float = 1.0,
     train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
@@ -3232,6 +3256,8 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         raise ValueError("guard_counter_bits must be positive")
     if guard_counter_block_pages <= 0:
         raise ValueError("guard_counter_block_pages must be positive")
+    if guard_share_radius_blocks < 0:
+        raise ValueError("guard_share_radius_blocks must be non-negative")
     clean_fractions = tuple(dict.fromkeys(float(value) for value in dense_page_fractions))
     clean_thresholds = tuple(dict.fromkeys(int(value) for value in tag_thresholds))
     if len(clean_fractions) == 0:
@@ -3361,6 +3387,18 @@ def run_wiki_memory_mixed_guard_counter_sweep(
             (stream.win_counters[dense_slice] >= guard_required_win_count)
             & (stream.loss_counters[dense_slice] == 0)
         )
+        sparse_shared_pass = _shared_counter_pass(
+            stream.win_counters[sparse_slice],
+            stream.loss_counters[sparse_slice],
+            guard_required_win_count,
+            guard_share_radius_blocks,
+        )
+        dense_shared_pass = _shared_counter_pass(
+            stream.win_counters[dense_slice],
+            stream.loss_counters[dense_slice],
+            guard_required_win_count,
+            guard_share_radius_blocks,
+        )
         guard_counter_state_bytes = (
             (stream.sparse_blocks + stream.dense_blocks) * 2 * guard_counter_bits / 8.0
         )
@@ -3370,6 +3408,12 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                 int(np.count_nonzero(sparse_pass)) if sparse_tag >= threshold else 0
             )
             dense_enabled = int(np.count_nonzero(dense_pass)) if dense_tag >= threshold else 0
+            sparse_shared_enabled = (
+                int(np.count_nonzero(sparse_shared_pass)) if sparse_tag >= threshold else 0
+            )
+            dense_shared_enabled = (
+                int(np.count_nonzero(dense_shared_pass)) if dense_tag >= threshold else 0
+            )
             points.append(
                 WikiMemoryMixedGuardCounterPoint(
                     total_pages=total_pages,
@@ -3379,6 +3423,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                     dense_density_tag=dense_tag,
                     guard_counter_block_pages=guard_counter_block_pages,
                     guard_counter_bits=guard_counter_bits,
+                    guard_share_radius_blocks=guard_share_radius_blocks,
                     guard_required_win_count=guard_required_win_count,
                     guard_counter_state_bytes=guard_counter_state_bytes,
                     probe_queries=quality_probe_queries,
@@ -3389,6 +3434,8 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                     dense_guard_blocks=stream.dense_blocks,
                     sparse_enabled_blocks=sparse_enabled,
                     dense_enabled_blocks=dense_enabled,
+                    sparse_shared_enabled_blocks=sparse_shared_enabled,
+                    dense_shared_enabled_blocks=dense_shared_enabled,
                     sparse_raw_wins=int(np.sum(stream.raw_wins[sparse_slice])),
                     sparse_raw_losses=int(np.sum(stream.raw_losses[sparse_slice])),
                     dense_raw_wins=int(np.sum(stream.raw_wins[dense_slice])),
@@ -3420,6 +3467,16 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                     ),
                     dense_enable_rate=(
                         dense_enabled / float(stream.dense_blocks)
+                        if stream.dense_blocks
+                        else 0.0
+                    ),
+                    sparse_shared_false_enable_rate=(
+                        sparse_shared_enabled / float(stream.sparse_blocks)
+                        if stream.sparse_blocks
+                        else 0.0
+                    ),
+                    dense_shared_enable_rate=(
+                        dense_shared_enabled / float(stream.dense_blocks)
                         if stream.dense_blocks
                         else 0.0
                     ),

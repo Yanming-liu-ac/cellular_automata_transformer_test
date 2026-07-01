@@ -236,15 +236,15 @@ recovers 99.22% and 99.32% recall while cutting flat reads by 72.94% and
 65.62%. The counter state is only 128B for 2,048 pages when stored per
 16-page guard block.
 
-The first mixed-stream counter diagnostic removes the separate sparse/dense
-probe windows. One 512-query / 256-update event stream feeds both regions and
-updates two 4-bit counters per 512-page guard block. This keeps sparse false
-enable at 0.00% in all tested density mixes. It also exposes the next hardware
-issue: at 50% dense pages, only one of two dense guard blocks enables even
-though dense wins are 58/0 overall; at 75% dense pages, all three dense blocks
-enable with 129/0 wins/losses. The direction is right, but block counters need
-either more observation time, neighbor sharing, or a learned threshold before
-they can replace the region-level probe completely.
+The mixed-stream counter diagnostic removes the separate sparse/dense probe
+windows. One 512-query / 256-update event stream feeds both regions and updates
+two 4-bit counters per 512-page guard block. Local counters keep sparse false
+enable at 0.00%, but at 50% dense pages only one of two dense guard blocks
+enables despite 58/0 aggregate dense wins/losses. Same-tag one-hop sharing
+fixes that locality failure: the 50% dense case rises from 1/2 to 2/2 dense
+blocks enabled, the 75% dense case stays 3/3, and sparse false-enable remains
+0.00%. The hardware lesson is now sharper: density tags should gate short-range
+counter sharing, not just local tile choice.
 
 ## Kill Criteria
 

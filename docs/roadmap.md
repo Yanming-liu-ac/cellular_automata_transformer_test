@@ -465,13 +465,12 @@ counters per 16-page guard block. The hand rule is `c_win >= 3` and
 
 The first true mixed-stream counter diagnostic now exists. With a single
 512-query / 256-update sparse/dense stream and two 4-bit counters per 512-page
-guard block, sparse false-enable stays at 0.00%. The 25% dense case correctly
-enables no dense blocks, the 75% dense case enables all 3 dense blocks, and the
-50% dense case enables only 1 of 2 dense blocks despite 58/0 aggregate
-dense wins/losses. The next step is therefore not just learning the threshold;
-it is counter locality: longer observation windows, neighbor counter sharing,
-or a two-level block/region guard that preserves sparse safety while recovering
-full dense coverage.
+guard block, local counters keep sparse false-enable at 0.00% but enable only
+1 of 2 dense blocks in the 50% dense case despite 58/0 aggregate dense wins.
+Same-tag one-hop counter sharing fixes the locality gap: 50% dense reaches 2/2
+dense blocks, 75% dense stays 3/3, and sparse false-enable remains 0.00%. The
+next step is to learn the shared-counter threshold and test whether the same
+rule survives smaller guard blocks, longer streams, and noisier update mixes.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

@@ -419,11 +419,12 @@ need a local low-bit quality guard.
 The mixed-stream version is the first less-oracular version of that guard. It
 feeds sparse and dense regions from one 512-query / 256-update stream and stores
 two 4-bit counters per 512-page guard block. Sparse false-enable remains 0.00%,
-which is the safety property we need. The limitation is coverage: the 75% dense
-case enables all three dense blocks, but the 50% dense case enables only one of
-two dense blocks even though aggregate dense evidence is strong at 58/0
-wins/losses. This says the next CA rule needs counter sharing or learned
-block-level thresholds, not just more tag bits.
+which is the safety property we need. Purely local counters under-cover the
+50% dense case, enabling only one of two dense blocks even though aggregate
+dense evidence is strong at 58/0 wins/losses. Same-tag one-hop sharing repairs
+that without opening sparse blocks: 50% dense becomes 2/2 dense blocks enabled,
+75% dense stays 3/3, and sparse false-enable remains 0.00%. This says the next
+CA rule should learn when to share local evidence, not just when to flip a tile.
 
 ## First Retrieval Prototype
 
