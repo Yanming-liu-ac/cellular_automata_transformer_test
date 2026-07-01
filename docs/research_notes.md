@@ -681,16 +681,18 @@ moves from `retire128c4` to `retire128c2`: total on-chip state falls from about
 The forty-seventh sweep targets the failure mode that the forty-sixth sweep only
 hinted at: hot-token deletions that share Bloom slots with rare tokens. The
 adversarial generator first inserts rare tokens, then selects hot colliders with
-shared Bloom slots and retires them. At `8 bits/entry`, 1-bit counters collapse
-visible rare-token rate to about 1.6%, so they are rejected for exact sidecar
-use. Two-bit counters keep about 98.4% visible rare-token rate but no longer
-meet the robust exact-memory contract. Three-bit counters restore 100.0%
-visible rare-token rate with 100.0% repaired coverage in this stress. The
-current budget therefore moves again, from `retire128c2` to `retire128c3`: total
-on-chip state is about 392.8KB, 32-tile utilization is about 76.7%, and state
-tiles are 25. This is the right kind of regression: the sidecar remains inside
-the tile budget, while the adversarial test prevents an over-compressed metadata
-format from becoming the default.
+shared Bloom slots and retires them. It now varies colliders per rare token from
+1 to 8. At `8 bits/entry`, 1-bit counters collapse visible rare-token rate to
+1.6% with one collider and 0.0% with eight, so they are rejected for exact
+sidecar use. Two-bit counters keep 98.4% visible rare-token rate with one
+collider, but fall to 96.9% with eight and no longer meet the robust
+exact-memory contract. Three-bit counters restore 100.0% visible rare-token rate
+with 100.0% repaired coverage through the 8-collider stress. The current budget
+therefore moves again, from `retire128c2` to `retire128c3`: total on-chip state
+is about 392.8KB, 32-tile utilization is about 76.7%, and state tiles are 25.
+This is the right kind of regression: the sidecar remains inside the tile
+budget, while the adversarial test prevents an over-compressed metadata format
+from becoming the default.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6

@@ -437,10 +437,11 @@ aggressive target rather than the current baseline.
 The adversarial-collision check tightens that conclusion. It chooses hot tokens
 that share Bloom slots with rare tokens before retiring them. Under this chosen
 collision pattern, 1-bit counters nearly erase rare-token visibility, 2-bit
-counters keep about 98.4%, and 3-bit counters restore 100.0% measured visibility
-at `8 bits/entry`. The robust baseline therefore moves to retire128c3: it is
-not as small as c2, but it protects the exact rare-token sidecar under targeted
-hot-token deletion.
+counters keep about 98.4% with one collider and about 96.9% with eight
+colliders per rare token, and 3-bit counters restore 100.0% measured visibility
+at `8 bits/entry` across that multi-collider stress. The robust baseline
+therefore moves to retire128c3: it is not as small as c2, but it protects the
+exact rare-token sidecar under targeted hot-token deletion.
 
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in

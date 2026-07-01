@@ -1220,6 +1220,7 @@ class CsaHcaRareDirectoryBloomRetirementCollisionPoint:
     bank_count: int
     bank_mode: str
     sidecar_salt: int
+    colliders_per_rare: int
     rare_tokens: int
     collider_tokens: int
     missing_colliders: int
@@ -1247,6 +1248,7 @@ class CsaHcaRareDirectoryBloomRetirementCollisionResult:
     hca_threshold: int
     directory_blocks_per_token: int
     rare_token_count: int
+    colliders_per_rare_values: Tuple[int, ...]
     bits_per_entries: Tuple[int, ...]
     hash_count: int
     counter_bits_values: Tuple[int, ...]
@@ -5144,6 +5146,7 @@ def run_csa_hca_rare_directory_bloom_retirement_compression_sweep(
 def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
     bits_per_entries: Tuple[int, ...] = (4, 6, 8),
     counter_bits_values: Tuple[int, ...] = (1, 2, 3, 4),
+    colliders_per_rare_values: Tuple[int, ...] = (1, 2, 4, 8),
     rare_token_count: int = 128,
     retire_count_threshold: int = 15,
     hash_count: int = 3,
@@ -5188,6 +5191,11 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
         raise ValueError("counter_bits_values must be positive")
     if any(bits > 16 for bits in clean_counter_bits):
         raise ValueError("counter_bits_values must be at most 16")
+    if len(colliders_per_rare_values) == 0:
+        raise ValueError("colliders_per_rare_values must not be empty")
+    clean_colliders = tuple(sorted({int(value) for value in colliders_per_rare_values}))
+    if any(value <= 0 for value in clean_colliders):
+        raise ValueError("colliders_per_rare_values must be positive")
     if rare_token_count <= 0:
         raise ValueError("rare_token_count must be positive")
     if retire_count_threshold <= 0:
@@ -5250,83 +5258,86 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
 
     points = []
     for bits_per_entry in clean_bits:
-        stream, query_tokens, found_colliders, missing_colliders, mean_overlap = (
-            _make_bloom_collision_retirement_stress_case(
-                config=config,
-                hca_threshold=hca_threshold,
-                rare_token_count=rare_token_count,
-                bits_per_entry=bits_per_entry,
-                hash_count=hash_count,
-                bank_count=bank_count,
-                bank_mode=bank_mode,
-                sidecar_salt=sidecar_salt,
-                seed=eval_seed + bits_per_entry * 997,
+        for colliders_per_rare in clean_colliders:
+            stream, query_tokens, found_colliders, missing_colliders, mean_overlap = (
+                _make_bloom_collision_retirement_stress_case(
+                    config=config,
+                    hca_threshold=hca_threshold,
+                    rare_token_count=rare_token_count,
+                    colliders_per_rare=colliders_per_rare,
+                    bits_per_entry=bits_per_entry,
+                    hash_count=hash_count,
+                    bank_count=bank_count,
+                    bank_mode=bank_mode,
+                    sidecar_salt=sidecar_salt,
+                    seed=eval_seed + bits_per_entry * 997 + colliders_per_rare * 131,
+                )
             )
-        )
-        index = LowBitCompressedBlockIndex(config)
-        global_summary = LowBitDenseContext(global_config)
-        for position, token in enumerate(stream):
-            index.update(int(token), position)
-            global_summary.update(int(token))
+            index = LowBitCompressedBlockIndex(config)
+            global_summary = LowBitDenseContext(global_config)
+            for position, token in enumerate(stream):
+                index.update(int(token), position)
+                global_summary.update(int(token))
 
-        exact_counts = _build_exact_block_counts(stream, config.block_size)
-        directory = _build_rare_block_directory(
-            exact_counts=exact_counts,
-            hca_threshold=hca_threshold,
-            max_blocks_per_token=directory_blocks_per_token,
-        )
-        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
-        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
-
-        for counter_bits in clean_counter_bits:
-            point = _evaluate_rare_directory_bloom_retirement_point(
-                insert_count_threshold=1,
-                retire_count_threshold=retire_count_threshold,
-                scenario="adversarial_collision",
-                config=config,
-                index=index,
-                global_summary=global_summary,
+            exact_counts = _build_exact_block_counts(stream, config.block_size)
+            directory = _build_rare_block_directory(
                 exact_counts=exact_counts,
-                directory=directory,
-                directory_blocks_per_token=directory_blocks_per_token,
-                directory_entry_bytes=directory_entry_bytes,
                 hca_threshold=hca_threshold,
-                route_lut=route_lut,
-                fanout_lut=fanout_lut,
-                min_read_blocks_per_token=min_read_blocks_per_token,
-                recent_blocks=recent_blocks,
-                query_tokens=query_tokens,
-                stream=stream,
-                bits_per_entry=bits_per_entry,
-                hash_count=hash_count,
-                counter_bits=counter_bits,
-                bank_count=bank_count,
-                bank_mode=bank_mode,
-                sidecar_salt=sidecar_salt,
+                max_blocks_per_token=directory_blocks_per_token,
             )
-            points.append(
-                CsaHcaRareDirectoryBloomRetirementCollisionPoint(
-                    scenario=point.scenario,
+            directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+            recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+
+            for counter_bits in clean_counter_bits:
+                point = _evaluate_rare_directory_bloom_retirement_point(
+                    insert_count_threshold=1,
+                    retire_count_threshold=retire_count_threshold,
+                    scenario="adversarial_collision",
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    directory_entry_bytes=directory_entry_bytes,
+                    hca_threshold=hca_threshold,
+                    route_lut=route_lut,
+                    fanout_lut=fanout_lut,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                    stream=stream,
                     bits_per_entry=bits_per_entry,
                     hash_count=hash_count,
                     counter_bits=counter_bits,
                     bank_count=bank_count,
                     bank_mode=bank_mode,
                     sidecar_salt=sidecar_salt,
-                    rare_tokens=point.final_rare_tokens,
-                    collider_tokens=found_colliders,
-                    missing_colliders=missing_colliders,
-                    mean_slot_overlap=mean_overlap,
-                    sidecar_state_bytes=point.sidecar_state_bytes,
-                    visible_active_rare_rate=point.visible_active_rare_rate,
-                    hot_polluted_token_rate=point.hot_polluted_token_rate,
-                    update_bytes_per_context_token=point.update_bytes_per_context_token,
-                    hca_query_rate=point.hca_query_rate,
-                    rare_false_hca_rate=point.rare_false_hca_rate,
-                    repaired_relevant_coverage=point.repaired_relevant_coverage,
-                    token_read_reduction=point.token_read_reduction,
                 )
-            )
+                points.append(
+                    CsaHcaRareDirectoryBloomRetirementCollisionPoint(
+                        scenario=point.scenario,
+                        bits_per_entry=bits_per_entry,
+                        hash_count=hash_count,
+                        counter_bits=counter_bits,
+                        bank_count=bank_count,
+                        bank_mode=bank_mode,
+                        sidecar_salt=sidecar_salt,
+                        colliders_per_rare=colliders_per_rare,
+                        rare_tokens=point.final_rare_tokens,
+                        collider_tokens=found_colliders,
+                        missing_colliders=missing_colliders,
+                        mean_slot_overlap=mean_overlap,
+                        sidecar_state_bytes=point.sidecar_state_bytes,
+                        visible_active_rare_rate=point.visible_active_rare_rate,
+                        hot_polluted_token_rate=point.hot_polluted_token_rate,
+                        update_bytes_per_context_token=point.update_bytes_per_context_token,
+                        hca_query_rate=point.hca_query_rate,
+                        rare_false_hca_rate=point.rare_false_hca_rate,
+                        repaired_relevant_coverage=point.repaired_relevant_coverage,
+                        token_read_reduction=point.token_read_reduction,
+                    )
+                )
 
     return CsaHcaRareDirectoryBloomRetirementCollisionResult(
         context_length=context_length,
@@ -5338,6 +5349,7 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
         hca_threshold=hca_threshold,
         directory_blocks_per_token=directory_blocks_per_token,
         rare_token_count=rare_token_count,
+        colliders_per_rare_values=clean_colliders,
         bits_per_entries=clean_bits,
         hash_count=hash_count,
         counter_bits_values=clean_counter_bits,
@@ -5768,6 +5780,7 @@ def _make_bloom_collision_retirement_stress_case(
     config: CompressedBlockIndexConfig,
     hca_threshold: int,
     rare_token_count: int,
+    colliders_per_rare: int,
     bits_per_entry: int,
     hash_count: int,
     bank_count: int,
@@ -5781,6 +5794,10 @@ def _make_bloom_collision_retirement_stress_case(
         raise ValueError("rare_token_count must be positive")
     if hca_threshold <= 1:
         raise ValueError("hca_threshold must be greater than 1")
+    if colliders_per_rare <= 0:
+        raise ValueError("colliders_per_rare must be positive")
+    if 1 + colliders_per_rare * hca_threshold > config.block_size:
+        raise ValueError("colliders_per_rare does not fit in one block")
     if config.hot_tokens + rare_token_count >= config.vocab_size:
         raise ValueError("vocab does not have room for rare collision tokens")
 
@@ -5801,6 +5818,13 @@ def _make_bloom_collision_retirement_stress_case(
     )
     candidate_start = config.hot_tokens + rare_token_count
     candidate_span = max(1, config.vocab_size - candidate_start)
+    slot_to_candidates = {slot: [] for slot in range(bit_count)}
+    candidate_slots: Dict[int, set[int]] = {}
+    for candidate in range(candidate_start, config.vocab_size):
+        slots = set(sidecar.slots(int(candidate)))
+        candidate_slots[int(candidate)] = slots
+        for slot in slots:
+            slot_to_candidates[int(slot)].append(int(candidate))
     used_colliders = set()
     colliders = []
     overlaps = []
@@ -5808,26 +5832,43 @@ def _make_bloom_collision_retirement_stress_case(
 
     for rare_index, rare_token in enumerate(rare_tokens):
         rare_slots = set(sidecar.slots(int(rare_token)))
-        best_token = None
-        best_overlap = 0
-        start = int(rng.integers(0, candidate_span))
-        for attempt in range(candidate_span):
-            candidate = candidate_start + ((start + attempt * 37 + rare_index * 101) % candidate_span)
-            if candidate in used_colliders:
-                continue
-            overlap = len(rare_slots.intersection(sidecar.slots(int(candidate))))
-            if overlap > best_overlap:
-                best_token = int(candidate)
-                best_overlap = int(overlap)
-                if best_overlap >= min(hash_count, 2):
-                    break
-        if best_token is None:
-            missing += 1
-            best_token = candidate_start + ((rare_index * 193) % candidate_span)
-            best_overlap = len(rare_slots.intersection(sidecar.slots(int(best_token))))
-        used_colliders.add(int(best_token))
-        colliders.append(int(best_token))
-        overlaps.append(int(best_overlap))
+        rare_colliders = []
+        total_overlap = 0
+        for collider_index in range(colliders_per_rare):
+            best_token = None
+            best_overlap = 0
+            pool = []
+            for slot in sorted(rare_slots):
+                pool.extend(slot_to_candidates[int(slot)])
+            if pool:
+                start = int(rng.integers(0, len(pool)))
+            else:
+                start = 0
+            seen_candidates = set()
+            for attempt in range(len(pool)):
+                candidate = int(pool[(start + attempt * 37) % len(pool)])
+                if candidate in seen_candidates:
+                    continue
+                seen_candidates.add(candidate)
+                if candidate in used_colliders:
+                    continue
+                overlap = len(rare_slots.intersection(candidate_slots[int(candidate)]))
+                if overlap > best_overlap:
+                    best_token = int(candidate)
+                    best_overlap = int(overlap)
+                    if best_overlap >= min(hash_count, 2):
+                        break
+            if best_token is None:
+                missing += 1
+                best_token = candidate_start + (
+                    (rare_index * 193 + collider_index * 997) % candidate_span
+                )
+                best_overlap = len(rare_slots.intersection(candidate_slots[int(best_token)]))
+            used_colliders.add(int(best_token))
+            rare_colliders.append(int(best_token))
+            total_overlap += int(best_overlap)
+        colliders.append(tuple(rare_colliders))
+        overlaps.append(total_overlap)
 
     non_tail_blocks = max(1, config.blocks - config.tail_blocks)
     if rare_token_count > non_tail_blocks:
@@ -5837,15 +5878,14 @@ def _make_bloom_collision_retirement_stress_case(
         block = (index * 3 + 7) % non_tail_blocks
         base_position = block * config.block_size
         stream[base_position] = int(rare_token)
-        collider = int(colliders[index])
-        for occurrence in range(hca_threshold):
-            offset = 1 + occurrence
-            if offset >= config.block_size:
-                break
-            stream[base_position + offset] = collider
+        offset = 1
+        for collider in colliders[index]:
+            for _ in range(hca_threshold):
+                stream[base_position + offset] = int(collider)
+                offset += 1
 
     query_tokens = np.resize(rare_tokens, config.queries).astype(np.int32)
-    found_colliders = rare_token_count - missing
+    found_colliders = rare_token_count * colliders_per_rare - missing
     mean_overlap = float(sum(overlaps) / len(overlaps)) if overlaps else 0.0
     return stream, query_tokens, found_colliders, missing, mean_overlap
 

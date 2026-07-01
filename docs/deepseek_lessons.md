@@ -545,9 +545,11 @@ The compression and adversarial-collision sweeps then find the next
 DeepSeek-like step: metadata should be as narrow as the measured routing task
 allows, but no narrower. Two-bit sidecar counters look sufficient on normal
 streams, but targeted hot-token deletions reduce visible rare-token rate to
-about 98.4%. Three-bit counters restore the robust point and keep the total
-event-profile state about 392.8KB. One-bit counters are tempting, but the
-adversarial sweep effectively rejects them for exact sidecar use.
+about 98.4% with one collider and 96.9% with eight colliders per rare token.
+Three-bit counters restore the robust point through that multi-collider stress
+and keep the total event-profile state about 392.8KB. One-bit counters are
+tempting, but the adversarial sweep effectively rejects them for exact sidecar
+use.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

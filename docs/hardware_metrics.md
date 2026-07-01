@@ -646,19 +646,23 @@ it produces a small rare-token visibility loss, so it should remain an
 aggressive candidate.
 
 The adversarial-collision sweep chooses hot tokens that share Bloom slots with
-rare tokens before retiring them:
+rare tokens before retiring them. It now varies the number of hot colliders per
+rare token:
 
 ```text
-bpe=8 counter=1  mean_overlap=1.62  visible_rare=1.6%    false_HCA=0.8%  coverage=99.2%
-bpe=8 counter=2  mean_overlap=1.62  visible_rare=98.4%   false_HCA=0.0%  coverage=100.0%
-bpe=8 counter=3  mean_overlap=1.62  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
-bpe=8 counter=4  mean_overlap=1.62  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+colliders/rare=1  counter=1  mean_overlap=1.59  visible_rare=1.6%    false_HCA=0.8%  coverage=99.2%
+colliders/rare=1  counter=2  mean_overlap=1.59  visible_rare=98.4%   false_HCA=0.0%  coverage=100.0%
+colliders/rare=1  counter=3  mean_overlap=1.59  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+colliders/rare=8  counter=1  mean_overlap=8.95  visible_rare=0.0%    false_HCA=5.5%  coverage=94.5%
+colliders/rare=8  counter=2  mean_overlap=8.95  visible_rare=96.9%   false_HCA=0.0%  coverage=100.0%
+colliders/rare=8  counter=3  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+colliders/rare=8  counter=4  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
 ```
 
 This demotes c2 from "robust baseline" to "normal-stream compression point."
 The current robust sidecar target is `8 bits/entry, 3-bit counters`: it keeps
-adversarial visible rare-token rate at 100% while cutting sidecar state from
-about 44.9KB to about 35.9KB.
+adversarial visible rare-token rate at 100% through the 8-collider stress while
+cutting sidecar state from about 44.9KB to about 35.9KB.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 
