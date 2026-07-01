@@ -3231,6 +3231,9 @@ def run_wiki_memory_mixed_guard_counter_sweep(
     guard_share_radius_blocks: int = 1,
     guard_counter_block_page_options: Tuple[int, ...] | None = None,
     guard_share_radius_options: Tuple[int, ...] | None = None,
+    recent_update_query_rate: float | None = None,
+    revision_update_rate: float | None = None,
+    cluster_update_rate: float | None = None,
     target_route_coverage: float = 1.0,
     train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
@@ -3292,6 +3295,12 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         raise ValueError("all guard counter block page options must be positive")
     if any(value < 0 for value in clean_guard_share_radii):
         raise ValueError("all guard share radius options must be non-negative")
+    if recent_update_query_rate is not None and not 0.0 <= recent_update_query_rate <= 1.0:
+        raise ValueError("recent_update_query_rate must be in [0, 1]")
+    if revision_update_rate is not None and not 0.0 <= revision_update_rate <= 1.0:
+        raise ValueError("revision_update_rate must be in [0, 1]")
+    if cluster_update_rate is not None and not 0.0 <= cluster_update_rate <= 1.0:
+        raise ValueError("cluster_update_rate must be in [0, 1]")
     clean_fractions = tuple(dict.fromkeys(float(value) for value in dense_page_fractions))
     clean_thresholds = tuple(dict.fromkeys(int(value) for value in tag_thresholds))
     if len(clean_fractions) == 0:
@@ -3349,6 +3358,18 @@ def run_wiki_memory_mixed_guard_counter_sweep(
             adaptive_max_groups=dense_max_groups,
             adaptive_score_margin=1,
         )
+        update_overrides = {}
+        if recent_update_query_rate is not None:
+            update_overrides["recent_update_query_rate"] = recent_update_query_rate
+        if revision_update_rate is not None:
+            update_overrides["revision_update_rate"] = revision_update_rate
+        if cluster_update_rate is not None:
+            update_overrides["cluster_update_rate"] = cluster_update_rate
+        if len(update_overrides) > 0:
+            sparse_base = replace(sparse_base, **update_overrides)
+            dense_base = replace(dense_base, **update_overrides)
+            sparse_dense = replace(sparse_dense, **update_overrides)
+            dense_dense = replace(dense_dense, **update_overrides)
 
         sparse_base_lut = train_wiki_memory_fanout_lut(
             config=sparse_base,

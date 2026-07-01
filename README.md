@@ -77,6 +77,7 @@ python experiments/wiki_memory_density_aware_tile_demo.py
 python experiments/wiki_memory_density_tag_demo.py
 python experiments/wiki_memory_mixed_guard_counter_demo.py
 python experiments/wiki_memory_mixed_guard_stress_demo.py
+python experiments/wiki_memory_mixed_guard_noise_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -136,6 +137,7 @@ The first experiments compare:
 - mixed-stream guard-counter sweeps that feed those low-bit counters from one
   sparse/dense event stream instead of separate region probes;
 - observation-window stress sweeps for the same shared guard counters;
+- update-noise stress sweeps for the shared guard counters;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

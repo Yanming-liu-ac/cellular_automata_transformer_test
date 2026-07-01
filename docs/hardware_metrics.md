@@ -308,8 +308,10 @@ coverage is 2/4, 1/2, and 1/1 for those block sizes; same-tag sharing raises
 the 512-page case to 2/2 at radius 1 and the 256-page case to 4/4 at radius 2.
 At 75% dense, all three block sizes are already full locally. In the 50% dense,
 512-page, radius-1 stress, shared dense coverage stays 2/2 across 128/64 to
-1,024/512 query/update windows. The state is cheap enough; the hardware problem
-is now controlled evidence sharing across local blocks.
+1,024/512 query/update windows. Raising revision updates to 80%, cluster
+updates to 60%, or both together keeps shared dense coverage at 2/2 and sparse
+false-enable at 0.00%. The state is cheap enough; the hardware problem is now
+controlled evidence sharing across local blocks.
 
 ## Retrieval-Lane Metrics
 

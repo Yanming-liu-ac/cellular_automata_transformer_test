@@ -426,6 +426,8 @@ radius-1 sharing repairs the 512-page case to full dense coverage without
 opening sparse blocks; 256-page blocks need radius 2. On the 50% dense,
 512-page, radius-1 setting, shared coverage stays 2/2 across 128/64, 256/128,
 512/256, and 1,024/512 query/update windows with sparse false-enable still
+0.00%. It also survives update-noise stress: revision 80%, cluster 60%, and the
+combined case all keep shared dense coverage at 2/2 and sparse false-enable at
 0.00%. This says the next CA rule should learn when to share local evidence,
 not just when to flip a tile.
 

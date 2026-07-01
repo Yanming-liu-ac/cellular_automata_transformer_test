@@ -473,7 +473,9 @@ blocks need radius 2 to reach 4/4. At 75% dense, all tested block sizes are
 already full locally. The first observation-window stress on the 50% dense,
 512-page, radius-1 setting keeps shared dense coverage at 2/2 and sparse
 false-enable at 0.00% from 128/64 through 1,024/512 query/update windows. The
-next step is to learn the shared-counter threshold under noisier update mixes.
+update-noise stress keeps the same 2/2 and 0.00% result with revision updates
+at 80%, cluster updates at 60%, and both together. The next step is to learn
+the shared-counter threshold and radius selection instead of hand-setting them.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

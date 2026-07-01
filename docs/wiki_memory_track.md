@@ -246,8 +246,11 @@ radius-1 sharing lifts the 512-page case to 2/2, while the finer 256-page case
 needs radius 2 to reach 4/4. At 75% dense, all tested block sizes are already
 fully enabled locally. A 50% dense observation-window stress keeps shared
 coverage at 2/2 and sparse false-enable at 0.00% from 128/64 through
-1,024/512 query/update windows. The hardware lesson is now sharper: density
-tags should gate short-range counter sharing, not just local tile choice.
+1,024/512 query/update windows. Update-noise stress also holds: raising
+revision updates to 80%, cluster updates to 60%, or both together keeps shared
+dense coverage at 2/2 and sparse false-enable at 0.00%. The hardware lesson is
+now sharper: density tags should gate short-range counter sharing, not just
+local tile choice.
 
 ## Kill Criteria
 
