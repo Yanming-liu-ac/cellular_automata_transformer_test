@@ -61,6 +61,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
     print("- learned_shift_selector adds multi-distribution selector training.")
     print("- two-branch diagnostics separate parser-tolerant factor downgrades from coverage repair.")
     print("- regime_counter_selector adds a small rolling regime signal to choose the branch.")
+    print("- traffic_regime_selector tests whether the regime signal can optimize over-strict traffic.")
     print("- Eval shifts parser noise, omitted fields, distractors, and claim count.")
     print("- covsafe/shiftguard are hand-coded diagnostics, not solved robust gates.")
     print("- A pass means every eval seed met accuracy, strict-recall, and under-strict gates.")

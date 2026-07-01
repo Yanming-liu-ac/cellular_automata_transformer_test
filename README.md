@@ -190,6 +190,9 @@ The first experiments compare:
   downgrades from coverage repair and expose the missing regime signal;
 - rolling-regime paragraph counters that choose between parser-tolerant and
   coverage-repair branches using tile-level low-bit statistics;
+- traffic-aware paragraph regime selector diagnostics showing that the current
+  coarse counters collapse to a conservative policy under randomized safety
+  gates and are not yet a better hardware baseline;
 - randomized held-out paragraph stress sweeps that mix parser, omission,
   distractor, and scale shifts;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat

@@ -57,6 +57,10 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
     print(
         "- regime_counter_selector chooses between them from aggregate low-bit counters."
     )
+    print(
+        "- traffic_regime_selector is a safety-tuned traffic diagnostic; under "
+        "random stress it currently collapses back to the conservative branch."
+    )
 
 
 def main() -> None:

@@ -641,6 +641,16 @@ random-matrix mean accuracy is about 68.66% and over-strict is about 30.60%.
 The next version should learn a traffic-aware regime policy, not merely a
 safety-first one.
 
+The first traffic-aware regime-policy attempt is now recorded as a boundary,
+not as a new baseline. A 128B two-bit regime LUT over the same aggregate
+counters can choose among four branches, bringing total controller state to
+392B. Aggressive tuning recovers some factor-branch over-strict savings but
+fails held-out safety; safety tuning passes the five named scenarios and the
+four randomized scenarios, but mostly collapses back to the conservative
+`regime_counter_selector` and is worse on several named shifts. This says the
+LLM-Wiki/CA-memory direction is still right, but traffic optimization needs
+richer local state than five coarse tile counters.
+
 ## Kill Criteria
 
 This track is not useful if:

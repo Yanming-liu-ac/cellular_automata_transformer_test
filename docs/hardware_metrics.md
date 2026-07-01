@@ -1554,6 +1554,7 @@ two_branch_selector: 234B controller, 27.25% mean over-strict, 9.38 touch/event,
 two_branch_factor_selector: 174B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/event, 1/4 failures
 regime_counter_selector: 238B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
+traffic_regime_selector: 392B controller, 27.20% mean over-strict, 9.38 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
@@ -1599,6 +1600,11 @@ regime_counter_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 
 regime_counter_selector omit_x2:         73.58% accuracy, 99.32% strict recall, 0.98% under, 25.44% over, 2/2 pass
 regime_counter_selector distractor_x2:   70.65% accuracy, 99.59% strict recall, 0.68% under, 28.66% over, 2/2 pass
 regime_counter_selector large_2k:        71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
+traffic_regime_selector default_1k:      73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
+traffic_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+traffic_regime_selector omit_x2:         72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
+traffic_regime_selector distractor_x2:   70.07% accuracy, 99.47% strict recall, 0.49% under, 29.44% over, 2/2 pass
+traffic_regime_selector large_2k:        70.07% accuracy, 98.74% strict recall, 0.93% under, 29.00% over, 2/2 pass
 ```
 
 This separates efficiency from robustness. The 144B guard is efficient and
@@ -1634,8 +1640,17 @@ branch passes 8/8, and the updated `regime_counter_selector` also passes 8/8
 after adding a highest-coverage-bucket gate. Its random-matrix mean accuracy is
 about 68.66%, strict recall is 99.46%, under-strict is 0.74%, and over-strict
 is 30.60%. This preserves the safety target but spends more repair traffic, so
-the next hardware metric is explicit: recover traffic without losing zero
+the next hardware metric was explicit: recover traffic without losing zero
 failures on randomized mixed shifts.
+
+The first traffic-aware version does not clear that metric. It adds a 128B
+two-bit regime LUT over the same aggregate counters and raises total controller
+state to 392B. The stable setting passes the same five named stress scenarios
+and four randomized scenarios, but the randomized matrix collapses back to the
+same 68.66% accuracy and 30.60% over-strict as `regime_counter_selector`, while
+named omit/distractor/large rows are worse. This rejects the current coarse
+traffic selector as a hardware baseline; the next metric should price richer
+local state rather than another selector over the same counters.
 
 ## Tile/Floorplan Metrics
 

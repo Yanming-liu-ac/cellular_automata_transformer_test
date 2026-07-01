@@ -765,6 +765,21 @@ to about 30.60%. The next target is therefore not just more robustness; it is a
 traffic-aware regime counter that keeps the same zero-failure safety while
 recovering some of the factor branch's lower over-strict traffic.
 
+The first traffic-aware regime counter is a useful negative result. It adds a
+128B two-bit regime LUT that can choose among four local branches:
+`factor_vote80b`, `learned_shift_selector`, `two_branch_selector`, and
+`two_branch_factor_selector`. Total controller state rises from 238B to 392B.
+An aggressive tuning lowered default over-strict traffic, but failed either
+the named distractor case or a randomized mixed-shift seed. The safety-tuned
+default passes the five named stress scenarios and the four randomized
+scenarios, but it collapses to the conservative regime-counter behavior on the
+random matrix and is worse on several named rows: default four-seed over-strict
+is 27.20% versus 26.81% for `regime_counter_selector`. The conclusion is that
+the current tile-level counters are not rich enough for traffic optimization.
+The next version should not add another branch selector; it should add better
+CA-native state, such as short-window disagreement deltas, parser-confidence
+history, or source/summary coverage volatility.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

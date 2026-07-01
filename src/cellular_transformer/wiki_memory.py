@@ -10479,6 +10479,9 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     ),
     regime_counter_random_train_count: int = 4,
     regime_counter_random_seed: int = 8801,
+    traffic_regime_under_importance_weight: float = 24.0,
+    traffic_regime_over_importance_weight: float = 0.75,
+    traffic_regime_target_penalty_weight: float = 32.0,
     learned_shift_selector_profiles: Tuple[str, ...] = (
         "default",
         "parser_x2",
@@ -10660,6 +10663,12 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("regime_counter_repair_bias_weight must be non-negative")
     if regime_counter_random_train_count < 0:
         raise ValueError("regime_counter_random_train_count must be non-negative")
+    if traffic_regime_under_importance_weight < 0.0:
+        raise ValueError("traffic_regime_under_importance_weight must be non-negative")
+    if traffic_regime_over_importance_weight < 0.0:
+        raise ValueError("traffic_regime_over_importance_weight must be non-negative")
+    if traffic_regime_target_penalty_weight < 0.0:
+        raise ValueError("traffic_regime_target_penalty_weight must be non-negative")
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -11386,9 +11395,9 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         branch_mixer_selector[index] = int(np.argmin(losses))
     branch_mixer_lut_bytes = float(np.prod(branch_mixer_selector.shape)) / 8.0
 
-    def predict_regime_branches(
+    def predict_regime_candidates(
         bucket_rows: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         base_modes = np.array(
             [
                 lut4[int(row[0]), int(row[1]), int(row[2]), int(row[3])]
@@ -11406,6 +11415,33 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             bucket_count - 1,
         )
         parser_miss_buckets = bucket_rows[:, 3]
+        learned_actions = (
+            learned_shift_selector[
+                base_modes,
+                vote_counts,
+                core_gap_buckets,
+                parser_miss_buckets,
+            ]
+            - 1
+        )
+        learned_modes = np.clip(
+            base_modes + learned_actions,
+            0,
+            mode_count - 1,
+        ).astype(np.int64)
+        parser_relief_mask = (
+            parser_relief_selector[
+                learned_modes,
+                vote_counts,
+                core_gap_buckets,
+                parser_miss_buckets,
+            ].astype(np.bool_)
+            & (learned_modes == 2)
+            & (parser_miss_buckets >= two_branch_parser_relief_min_parser_miss_bucket)
+            & (core_gap_buckets <= two_branch_parser_relief_max_core_gap_bucket)
+        )
+        relief_modes = learned_modes.copy()
+        relief_modes[parser_relief_mask] = 1
         factor_modes = base_modes.copy()
         factor_modes[
             (factor_modes == 2) & (vote_counts >= selector_vote_threshold)
@@ -11423,7 +11459,25 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         )
         repair_modes = factor_modes.copy()
         repair_modes[repair_mask] = 2
-        return factor_modes, repair_modes
+        mixer_choose_learned = branch_mixer_selector[
+            factor_modes,
+            learned_modes,
+            vote_counts,
+            core_gap_buckets,
+            parser_miss_buckets,
+        ].astype(np.bool_)
+        mixer_modes = np.where(
+            mixer_choose_learned,
+            learned_modes,
+            factor_modes,
+        ).astype(np.int64)
+        return factor_modes, learned_modes, relief_modes, repair_modes, mixer_modes
+
+    def predict_regime_branches(
+        bucket_rows: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        candidates = predict_regime_candidates(bucket_rows)
+        return candidates[0], candidates[3]
 
     def regime_rate_bucket(value: float, thresholds: Tuple[float, float, float]) -> int:
         if value >= thresholds[2]:
@@ -11447,7 +11501,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         return (
             regime_rate_bucket(parser_high, (0.50, 0.70, 0.75)),
             regime_rate_bucket(coverage_high, (0.30, 0.40, 0.45)),
-            regime_rate_bucket(agreement_high, (0.45, 0.56, 0.60)),
+            regime_rate_bucket(agreement_high, (0.45, 0.51, 0.60)),
             regime_rate_bucket(error_mean, (1.50, 1.60, 1.70)),
             scale_bucket,
         )
@@ -11492,11 +11546,70 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             )
         return float(loss)
 
+    def traffic_regime_branch_loss(
+        labels: np.ndarray,
+        predicted: np.ndarray,
+    ) -> float:
+        claim_total = float(labels.shape[0])
+        incorrect = float(np.sum(predicted != labels))
+        over_strict = float(np.sum(predicted > labels))
+        under_strict = float(np.sum(predicted < labels))
+        strict_true = labels == 2
+        strict_pred = predicted == 2
+        strict_true_count = int(np.sum(strict_true))
+        strict_recall = (
+            float(np.sum(strict_true & strict_pred)) / float(strict_true_count)
+            if strict_true_count
+            else 1.0
+        )
+        accuracy = 1.0 - incorrect / claim_total
+        under_strict_rate = under_strict / claim_total
+        loss = (
+            incorrect
+            + traffic_regime_under_importance_weight * under_strict
+            + traffic_regime_over_importance_weight * over_strict
+        )
+        if accuracy < min_accuracy:
+            loss += (
+                traffic_regime_target_penalty_weight
+                * claim_total
+                * (min_accuracy - accuracy)
+            )
+        if strict_recall < min_strict_recall:
+            loss += (
+                traffic_regime_target_penalty_weight
+                * claim_total
+                * (min_strict_recall - strict_recall)
+            )
+        if under_strict_rate > max_under_strict_rate:
+            loss += (
+                traffic_regime_target_penalty_weight
+                * claim_total
+                * (under_strict_rate - max_under_strict_rate)
+            )
+        return float(loss)
+
     regime_counter_losses = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
         dtype=np.float64,
     )
     regime_counter_seen = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    traffic_candidate_count = 4
+    traffic_regime_losses = np.zeros(
+        (
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            bucket_count,
+            2,
+            traffic_candidate_count,
+        ),
+        dtype=np.float64,
+    )
+    traffic_regime_seen = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
         dtype=np.int64,
     )
@@ -11604,7 +11717,8 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 *profile_params,
             )
             bucket_rows = make_selector_bucket_rows(trace)
-            factor_modes, repair_modes = predict_regime_branches(bucket_rows)
+            candidates = predict_regime_candidates(bucket_rows)
+            factor_modes, repair_modes = candidates[0], candidates[3]
             feature_index = regime_feature_index(bucket_rows)
             regime_counter_losses[feature_index + (0,)] += regime_branch_loss(
                 trace[0],
@@ -11615,6 +11729,13 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 repair_modes,
             ) - regime_counter_repair_bias_weight * float(trace[0].shape[0])
             regime_counter_seen[feature_index] += 1
+            for candidate_index, candidate_modes in enumerate(
+                candidates[:traffic_candidate_count]
+            ):
+                traffic_regime_losses[feature_index + (candidate_index,)] += (
+                    traffic_regime_branch_loss(trace[0], candidate_modes)
+                )
+            traffic_regime_seen[feature_index] += 1
 
     regime_counter_selector = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
@@ -11639,6 +11760,27 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             and scale_bucket == 0
         ) else 1
     regime_counter_lut_bytes = float(np.prod(regime_counter_selector.shape)) / 8.0
+
+    traffic_regime_selector = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(traffic_regime_selector.shape):
+        _, coverage_bucket, _, _, _ = (int(value) for value in index)
+        if coverage_bucket >= 3:
+            traffic_regime_selector[index] = 3
+            continue
+        if int(traffic_regime_seen[index]) > 0:
+            traffic_regime_selector[index] = int(
+                np.argmin(traffic_regime_losses[index])
+            )
+            continue
+        traffic_regime_selector[index] = int(regime_counter_selector[index]) * 3
+    traffic_regime_lut_bytes = (
+        float(np.prod(traffic_regime_selector.shape))
+        * float(int(np.ceil(np.log2(traffic_candidate_count))))
+        / 8.0
+    )
 
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
     mode_touch = {}
@@ -12048,6 +12190,34 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum((base_predicted == 2) & (regime_counter_predicted < 2))),
             )
         )
+        traffic_candidates = (
+            factor80_predicted,
+            selector_predicted,
+            two_branch_predicted,
+            two_branch_factor_predicted,
+        )
+        traffic_regime_predicted = traffic_candidates[
+            int(traffic_regime_selector[regime_feature_index(split_buckets)])
+        ]
+        eval_points.append(
+            make_point(
+                "traffic_regime_selector",
+                seed,
+                teacher,
+                traffic_regime_predicted,
+                trace,
+                classifier4_bytes,
+                (
+                    selector_guard_bytes
+                    + selector_lut_bytes
+                    + parser_relief_lut_bytes
+                    + coverage_repair_lut_bytes
+                    + traffic_regime_lut_bytes
+                ),
+                23,
+                int(np.sum((base_predicted == 2) & (traffic_regime_predicted < 2))),
+            )
+        )
         split_lut_predicted = np.array(
             [
                 lut7[
@@ -12114,6 +12284,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "two_branch_factor_selector",
             "two_branch_mixer_selector",
             "regime_counter_selector",
+            "traffic_regime_selector",
             "split_lut7d",
         ),
         points=tuple(eval_points),
@@ -12158,6 +12329,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "two_branch_factor_selector",
         "two_branch_mixer_selector",
         "regime_counter_selector",
+        "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
@@ -12191,6 +12363,9 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
     ),
     regime_counter_random_train_count: int = 4,
     regime_counter_random_seed: int = 8801,
+    traffic_regime_under_importance_weight: float = 24.0,
+    traffic_regime_over_importance_weight: float = 0.75,
+    traffic_regime_target_penalty_weight: float = 32.0,
 ) -> CAWikiCellParagraphFactorizedGuardStressResult:
     """Stress factorized guards under eval-only paragraph distribution shifts."""
 
@@ -12331,6 +12506,15 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
             regime_counter_profiles=regime_counter_profiles,
             regime_counter_random_train_count=regime_counter_random_train_count,
             regime_counter_random_seed=regime_counter_random_seed,
+            traffic_regime_under_importance_weight=(
+                traffic_regime_under_importance_weight
+            ),
+            traffic_regime_over_importance_weight=(
+                traffic_regime_over_importance_weight
+            ),
+            traffic_regime_target_penalty_weight=(
+                traffic_regime_target_penalty_weight
+            ),
         )
         for variant in clean_variants:
             variant_points = [
@@ -12418,10 +12602,14 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
         "factor_vote80b",
         "two_branch_factor_selector",
         "regime_counter_selector",
+        "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
+    traffic_regime_under_importance_weight: float = 24.0,
+    traffic_regime_over_importance_weight: float = 0.75,
+    traffic_regime_target_penalty_weight: float = 32.0,
 ) -> CAWikiCellParagraphFactorizedGuardStressResult:
     """Randomized held-out paragraph shifts for regime-counter validation."""
 
@@ -12496,6 +12684,13 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
             min_accuracy=min_accuracy,
             min_strict_recall=min_strict_recall,
             max_under_strict_rate=max_under_strict_rate,
+            traffic_regime_under_importance_weight=(
+                traffic_regime_under_importance_weight
+            ),
+            traffic_regime_over_importance_weight=traffic_regime_over_importance_weight,
+            traffic_regime_target_penalty_weight=(
+                traffic_regime_target_penalty_weight
+            ),
         )
         for variant in clean_variants:
             variant_points = [

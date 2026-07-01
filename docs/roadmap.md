@@ -734,6 +734,14 @@ it mostly follows the conservative coverage-repair branch on mixed shifts. The
 next roadmap item is a traffic-aware regime counter that can pass randomized
 mixed shifts while reducing the 30% over-strict level.
 
+That traffic-aware counter has now been tried and does not become the new
+baseline. The stable 392B selector passes the same named and randomized safety
+gates, but under randomized stress it collapses to the conservative
+`regime_counter_selector`, and in named omit/distractor/large shifts it is
+worse. The roadmap should pivot from "more branch arbitration" to "better
+local state": add short-window parser-confidence, coverage-volatility, or
+source/summary disagreement dynamics before trying another traffic policy.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
