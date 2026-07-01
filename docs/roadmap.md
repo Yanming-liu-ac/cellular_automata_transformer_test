@@ -327,7 +327,8 @@ Add PyTorch or JAX when the environment allows dependency installation.
 Implement:
 
 - continuous cell state;
-- grouped local / summary / route / memory-IO / stability channels;
+- grouped local / summary / route / memory-IO / stability channels, using the
+  measured `mhc_grouped` propagation rule as the first hand-coded scaffold;
 - shared local update rule;
 - Cellular-MoE rule banks with bounded low-cost routing;
 - residual bounded updates;
@@ -337,6 +338,8 @@ Implement:
 - multi-token / multi-tick prediction heads;
 - tiny Transformer teacher for distillation experiments.
 - optional Muon-style optimizer experiment for the shared recurrent rule.
+- extend dynamic propagation from the current 128-tick source-pulse diagnostic
+  to 1,000-tick random-state and trained-state stability sweeps.
 
 First trainable target:
 

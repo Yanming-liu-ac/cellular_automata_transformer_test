@@ -70,6 +70,8 @@ python experiments/lowbit_demo.py
 The first experiments compare:
 
 - propagation depth for local CA versus HARC-CA;
+- low-bit dynamic propagation stability for residual, route, and mHC-style
+  grouped CA rules;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

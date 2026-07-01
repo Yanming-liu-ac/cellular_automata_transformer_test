@@ -151,10 +151,14 @@ from .output_head import (
     estimate_output_head,
 )
 from .propagation import (
+    DynamicPropagationPoint,
+    DynamicPropagationResult,
     PropagationResult,
+    evaluate_dynamic_propagation,
     harc_ca_edges,
     line_edges,
     propagation_distances,
+    run_dynamic_propagation_sweep,
     shortest_propagation_steps,
 )
 from .retrieval import (
@@ -236,6 +240,8 @@ __all__ = [
     "HashRouteCAMConfig",
     "DenseContextConfig",
     "DenseContextResult",
+    "DynamicPropagationPoint",
+    "DynamicPropagationResult",
     "EfficiencyComparison",
     "InsertResult",
     "HarcEventEfficiency",
@@ -281,9 +287,11 @@ __all__ = [
     "wide_csa_hca_context_budget",
     "compare_output_heads",
     "estimate_output_head",
+    "evaluate_dynamic_propagation",
     "fanout_guard_retiring_sidecar_csa_hca_context_budget",
     "future_repeat_labels",
     "run_dense_context_trial",
+    "run_dynamic_propagation_sweep",
     "run_candidate_cache_trial",
     "run_candidate_indexer_trial",
     "run_candidate_tensor_diagnostic",

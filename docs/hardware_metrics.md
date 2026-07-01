@@ -46,6 +46,26 @@ with KV cache.
 
 If that fails, the chip idea probably needs a different CA topology.
 
+## Propagation Rollout Metrics
+
+Static graph distance is necessary but not sufficient. For low-bit CA dynamics,
+also track:
+
+- source-to-farthest-token reach tick;
+- all-token reach tick;
+- final token reach fraction;
+- active low-bit entry fraction;
+- final and peak saturation fraction;
+- mean low-bit level after rollout.
+
+The current 4-bit dynamic sweep uses 128 ticks and injects the newest token as a
+source pulse. On a 2048-token line, neither scalar residual diffusion nor the
+faster route wave reaches the oldest token in time. On the HARC graph,
+`route_max` reaches all token cells in 27 ticks but saturates the route state.
+The mHC-inspired grouped rule reaches all token cells in 24 ticks while limiting
+saturation to about 33.3% of entries. This is the first measured reason to keep
+separate local, route, and stability-envelope channels in the CA cell format.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

@@ -286,6 +286,16 @@ This suggests a grouped state layout:
 local channels | recurrent summary channels | routing channels | exact-memory IO
 ```
 
+The first dynamic propagation diagnostic supports this translation. A scalar
+4-bit residual-average rule is stable but too slow to move a source pulse across
+the HARC graph within 128 ticks. A max-route wave reaches all tokens quickly,
+but it saturates the route plane. The mHC-inspired grouped rule separates local
+residual state, a fast route state, and a stability envelope. It reaches all
+tokens in 16/20/24 ticks for 128/512/2048-token HARC contexts while holding
+saturation near one third of low-bit entries. The lesson is practical: grouped
+state is not just a modeling flourish; it is how a low-bit CA can get both fast
+propagation and bounded rollout behavior.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

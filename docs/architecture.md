@@ -148,6 +148,23 @@ HARC-CA gets fast propagation from the hierarchy:
 This is not equivalent to exact attention over all tokens. It is a different
 model class: compressed persistent context plus selective retrieval.
 
+The low-bit dynamic propagation sweep tightens this claim. A shortest path is
+not enough if the integer state cannot carry a useful amplitude. With a 4-bit
+source pulse and 128 rollout ticks, scalar `residual_avg` is stable but too
+diffusive: the far token is still missed even on the HARC graph. A direct
+`route_max` wave proves the multiscale graph can broadcast quickly, reaching all
+tokens in 19/23/27 ticks for 128/512/2048-token contexts, but it saturates the
+route state. The better CA primitive is mHC-style grouping:
+
+```text
+local residual channel | fast route channel | stability envelope channel
+```
+
+The current `mhc_grouped` rule reaches all tokens in 16/20/24 ticks on the same
+contexts while keeping saturation near 33% of low-bit entries instead of 100%.
+This makes grouped rule channels part of the architecture, not just an
+optimization detail.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

@@ -119,6 +119,22 @@ The next prototypes should be judged by gates instead of intuition:
 5. If quality requires dense global communication every token, the CA-first chip
    hypothesis is not working.
 
+The dynamic propagation sweep adds the first low-bit rollout check for the
+first gate. Static shortest paths already show the HARC graph reaching the
+oldest token in about 13, 17, and 21 ticks for 128, 512, and 2048 tokens,
+instead of 127, 511, and 2047 ticks for a radius-1 line. The new rollout test
+injects a 4-bit signal at the newest token and asks whether integer update rules
+can actually carry it to the oldest token in 128 ticks. Plain `residual_avg`
+stays stable but misses the far token even on the HARC graph because integer
+amplitude diffuses too slowly. `route_max` reaches all tokens on HARC in 19,
+23, and 27 ticks, proving the hierarchy can carry a low-bit wave, but it
+saturates the whole route plane. The mHC-inspired `mhc_grouped` rule reaches all
+tokens faster, in 16, 20, and 24 ticks, while keeping saturation around one
+third of low-bit entries rather than 100%. This does not prove language
+modeling, but it gives the first constructive evidence that grouped
+route/local/envelope channels are a better CA primitive than a single scalar
+diffusion state.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
