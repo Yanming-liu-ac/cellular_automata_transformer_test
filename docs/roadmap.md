@@ -592,6 +592,13 @@ The proxy gets 0/3 held-out failures and estimated provenance touch around
 8.5 cells/event. The next roadmap item is to replace the deterministic teacher
 with labels from an actual compiled wiki or retrieval/error trace.
 
+A noisy synthetic audit now partially covers that risk. The same 64B classifier
+is trained with noisy importance labels and an asymmetric loss that penalizes
+under-estimated importance. Accuracy drops to about 76%, but strict recall stays
+above 94% and under-strict rate stays below 3%. The remaining roadmap item is
+still real data: generate labels from retrieval failures, stale-source probes,
+or citation/trust metadata in a compiled wiki.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

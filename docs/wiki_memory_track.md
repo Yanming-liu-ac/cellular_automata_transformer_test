@@ -414,6 +414,16 @@ This is not a real wiki-data result, but it completes the CA control chain:
 local metadata -> importance mode -> provenance repair policy -> source
 freshness budget.
 
+A noisy-label audit now replaces the deterministic teacher with sampled
+importance labels. The classifier table is still 64B and the provenance repair
+table is still 1.125B, but the training loss penalizes under-estimating
+importance more than over-strict repair. Held-out accuracy falls to
+75.68-76.95%, which is expected under label noise. The chip-facing gates still
+pass: strict recall is 94.02-96.47%, under-strict rate is 2.05-2.93%, and
+estimated provenance touch is 8.57-8.62 cells/event. This is a more honest
+result than the deterministic proxy: the tiny metadata LUT is not a perfect
+classifier, but it can be biased toward protecting high-importance pages.
+
 ## Kill Criteria
 
 This track is not useful if:

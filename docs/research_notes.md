@@ -567,6 +567,15 @@ recall, with estimated touch around 8.5 cells/event. This should not be read as
 real wiki generalization; its value is architectural. It proves the CA Wiki Cell
 controller can be expressed as low-bit local metadata plus tiny policy tables.
 
+The noisy metadata audit is a more realistic stress point for the same control
+chain. With noisy synthetic labels, the 64B classifier no longer gets perfect
+accuracy; held-out accuracy is about 76%. The asymmetric training loss makes
+under-estimating importance more expensive than over-strict repair. That pushes
+strict recall to 94-96% and keeps under-strict rate around 2-3%, with estimated
+touch around 8.6 cells/event. This is the right failure mode: the controller is
+not pretending metadata is perfectly predictive, but it can price the failure
+that matters most for a memory chip.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

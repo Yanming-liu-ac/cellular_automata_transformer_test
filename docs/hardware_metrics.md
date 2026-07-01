@@ -1319,6 +1319,24 @@ This is still synthetic metadata, but it turns the CA Wiki Cell controller into
 the desired hardware shape: narrow per-claim metadata plus tiny LUTs, not a
 large learned dense controller.
 
+Noisy metadata audit with the same policy-state budget:
+
+```text
+noise_std: 0.85
+classifier LUT: 64B
+repair LUT: 1.125B
+total LUT: 65.125B
+held-out accuracy: 75.68-76.95%
+strict recall: 94.02-96.47%
+under-strict rate: 2.05-2.93%
+over-strict rate: 20.90-21.97%
+estimated provenance touch: 8.57-8.62 cells/event
+target failures: 0/4 rows
+```
+
+The over-strict rate is intentional in this diagnostic: repair traffic is cheaper
+than silently under-repairing high-importance pages.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:
