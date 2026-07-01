@@ -279,6 +279,17 @@ updates at 80% and cluster updates at 60% keeps both `loss=0` and `loss=1` at
 full stability proof, but it turns the previous failure into a named regression
 test.
 
+The first loss-decay variant keeps the strict `loss=0` gate and changes only
+the local counter dynamics. In the seed1501 99/1 dense wins/losses case, the
+old `none` mode leaves the final dense max counter at `15/1` and shared dense
+coverage at 0/3. The `win` mode decrements the local loss counter when a later
+dense-route win arrives in the same guard block; `nonloss` decrements it on any
+later non-loss query. Both modes turn the final dense max counter into `15/0`,
+restore 3/3 shared dense coverage, and keep sparse shared false-enable at
+0.00%. The 25% dense off row stays 0/1 for all modes. This is a cleaner CA-chip
+rule than simply tolerating one loss forever because it lets later local
+evidence repair a stale loss counter.
+
 The follow-up noise-matrix audit keeps the same 512-page/radius-1 geometry but
 shrinks the rows to 25% dense off and 75% dense on so it can sweep update-noise
 regimes. Across seeds 1501 and 1601 under base, revision-80%, cluster-60%, and

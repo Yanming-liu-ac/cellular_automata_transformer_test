@@ -497,6 +497,15 @@ cluster 60% also keeps 100.00% dense-on coverage and 0.00% sparse false-enable.
 The next audit should widen the seed set and randomize noisy update regimes
 rather than only checking one named stress point.
 
+The first event-driven loss-decay rule now exists. It keeps the strict
+`loss=0` gate and compares `none`, `win`, and `nonloss` local decay modes on
+the seed1501 25%/75% dense regression. At 75% dense, `none` leaves the final
+dense max counter at `15/1` and shared coverage at 0/3. Both `win` and
+`nonloss` decay that counter to `15/0`, restore 3/3 shared coverage, and keep
+sparse false-enable at 0.00%. At 25% dense all modes stay off. The next design
+step is to learn whether a block should use tolerance, decay, or both from
+local evidence instead of hard-coding one rule.
+
 A first noise matrix now exists for that wider audit shape. It keeps the
 512-page/radius-1 geometry, checks 25% dense off and 75% dense on, and sweeps
 seeds 1501 and 1601 across base, revision-80%, cluster-60%, and combined

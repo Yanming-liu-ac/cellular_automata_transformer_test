@@ -455,6 +455,16 @@ with revision updates at 80% and cluster updates at 60%; both gates stay at
 100.00% dense-on coverage and 0.00% sparse false-enable. The result is narrow,
 but it gives the track a concrete regression test before adding loss decay.
 
+Loss decay is now implemented as an event-driven local counter rule. With the
+strict `loss=0` gate on the seed1501 75% dense regression, no decay leaves a
+99/1 raw wins/losses trace as a saturated `15/1` dense max counter and shared
+coverage stays at 0/3. The `win` rule, which decrements loss when the dense
+route later wins in that block, and the `nonloss` rule, which decrements loss
+on any later non-loss query, both finish at `15/0` and restore 3/3 shared
+coverage. The 25% dense off row remains off and sparse false-enable remains
+0.00%. This is a more CA-like repair than a pure tolerance threshold because
+the state evolves with later local evidence.
+
 The next audit step is a small noise matrix rather than another single stress
 point. It checks seeds 1501 and 1601 under base, revision-80%, cluster-60%, and
 combined high-noise regimes, using only 25% dense off and 75% dense on rows.

@@ -76,6 +76,7 @@ python experiments/wiki_memory_dense_tile_demo.py
 python experiments/wiki_memory_density_aware_tile_demo.py
 python experiments/wiki_memory_density_tag_demo.py
 python experiments/wiki_memory_mixed_guard_counter_demo.py
+python experiments/wiki_memory_mixed_guard_loss_decay_demo.py
 python experiments/wiki_memory_mixed_guard_stress_demo.py
 python experiments/wiki_memory_mixed_guard_noise_demo.py
 python experiments/wiki_memory_learned_guard_sharing_demo.py
@@ -140,6 +141,7 @@ The first experiments compare:
   low-bit online agreement guard before switching routing geometry;
 - mixed-stream guard-counter sweeps that feed those low-bit counters from one
   sparse/dense event stream instead of separate region probes;
+- event-driven loss-decay sweeps for strict wiki-memory guard counters;
 - observation-window stress sweeps for the same shared guard counters;
 - update-noise stress sweeps for the shared guard counters;
 - learned low-bit sharing-radius/loss-tolerance LUTs for mixed-stream guard counters;

@@ -335,6 +335,15 @@ and cluster updates at 60%, both gates keep 100.00% dense-on coverage and
 comparison state can remove the observed brittle gate without increasing
 measured false-enable on this audit.
 
+The first event-driven loss-decay check uses no extra counter bits. It keeps the
+strict `loss=0` gate and updates only the existing 4-bit loss counter. On the
+seed1501 75% dense 99/1 trace, no decay leaves dense max at `15/1` and shared
+coverage at 0/3. Decay-on-win and decay-on-nonloss both reduce the final dense
+max to `15/0`, restore 3/3 shared coverage, and keep sparse false-enable at
+0.00%; the 25% dense off row remains off. The hardware implication is that
+loss recovery can be done as a local counter transition rather than by adding
+larger state or global arbitration.
+
 The first noise matrix checks the same low-bit state under update-rate changes.
 For seeds 1501 and 1601, 25% dense off and 75% dense on, and base/revision-80%/
 cluster-60%/combined regimes, strict `loss=0` has two dense-on failures and
