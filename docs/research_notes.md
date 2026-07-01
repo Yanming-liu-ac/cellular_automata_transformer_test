@@ -607,6 +607,15 @@ held-out traces. This is a useful intermediate target: it tests the
 raw-source/compiled-wiki boundary without requiring a full language model to
 perform open-ended semantic extraction inside the CA fabric.
 
+The parser-noise audit makes the boundary less idealized. Labels are still
+computed from the clean text state, but the CA controller is trained and
+evaluated on noisy parser-observed counters. At 6% misread and 3% drop rates,
+strict recall remains 97.63-98.32% and under-strict rate stays below 4.69%,
+but accuracy falls to about 69% because the policy becomes intentionally
+over-strict. This is a good negative/positive split: the architecture can bias
+against missing important pages under parser noise, but it needs a confidence
+or parser-miss feature before it can avoid excess repair traffic.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

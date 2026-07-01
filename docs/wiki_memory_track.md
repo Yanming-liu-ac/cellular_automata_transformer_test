@@ -467,6 +467,17 @@ held-out text traces, accuracy is 86.62-87.89%, strict recall is
 is 8.39-8.42 cells/event. This is still not open-ended language understanding,
 but it moves the evidence from numeric facts to compiled textual wiki cells.
 
+The parser-noise audit keeps the same text-source setup but separates clean
+teacher labels from noisy parser-observed counters. With a 6% status misread
+rate and a 3% field-drop rate, the same 16.00B classifier still protects the
+strict pages: held-out strict recall is 97.63-98.32% and under-strict rate is
+3.71-4.69%. The cost is visible and important: accuracy falls to
+68.46-69.34%, over-strict rate rises to 26.66-27.83%, strict mode is selected
+for 45.41-48.93% of claims, and estimated provenance touch rises to
+8.89-8.97 cells/event. This is a useful failure shape for chip design: noisy
+parsing can be handled conservatively with tiny local tables, but a parser-miss
+guard or confidence counter is needed to reduce unnecessary strict repair.
+
 ## Kill Criteria
 
 This track is not useful if:

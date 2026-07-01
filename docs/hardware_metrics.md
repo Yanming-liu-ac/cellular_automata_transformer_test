@@ -1470,6 +1470,17 @@ the parser or text compiler hardware/software path; it prices the CA-side
 state and policy decision once text edits have been compiled into local audit
 counters.
 
+The parser-noise audit keeps the classifier at 16.00B and the total controller
+LUT at 17.125B, but changes the observed counters. Labels come from the clean
+text state; inference counters come from a parser with 6% status misread and 3%
+drop probability. The strict-recall gate still passes at 97.63-98.32%, and
+under-strict rate is 3.71-4.69%. The traffic cost is the important number:
+strict mode rises to 45.41-48.93% of claims, over-strict rate is
+26.66-27.83%, and provenance repair traffic rises to 8.89-8.97 touched
+cells/event. The next hardware feature to justify is not a larger importance
+LUT; it is a tiny parser-miss or confidence counter that can suppress false
+strict repair decisions.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

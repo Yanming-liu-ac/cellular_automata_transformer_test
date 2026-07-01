@@ -625,6 +625,13 @@ uses a 16B LUT and passes 4/4 held-out traces with strict recall at or above
 generated multi-field snippets or real markdown pages, then test whether the
 same low-bit counters survive parser noise and ambiguous edits.
 
+The first parser-noise audit now covers that risk for controlled snippets.
+Using clean labels but noisy observed counters, the 16B controller keeps strict
+recall above 97.6% at 6% misread and 3% drop rates. The tradeoff is high
+over-strict repair, about 27%. The next roadmap item is therefore specific:
+add a parser-miss/confidence feature or a two-stage guard that lowers
+over-strict traffic without increasing under-strict risk.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
