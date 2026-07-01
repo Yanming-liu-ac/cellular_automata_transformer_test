@@ -306,14 +306,17 @@ Next retrieval work:
 - train a delayed-promotion gate against the retire128c3 budget so one-hit rare
   tokens, hot-token retirement, and sidecar update pressure are optimized
   jointly rather than by hand thresholds.
-- train the directory/fanout objective on the repeated-key 8-collider stress:
-  retire128c3 protects 100% rare-token sidecar visibility, but repaired coverage
-  is still capped at about 95.3% by read placement and fanout.
+- promote the repeated-key fanout guard into the unified event profile:
+  `min_read=3` restores 100% coverage under the retire128c3 8-collider stress,
+  but it should be measured against normal-stream traffic before becoming the
+  default budget.
+- add recency/query-context features to the trained fanout LUT so the three-entry
+  read guard triggers only for repeated-key or spread-out rare-token cases.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
-- add recency/query-context features to the trained fanout LUT and then train a
-  joint admission/probe/fanout policy so HCA threshold, exact-directory
-  override, and read budget are optimized as one hardware control table.
+- train a joint admission/probe/fanout policy so HCA threshold, exact-directory
+  override, delayed sidecar promotion, and read budget are optimized as one
+  hardware control table.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

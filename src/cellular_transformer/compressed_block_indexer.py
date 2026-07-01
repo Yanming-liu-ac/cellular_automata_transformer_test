@@ -1265,6 +1265,66 @@ class CsaHcaRareDirectoryBloomRetirementCollisionResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint:
+    """Fanout-budget point on the repeated-key adversarial collision stress."""
+
+    scenario: str
+    min_read_blocks_per_token: int
+    coverage_target: float
+    directory_blocks_per_token: int
+    bits_per_entry: int
+    hash_count: int
+    counter_bits: int
+    bank_count: int
+    bank_mode: str
+    sidecar_salt: int
+    rare_occurrences_per_token: int
+    colliders_per_rare: int
+    rare_tokens: int
+    collider_tokens: int
+    missing_colliders: int
+    mean_slot_overlap: float
+    sidecar_state_bytes: float
+    fanout_lut_state_bytes: float
+    fanout_training_samples: int
+    visible_active_rare_rate: float
+    rare_false_hca_rate: float
+    repaired_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    directory_entries_read_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomRetirementCollisionFanoutResult:
+    """Read-fanout budget sweep for the repeated-key collision case."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    rare_token_count: int
+    rare_occurrences_per_token: int
+    colliders_per_rare: int
+    bits_per_entry: int
+    hash_count: int
+    counter_bits: int
+    bank_count: int
+    bank_mode: str
+    sidecar_salt: int
+    min_read_blocks_per_token_values: Tuple[int, ...]
+    coverage_targets: Tuple[float, ...]
+    train_scenarios: Tuple[str, ...]
+    route_training_samples: int
+    route_lut: LowBitDirectoryAwareHcaRouteLUT
+    points: Tuple[CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -5381,6 +5441,251 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
         training_samples=route_training_samples + fanout_training_samples,
         route_lut=route_lut,
         fanout_lut=fanout_lut,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
+    min_read_blocks_per_token_values: Tuple[int, ...] = (2, 3),
+    coverage_targets: Tuple[float, ...] = (0.95, 1.0),
+    bits_per_entry: int = 8,
+    counter_bits: int = 3,
+    rare_occurrences_per_token: int = 3,
+    colliders_per_rare: int = 8,
+    rare_token_count: int = 128,
+    retire_count_threshold: int = 15,
+    hash_count: int = 3,
+    bank_count: int = 8,
+    bank_mode: str = "by_hash",
+    sidecar_salt: int = 30775,
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    route_positive_rate_threshold: float = 0.50,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 31,
+    eval_seed: int = 41,
+) -> CsaHcaRareDirectoryBloomRetirementCollisionFanoutResult:
+    """Sweep low-bit fanout budgets after sidecar visibility is robust."""
+
+    if len(min_read_blocks_per_token_values) == 0:
+        raise ValueError("min_read_blocks_per_token_values must not be empty")
+    clean_min_reads = tuple(sorted({int(value) for value in min_read_blocks_per_token_values}))
+    if any(value < 0 for value in clean_min_reads):
+        raise ValueError("min_read_blocks_per_token_values must be non-negative")
+    if any(value > directory_blocks_per_token for value in clean_min_reads):
+        raise ValueError("min_read_blocks_per_token_values cannot exceed directory_blocks_per_token")
+    if len(coverage_targets) == 0:
+        raise ValueError("coverage_targets must not be empty")
+    clean_targets = tuple(sorted({float(value) for value in coverage_targets}))
+    if any(value < 0.0 or value > 1.0 for value in clean_targets):
+        raise ValueError("coverage_targets must be in [0, 1]")
+    if bits_per_entry <= 0:
+        raise ValueError("bits_per_entry must be positive")
+    if counter_bits <= 0 or counter_bits > 16:
+        raise ValueError("counter_bits must be in [1, 16]")
+    if rare_token_count <= 0:
+        raise ValueError("rare_token_count must be positive")
+    if rare_occurrences_per_token <= 0:
+        raise ValueError("rare_occurrences_per_token must be positive")
+    if rare_occurrences_per_token >= retire_count_threshold:
+        raise ValueError("rare_occurrences_per_token must stay below retire_count_threshold")
+    if colliders_per_rare <= 0:
+        raise ValueError("colliders_per_rare must be positive")
+    if retire_count_threshold <= 0:
+        raise ValueError("retire_count_threshold must be positive")
+    if hash_count <= 0:
+        raise ValueError("hash_count must be positive")
+    if bank_count <= 0:
+        raise ValueError("bank_count must be positive")
+    if bank_mode not in ("modulo", "by_hash", "hash_slot"):
+        raise ValueError("bank_mode must be one of: modulo, by_hash, hash_slot")
+
+    route_lut, route_training_samples = train_directory_aware_hca_route_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+    stream, query_tokens, found_colliders, missing_colliders, mean_overlap = (
+        _make_bloom_collision_retirement_stress_case(
+            config=config,
+            hca_threshold=hca_threshold,
+            rare_token_count=rare_token_count,
+            rare_occurrences_per_token=rare_occurrences_per_token,
+            colliders_per_rare=colliders_per_rare,
+            bits_per_entry=bits_per_entry,
+            hash_count=hash_count,
+            bank_count=bank_count,
+            bank_mode=bank_mode,
+            sidecar_salt=sidecar_salt,
+            seed=(
+                eval_seed
+                + bits_per_entry * 997
+                + rare_occurrences_per_token * 313
+                + colliders_per_rare * 131
+            ),
+        )
+    )
+
+    index = LowBitCompressedBlockIndex(config)
+    global_summary = LowBitDenseContext(global_config)
+    for position, token in enumerate(stream):
+        index.update(int(token), position)
+        global_summary.update(int(token))
+
+    exact_counts = _build_exact_block_counts(stream, config.block_size)
+    directory = _build_rare_block_directory(
+        exact_counts=exact_counts,
+        hca_threshold=hca_threshold,
+        max_blocks_per_token=directory_blocks_per_token,
+    )
+    directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+    recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+    sidecar_read_bytes_per_query = hash_count / 8
+
+    points = []
+    fanout_train_scenarios = tuple(s for s in train_scenarios if s != "zipf_reference") or train_scenarios
+    for min_read_blocks_per_token in clean_min_reads:
+        for coverage_target in clean_targets:
+            fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+                train_scenarios=fanout_train_scenarios,
+                hca_threshold=hca_threshold,
+                directory_guard=True,
+                directory_blocks_per_token=directory_blocks_per_token,
+                min_read_blocks_per_token=min_read_blocks_per_token,
+                coverage_target=coverage_target,
+                span_thresholds=span_thresholds,
+                max_overlap_bucket=max_overlap_bucket,
+                block_size=block_size,
+                summary_width=summary_width,
+                csa_blocks=csa_blocks,
+                global_width=global_width,
+                tail_blocks=tail_blocks,
+                context_length=context_length,
+                queries=queries,
+                seed=train_seed + 4096,
+            )
+            point = _evaluate_rare_directory_bloom_retirement_point(
+                insert_count_threshold=1,
+                retire_count_threshold=retire_count_threshold,
+                scenario="adversarial_collision_fanout",
+                config=config,
+                index=index,
+                global_summary=global_summary,
+                exact_counts=exact_counts,
+                directory=directory,
+                directory_blocks_per_token=directory_blocks_per_token,
+                directory_entry_bytes=directory_entry_bytes,
+                hca_threshold=hca_threshold,
+                route_lut=route_lut,
+                fanout_lut=fanout_lut,
+                min_read_blocks_per_token=min_read_blocks_per_token,
+                recent_blocks=recent_blocks,
+                query_tokens=query_tokens,
+                stream=stream,
+                bits_per_entry=bits_per_entry,
+                hash_count=hash_count,
+                counter_bits=counter_bits,
+                bank_count=bank_count,
+                bank_mode=bank_mode,
+                sidecar_salt=sidecar_salt,
+            )
+            directory_entries_read = _safe_divide(
+                max(0.0, point.directory_read_bytes_per_query - sidecar_read_bytes_per_query),
+                directory_entry_bytes,
+            )
+            points.append(
+                CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint(
+                    scenario=point.scenario,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    coverage_target=coverage_target,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    bits_per_entry=bits_per_entry,
+                    hash_count=hash_count,
+                    counter_bits=counter_bits,
+                    bank_count=bank_count,
+                    bank_mode=bank_mode,
+                    sidecar_salt=sidecar_salt,
+                    rare_occurrences_per_token=rare_occurrences_per_token,
+                    colliders_per_rare=colliders_per_rare,
+                    rare_tokens=point.final_rare_tokens,
+                    collider_tokens=found_colliders,
+                    missing_colliders=missing_colliders,
+                    mean_slot_overlap=mean_overlap,
+                    sidecar_state_bytes=point.sidecar_state_bytes,
+                    fanout_lut_state_bytes=fanout_lut.state_bytes,
+                    fanout_training_samples=fanout_training_samples,
+                    visible_active_rare_rate=point.visible_active_rare_rate,
+                    rare_false_hca_rate=point.rare_false_hca_rate,
+                    repaired_relevant_coverage=point.repaired_relevant_coverage,
+                    directory_read_bytes_per_query=point.directory_read_bytes_per_query,
+                    directory_entries_read_per_query=directory_entries_read,
+                    token_read_reduction=point.token_read_reduction,
+                )
+            )
+
+    return CsaHcaRareDirectoryBloomRetirementCollisionFanoutResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        rare_token_count=rare_token_count,
+        rare_occurrences_per_token=rare_occurrences_per_token,
+        colliders_per_rare=colliders_per_rare,
+        bits_per_entry=bits_per_entry,
+        hash_count=hash_count,
+        counter_bits=counter_bits,
+        bank_count=bank_count,
+        bank_mode=bank_mode,
+        sidecar_salt=sidecar_salt,
+        min_read_blocks_per_token_values=clean_min_reads,
+        coverage_targets=clean_targets,
+        train_scenarios=train_scenarios,
+        route_training_samples=route_training_samples,
+        route_lut=route_lut,
         points=tuple(points),
     )
 

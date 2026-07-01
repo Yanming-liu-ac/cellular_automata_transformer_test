@@ -551,7 +551,12 @@ robust 100.0% visible rare-token point through that multi-collider stress and
 keep the total event-profile state about 392.8KB. One-bit counters are tempting,
 but the adversarial sweep effectively rejects them for exact sidecar use. The
 remaining repeated-key coverage gap at c3 is a fanout/directory objective, not a
-counter-width objective.
+counter-width objective. The next fanout-budget sweep is the hardware version of
+the same lesson: raising the abstract coverage target from 95% to 100% does not
+move the repeated-key corner, but raising the minimum directory read guard from
+two entries to three restores 100.0% coverage. The cost is local and explicit:
+directory traffic rises from 6.88B/query to 10.12B/query, and token-read
+reduction moves from 78.2x to 76.6x.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

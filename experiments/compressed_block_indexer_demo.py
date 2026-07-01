@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_bank_sweep,
+    run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep,
     run_csa_hca_rare_directory_bloom_retirement_collision_sweep,
     run_csa_hca_rare_directory_bloom_retirement_compression_sweep,
     run_csa_hca_rare_directory_bloom_retirement_sweep,
@@ -1116,6 +1117,50 @@ def main() -> None:
     print("- 2-bit counters improve normal streams but lose visibility under repeated-key multi-collider deletes.")
     print("- 3-bit counters survive the repeated-key 8-collider stress and are the current sidecar budget target.")
     print("- Any remaining repeated-key coverage loss is now a fanout/directory target, not a sidecar deletion target.")
+    print()
+
+    fanout_collision = run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep()
+    print("Repeated-key collision fanout budget")
+    print(
+        f"rare_occ={fanout_collision.rare_occurrences_per_token}, "
+        f"colliders/rare={fanout_collision.colliders_per_rare}, "
+        f"counter_bits={fanout_collision.counter_bits}, "
+        f"dir_k={fanout_collision.directory_blocks_per_token}"
+    )
+    headers = [
+        "min_read",
+        "target",
+        "lut",
+        "train",
+        "dir_ent/q",
+        "dir_B/q",
+        "vis_rare",
+        "false_hca",
+        "coverage",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>12}" for header in headers))
+    print("-" * 135)
+    for point in fanout_collision.points:
+        row = [
+            str(point.min_read_blocks_per_token),
+            fmt_pct(point.coverage_target),
+            format_bytes(point.fanout_lut_state_bytes),
+            str(point.fanout_training_samples),
+            f"{point.directory_entries_read_per_query:0.2f}",
+            f"{point.directory_read_bytes_per_query:0.2f}",
+            fmt_pct(point.visible_active_rare_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>12}" for cell in row))
+
+    print()
+    print("Repeated-key fanout interpretation:")
+    print("- Raising the coverage target alone does not fix the repeated-key gap.")
+    print("- Raising minimum directory reads from 2 to 3 restores 100% coverage in this stress.")
+    print("- The cost is a small read-efficiency drop, so min_read=3 is the next robust target.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

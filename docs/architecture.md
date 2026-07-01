@@ -443,7 +443,12 @@ colliders per rare token under repeated-key stress, and 3-bit counters restore
 The robust baseline therefore moves to retire128c3: it is not as small as c2,
 but it protects the exact rare-token sidecar under targeted hot-token deletion.
 The remaining repeated-key 95.3% repaired coverage at c3/c4 is caused by the
-directory/fanout read budget, so it becomes the next control objective.
+directory/fanout read budget, so it becomes the next control objective. The
+first budget sweep shows the clean fix: keeping the same 42B fanout LUT and
+raising the minimum directory read count from two to three restores 100.0%
+repaired coverage in the repeated-key 8-collider stress. Directory metadata
+traffic rises from 6.88B/query to 10.12B/query, while token-read reduction only
+falls from 78.2x to 76.6x.
 
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in

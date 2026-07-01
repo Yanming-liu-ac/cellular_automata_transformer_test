@@ -669,6 +669,21 @@ adversarial visible rare-token rate at 100% through the repeated-key
 35.9KB. The remaining 95.3% repeated-key coverage at c3/c4 is no longer a
 sidecar deletion problem; it points to the directory/fanout read budget.
 
+The repeated-key fanout-budget sweep keeps the same `retire128c3` sidecar and
+the same low-bit fanout LUT, then varies only the minimum directory reads:
+
+```text
+min_read=2  target=95%   lut=42B  dir_entries/q=2.00  dir_read=6.88B/q   visible_rare=100.0%  coverage=95.3%   token_read_reduction=78.2x
+min_read=2  target=100%  lut=42B  dir_entries/q=2.00  dir_read=6.88B/q   visible_rare=100.0%  coverage=95.3%   token_read_reduction=78.2x
+min_read=3  target=95%   lut=42B  dir_entries/q=3.00  dir_read=10.12B/q  visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
+min_read=3  target=100%  lut=42B  dir_entries/q=3.00  dir_read=10.12B/q  visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
+```
+
+Raising the training target alone does not fix this repeated-key corner. A
+three-entry minimum directory read is the simple robust guard: it restores 100%
+coverage with about 3.24B/query more directory traffic and only a small drop in
+token-read reduction.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

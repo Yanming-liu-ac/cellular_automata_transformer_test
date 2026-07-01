@@ -696,6 +696,19 @@ adversarial test prevents an over-compressed metadata format from becoming the
 default. The repeated-key c3/c4 coverage ceiling is 95.3%, so the next failure
 mode is directory/fanout read coverage rather than Bloom-sidecar deletion.
 
+The forty-eighth sweep attacks that remaining repeated-key gap directly. It
+fixes the sidecar at `retire128c3`, keeps the repeated-key 8-collider stress,
+and sweeps the low-bit fanout LUT's minimum directory read count. Raising the
+coverage target from 95% to 100% while keeping `min_read=2` does not move the
+result: coverage remains 95.3%, with 2.00 directory entries and 6.88B of
+directory traffic per query. Raising the hardware guard to `min_read=3` restores
+100.0% repaired coverage, reads 3.00 directory entries, raises directory traffic
+to 10.12B/query, and only reduces token-read reduction from 78.2x to 76.6x.
+This makes the next robust candidate `retire128c3` plus a three-entry
+repeated-key fanout guard. It is a clean CA-chip trade: one extra local metadata
+entry read closes the adversarial coverage hole without changing the sidecar
+state format.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
