@@ -601,6 +601,7 @@ class WikiMemoryMixedGuardCounterPoint:
     guard_share_radius_blocks: int
     guard_loss_decay_mode: str
     guard_allowed_loss_count: int
+    guard_win_count_delta: int
     guard_required_win_count: int
     guard_counter_state_bytes: float
     probe_queries: int
@@ -651,6 +652,7 @@ class WikiMemoryGuardSharingLUTEntry:
     chosen_share_radius_blocks: int
     chosen_loss_decay_mode: str
     chosen_allowed_loss_count: int
+    chosen_win_count_delta: int
     training_points: int
     training_cost: float
 
@@ -666,6 +668,8 @@ class WikiMemoryLearnedGuardSharingPoint:
     chosen_share_radius_blocks: int
     chosen_loss_decay_mode: str
     chosen_allowed_loss_count: int
+    chosen_win_count_delta: int
+    chosen_required_win_count: int
     target_dense_enable_rate: float
     local_dense_enable_rate: float
     learned_dense_enable_rate: float
@@ -684,6 +688,7 @@ class WikiMemoryLearnedGuardSharingResult:
     radius_options: Tuple[int, ...]
     loss_decay_options: Tuple[str, ...]
     allowed_loss_options: Tuple[int, ...]
+    win_count_delta_options: Tuple[int, ...]
     min_dense_fraction_to_enable: float
     entries: Tuple[WikiMemoryGuardSharingLUTEntry, ...]
     points: Tuple[WikiMemoryLearnedGuardSharingPoint, ...]
@@ -3312,10 +3317,12 @@ def run_wiki_memory_mixed_guard_counter_sweep(
     guard_share_radius_blocks: int = 1,
     guard_loss_decay_mode: str = "none",
     guard_allowed_loss_count: int = 0,
+    guard_win_count_delta: int = 0,
     guard_counter_block_page_options: Tuple[int, ...] | None = None,
     guard_share_radius_options: Tuple[int, ...] | None = None,
     guard_loss_decay_options: Tuple[str, ...] | None = None,
     guard_allowed_loss_options: Tuple[int, ...] | None = None,
+    guard_win_count_delta_options: Tuple[int, ...] | None = None,
     recent_update_query_rate: float | None = None,
     revision_update_rate: float | None = None,
     cluster_update_rate: float | None = None,
@@ -3367,6 +3374,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
     clean_loss_decay_mode = str(guard_loss_decay_mode).strip().lower()
     if clean_loss_decay_mode not in ("none", "win", "nonloss"):
         raise ValueError("guard_loss_decay_mode must be none, win, or nonloss")
+    clean_win_count_delta = int(guard_win_count_delta)
     clean_guard_counter_block_pages = (
         (int(guard_counter_block_pages),)
         if guard_counter_block_page_options is None
@@ -3387,6 +3395,11 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         if guard_allowed_loss_options is None
         else tuple(dict.fromkeys(int(value) for value in guard_allowed_loss_options))
     )
+    clean_win_count_deltas = (
+        (clean_win_count_delta,)
+        if guard_win_count_delta_options is None
+        else tuple(dict.fromkeys(int(value) for value in guard_win_count_delta_options))
+    )
     if len(clean_guard_counter_block_pages) == 0:
         raise ValueError("guard_counter_block_page_options must not be empty")
     if len(clean_guard_share_radii) == 0:
@@ -3395,6 +3408,8 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         raise ValueError("guard_loss_decay_options must not be empty")
     if len(clean_allowed_losses) == 0:
         raise ValueError("guard_allowed_loss_options must not be empty")
+    if len(clean_win_count_deltas) == 0:
+        raise ValueError("guard_win_count_delta_options must not be empty")
     if any(value <= 0 for value in clean_guard_counter_block_pages):
         raise ValueError("all guard counter block page options must be positive")
     if any(value < 0 for value in clean_guard_share_radii):
@@ -3515,7 +3530,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
         for probe_queries, probe_updates in clean_probe_event_options:
             event_seed = quality_probe_seed + probe_queries * 37 + probe_updates * 101
             for counter_block_pages in clean_guard_counter_block_pages:
-                guard_required_win_count = int(
+                base_guard_required_win_count = int(
                     np.ceil(
                         quality_probe_min_gain
                         * probe_queries
@@ -3524,7 +3539,7 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                     )
                 )
                 if quality_probe_min_gain > 0.0:
-                    guard_required_win_count = max(1, guard_required_win_count)
+                    base_guard_required_win_count = max(1, base_guard_required_win_count)
                 for loss_decay_mode in clean_loss_decay_modes:
                     stream = _mixed_density_guard_counter_stream(
                         policy=policy,
@@ -3558,121 +3573,127 @@ def run_wiki_memory_mixed_guard_counter_sweep(
                     )
 
                     for share_radius in clean_guard_share_radii:
-                        for allowed_loss in clean_allowed_losses:
-                            local_sparse_pass = (
-                                (stream.win_counters[sparse_slice] >= guard_required_win_count)
-                                & (stream.loss_counters[sparse_slice] <= allowed_loss)
+                        for win_count_delta in clean_win_count_deltas:
+                            guard_required_win_count = max(
+                                1,
+                                base_guard_required_win_count + win_count_delta,
                             )
-                            local_dense_pass = (
-                                (stream.win_counters[dense_slice] >= guard_required_win_count)
-                                & (stream.loss_counters[dense_slice] <= allowed_loss)
-                            )
-                            sparse_shared_pass = _shared_counter_pass(
-                                stream.win_counters[sparse_slice],
-                                stream.loss_counters[sparse_slice],
-                                guard_required_win_count,
-                                share_radius,
-                                allowed_loss,
-                            )
-                            dense_shared_pass = _shared_counter_pass(
-                                stream.win_counters[dense_slice],
-                                stream.loss_counters[dense_slice],
-                                guard_required_win_count,
-                                share_radius,
-                                allowed_loss,
-                            )
+                            for allowed_loss in clean_allowed_losses:
+                                local_sparse_pass = (
+                                    (stream.win_counters[sparse_slice] >= guard_required_win_count)
+                                    & (stream.loss_counters[sparse_slice] <= allowed_loss)
+                                )
+                                local_dense_pass = (
+                                    (stream.win_counters[dense_slice] >= guard_required_win_count)
+                                    & (stream.loss_counters[dense_slice] <= allowed_loss)
+                                )
+                                sparse_shared_pass = _shared_counter_pass(
+                                    stream.win_counters[sparse_slice],
+                                    stream.loss_counters[sparse_slice],
+                                    guard_required_win_count,
+                                    share_radius,
+                                    allowed_loss,
+                                )
+                                dense_shared_pass = _shared_counter_pass(
+                                    stream.win_counters[dense_slice],
+                                    stream.loss_counters[dense_slice],
+                                    guard_required_win_count,
+                                    share_radius,
+                                    allowed_loss,
+                                )
 
-                            for threshold in clean_thresholds:
-                                sparse_enabled = (
-                                    int(np.count_nonzero(local_sparse_pass))
-                                    if sparse_tag >= threshold
-                                    else 0
-                                )
-                                dense_enabled = (
-                                    int(np.count_nonzero(local_dense_pass))
-                                    if dense_tag >= threshold
-                                    else 0
-                                )
-                                sparse_shared_enabled = (
-                                    int(np.count_nonzero(sparse_shared_pass))
-                                    if sparse_tag >= threshold
-                                    else 0
-                                )
-                                dense_shared_enabled = (
-                                    int(np.count_nonzero(dense_shared_pass))
-                                    if dense_tag >= threshold
-                                    else 0
-                                )
-                                points.append(
-                                    WikiMemoryMixedGuardCounterPoint(
-                                        total_pages=total_pages,
-                                        dense_page_fraction=dense_pages / float(total_pages),
-                                        tag_threshold=threshold,
-                                        sparse_density_tag=sparse_tag,
-                                        dense_density_tag=dense_tag,
-                                        guard_counter_block_pages=counter_block_pages,
-                                        guard_counter_bits=guard_counter_bits,
-                                        guard_share_radius_blocks=share_radius,
-                                        guard_loss_decay_mode=loss_decay_mode,
-                                        guard_allowed_loss_count=allowed_loss,
-                                        guard_required_win_count=guard_required_win_count,
-                                        guard_counter_state_bytes=guard_counter_state_bytes,
-                                        probe_queries=probe_queries,
-                                        probe_updates=probe_updates,
-                                        sparse_probe_queries=stream.sparse_queries,
-                                        dense_probe_queries=stream.dense_queries,
-                                        sparse_guard_blocks=stream.sparse_blocks,
-                                        dense_guard_blocks=stream.dense_blocks,
-                                        sparse_enabled_blocks=sparse_enabled,
-                                        dense_enabled_blocks=dense_enabled,
-                                        sparse_shared_enabled_blocks=sparse_shared_enabled,
-                                        dense_shared_enabled_blocks=dense_shared_enabled,
-                                        sparse_raw_wins=int(np.sum(stream.raw_wins[sparse_slice])),
-                                        sparse_raw_losses=int(np.sum(stream.raw_losses[sparse_slice])),
-                                        dense_raw_wins=int(np.sum(stream.raw_wins[dense_slice])),
-                                        dense_raw_losses=int(np.sum(stream.raw_losses[dense_slice])),
-                                        sparse_max_win_counter=(
-                                            int(np.max(stream.win_counters[sparse_slice]))
-                                            if stream.sparse_blocks
-                                            else 0
-                                        ),
-                                        sparse_max_loss_counter=(
-                                            int(np.max(stream.loss_counters[sparse_slice]))
-                                            if stream.sparse_blocks
-                                            else 0
-                                        ),
-                                        dense_max_win_counter=(
-                                            int(np.max(stream.win_counters[dense_slice]))
-                                            if stream.dense_blocks
-                                            else 0
-                                        ),
-                                        dense_max_loss_counter=(
-                                            int(np.max(stream.loss_counters[dense_slice]))
-                                            if stream.dense_blocks
-                                            else 0
-                                        ),
-                                        sparse_false_enable_rate=(
-                                            sparse_enabled / float(stream.sparse_blocks)
-                                            if stream.sparse_blocks
-                                            else 0.0
-                                        ),
-                                        dense_enable_rate=(
-                                            dense_enabled / float(stream.dense_blocks)
-                                            if stream.dense_blocks
-                                            else 0.0
-                                        ),
-                                        sparse_shared_false_enable_rate=(
-                                            sparse_shared_enabled / float(stream.sparse_blocks)
-                                            if stream.sparse_blocks
-                                            else 0.0
-                                        ),
-                                        dense_shared_enable_rate=(
-                                            dense_shared_enabled / float(stream.dense_blocks)
-                                            if stream.dense_blocks
-                                            else 0.0
-                                        ),
+                                for threshold in clean_thresholds:
+                                    sparse_enabled = (
+                                        int(np.count_nonzero(local_sparse_pass))
+                                        if sparse_tag >= threshold
+                                        else 0
                                     )
-                                )
+                                    dense_enabled = (
+                                        int(np.count_nonzero(local_dense_pass))
+                                        if dense_tag >= threshold
+                                        else 0
+                                    )
+                                    sparse_shared_enabled = (
+                                        int(np.count_nonzero(sparse_shared_pass))
+                                        if sparse_tag >= threshold
+                                        else 0
+                                    )
+                                    dense_shared_enabled = (
+                                        int(np.count_nonzero(dense_shared_pass))
+                                        if dense_tag >= threshold
+                                        else 0
+                                    )
+                                    points.append(
+                                        WikiMemoryMixedGuardCounterPoint(
+                                            total_pages=total_pages,
+                                            dense_page_fraction=dense_pages / float(total_pages),
+                                            tag_threshold=threshold,
+                                            sparse_density_tag=sparse_tag,
+                                            dense_density_tag=dense_tag,
+                                            guard_counter_block_pages=counter_block_pages,
+                                            guard_counter_bits=guard_counter_bits,
+                                            guard_share_radius_blocks=share_radius,
+                                            guard_loss_decay_mode=loss_decay_mode,
+                                            guard_allowed_loss_count=allowed_loss,
+                                            guard_win_count_delta=win_count_delta,
+                                            guard_required_win_count=guard_required_win_count,
+                                            guard_counter_state_bytes=guard_counter_state_bytes,
+                                            probe_queries=probe_queries,
+                                            probe_updates=probe_updates,
+                                            sparse_probe_queries=stream.sparse_queries,
+                                            dense_probe_queries=stream.dense_queries,
+                                            sparse_guard_blocks=stream.sparse_blocks,
+                                            dense_guard_blocks=stream.dense_blocks,
+                                            sparse_enabled_blocks=sparse_enabled,
+                                            dense_enabled_blocks=dense_enabled,
+                                            sparse_shared_enabled_blocks=sparse_shared_enabled,
+                                            dense_shared_enabled_blocks=dense_shared_enabled,
+                                            sparse_raw_wins=int(np.sum(stream.raw_wins[sparse_slice])),
+                                            sparse_raw_losses=int(np.sum(stream.raw_losses[sparse_slice])),
+                                            dense_raw_wins=int(np.sum(stream.raw_wins[dense_slice])),
+                                            dense_raw_losses=int(np.sum(stream.raw_losses[dense_slice])),
+                                            sparse_max_win_counter=(
+                                                int(np.max(stream.win_counters[sparse_slice]))
+                                                if stream.sparse_blocks
+                                                else 0
+                                            ),
+                                            sparse_max_loss_counter=(
+                                                int(np.max(stream.loss_counters[sparse_slice]))
+                                                if stream.sparse_blocks
+                                                else 0
+                                            ),
+                                            dense_max_win_counter=(
+                                                int(np.max(stream.win_counters[dense_slice]))
+                                                if stream.dense_blocks
+                                                else 0
+                                            ),
+                                            dense_max_loss_counter=(
+                                                int(np.max(stream.loss_counters[dense_slice]))
+                                                if stream.dense_blocks
+                                                else 0
+                                            ),
+                                            sparse_false_enable_rate=(
+                                                sparse_enabled / float(stream.sparse_blocks)
+                                                if stream.sparse_blocks
+                                                else 0.0
+                                            ),
+                                            dense_enable_rate=(
+                                                dense_enabled / float(stream.dense_blocks)
+                                                if stream.dense_blocks
+                                                else 0.0
+                                            ),
+                                            sparse_shared_false_enable_rate=(
+                                                sparse_shared_enabled / float(stream.sparse_blocks)
+                                                if stream.sparse_blocks
+                                                else 0.0
+                                            ),
+                                            dense_shared_enable_rate=(
+                                                dense_shared_enabled / float(stream.dense_blocks)
+                                                if stream.dense_blocks
+                                                else 0.0
+                                            ),
+                                        )
+                                    )
     return WikiMemoryMixedGuardCounterResult(
         policy=policy.name,
         target_route_coverage=target_route_coverage,
@@ -3695,11 +3716,13 @@ def run_wiki_memory_learned_guard_sharing_sweep(
     guard_share_radius_options: Tuple[int, ...] = (0, 1, 2),
     guard_loss_decay_options: Tuple[str, ...] = ("none", "win", "nonloss"),
     guard_allowed_loss_options: Tuple[int, ...] = (0, 1),
+    guard_win_count_delta_options: Tuple[int, ...] = (0,),
     min_dense_fraction_to_enable: float = 0.50,
     false_enable_weight: float = 8.0,
     radius_cost_weight: float = 0.01,
     decay_cost_weight: float = 0.0,
     loss_cost_weight: float = 0.0,
+    win_count_cost_weight: float = 0.02,
     eval_seeds: Tuple[int, ...] = (),
     **mixed_sweep_kwargs: object,
 ) -> WikiMemoryLearnedGuardSharingResult:
@@ -3715,6 +3738,8 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         raise ValueError("decay_cost_weight must be non-negative")
     if loss_cost_weight < 0.0:
         raise ValueError("loss_cost_weight must be non-negative")
+    if win_count_cost_weight < 0.0:
+        raise ValueError("win_count_cost_weight must be non-negative")
     clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
     clean_blocks = tuple(dict.fromkeys(int(value) for value in guard_counter_block_page_options))
     clean_radii = tuple(dict.fromkeys(int(value) for value in guard_share_radius_options))
@@ -3722,6 +3747,9 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         dict.fromkeys(str(value).strip().lower() for value in guard_loss_decay_options)
     )
     clean_allowed_losses = tuple(dict.fromkeys(int(value) for value in guard_allowed_loss_options))
+    clean_win_count_deltas = tuple(
+        dict.fromkeys(int(value) for value in guard_win_count_delta_options)
+    )
     if len(clean_blocks) == 0:
         raise ValueError("guard_counter_block_page_options must not be empty")
     if len(clean_radii) == 0:
@@ -3730,6 +3758,8 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         raise ValueError("guard_loss_decay_options must not be empty")
     if len(clean_allowed_losses) == 0:
         raise ValueError("guard_allowed_loss_options must not be empty")
+    if len(clean_win_count_deltas) == 0:
+        raise ValueError("guard_win_count_delta_options must not be empty")
     if any(value not in ("none", "win", "nonloss") for value in clean_loss_decay_modes):
         raise ValueError("all guard loss decay options must be none, win, or nonloss")
     if any(value < 0 for value in clean_allowed_losses):
@@ -3745,10 +3775,11 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         guard_share_radius_options=clean_radii,
         guard_loss_decay_options=clean_loss_decay_modes,
         guard_allowed_loss_options=clean_allowed_losses,
+        guard_win_count_delta_options=clean_win_count_deltas,
         **mixed_sweep_kwargs,
     )
     by_block_choice: dict[
-        tuple[int, int, str, int],
+        tuple[int, int, str, int, int],
         list[WikiMemoryMixedGuardCounterPoint],
     ] = {}
     for point in sweep.points:
@@ -3758,57 +3789,74 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                 point.guard_share_radius_blocks,
                 point.guard_loss_decay_mode,
                 point.guard_allowed_loss_count,
+                point.guard_win_count_delta,
             ),
             [],
         ).append(point)
 
     entries = []
-    chosen_choice_by_block: dict[int, tuple[int, str, int]] = {}
+    chosen_choice_by_block: dict[int, tuple[int, str, int, int]] = {}
     for block_pages in clean_blocks:
         best_radius = clean_radii[0]
         best_loss_decay_mode = clean_loss_decay_modes[0]
         best_allowed_loss = clean_allowed_losses[0]
+        best_win_count_delta = clean_win_count_deltas[0]
         best_cost = float("inf")
         best_count = 0
         for radius in clean_radii:
             for loss_decay_mode in clean_loss_decay_modes:
                 for allowed_loss in clean_allowed_losses:
-                    points = by_block_choice.get(
-                        (block_pages, radius, loss_decay_mode, allowed_loss),
-                        [],
-                    )
-                    cost = (
-                        radius_cost_weight * radius
-                        + decay_cost_weight * decay_cost_index[loss_decay_mode]
-                        + loss_cost_weight * allowed_loss
-                    )
-                    for point in points:
-                        target = (
-                            1.0
-                            if point.dense_page_fraction >= min_dense_fraction_to_enable
-                            else 0.0
+                    for win_count_delta in clean_win_count_deltas:
+                        points = by_block_choice.get(
+                            (
+                                block_pages,
+                                radius,
+                                loss_decay_mode,
+                                allowed_loss,
+                                win_count_delta,
+                            ),
+                            [],
                         )
-                        dense_error = abs(point.dense_shared_enable_rate - target)
-                        false_error = false_enable_weight * point.sparse_shared_false_enable_rate
-                        cost += dense_error + false_error
-                    better_tie = (
-                        allowed_loss < best_allowed_loss
-                        or (
-                            allowed_loss == best_allowed_loss
-                            and decay_preference[loss_decay_mode]
-                            > decay_preference[best_loss_decay_mode]
+                        cost = (
+                            radius_cost_weight * radius
+                            + decay_cost_weight * decay_cost_index[loss_decay_mode]
+                            + loss_cost_weight * allowed_loss
+                            + win_count_cost_weight * max(0, -win_count_delta)
                         )
-                    )
-                    if cost < best_cost or (np.isclose(cost, best_cost) and better_tie):
-                        best_radius = radius
-                        best_loss_decay_mode = loss_decay_mode
-                        best_allowed_loss = allowed_loss
-                        best_cost = cost
-                        best_count = len(points)
+                        for point in points:
+                            target = (
+                                1.0
+                                if point.dense_page_fraction >= min_dense_fraction_to_enable
+                                else 0.0
+                            )
+                            dense_error = abs(point.dense_shared_enable_rate - target)
+                            false_error = (
+                                false_enable_weight * point.sparse_shared_false_enable_rate
+                            )
+                            cost += dense_error + false_error
+                        better_tie = (
+                            -allowed_loss,
+                            win_count_delta,
+                            decay_preference[loss_decay_mode],
+                        ) > (
+                            -best_allowed_loss,
+                            best_win_count_delta,
+                            decay_preference[best_loss_decay_mode],
+                        )
+                        if cost < best_cost or (
+                            np.isclose(cost, best_cost) and better_tie
+                        ):
+                            best_radius = radius
+                            best_loss_decay_mode = loss_decay_mode
+                            best_allowed_loss = allowed_loss
+                            best_win_count_delta = win_count_delta
+                            best_cost = cost
+                            best_count = len(points)
         chosen_choice_by_block[block_pages] = (
             best_radius,
             best_loss_decay_mode,
             best_allowed_loss,
+            best_win_count_delta,
         )
         entries.append(
             WikiMemoryGuardSharingLUTEntry(
@@ -3816,6 +3864,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                 chosen_share_radius_blocks=best_radius,
                 chosen_loss_decay_mode=best_loss_decay_mode,
                 chosen_allowed_loss_count=best_allowed_loss,
+                chosen_win_count_delta=best_win_count_delta,
                 training_points=best_count,
                 training_cost=best_cost,
             )
@@ -3826,7 +3875,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
         eval_seed: int,
     ) -> None:
         by_fraction: dict[
-            tuple[int, float, int, str, int],
+            tuple[int, float, int, str, int, int],
             WikiMemoryMixedGuardCounterPoint,
         ] = {}
         for source in source_points:
@@ -3837,16 +3886,21 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                     source.guard_share_radius_blocks,
                     source.guard_loss_decay_mode,
                     source.guard_allowed_loss_count,
+                    source.guard_win_count_delta,
                 )
             ] = source
         for point in source_points:
-            chosen_radius, chosen_loss_decay_mode, chosen_allowed_loss = chosen_choice_by_block[
-                point.guard_counter_block_pages
-            ]
+            (
+                chosen_radius,
+                chosen_loss_decay_mode,
+                chosen_allowed_loss,
+                chosen_win_count_delta,
+            ) = chosen_choice_by_block[point.guard_counter_block_pages]
             if (
                 point.guard_share_radius_blocks != chosen_radius
                 or point.guard_loss_decay_mode != chosen_loss_decay_mode
                 or point.guard_allowed_loss_count != chosen_allowed_loss
+                or point.guard_win_count_delta != chosen_win_count_delta
             ):
                 continue
             local_radius = 0 if 0 in clean_radii else chosen_radius
@@ -3857,6 +3911,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                     local_radius,
                     chosen_loss_decay_mode,
                     chosen_allowed_loss,
+                    chosen_win_count_delta,
                 ),
                 point,
             )
@@ -3874,6 +3929,8 @@ def run_wiki_memory_learned_guard_sharing_sweep(
                     chosen_share_radius_blocks=chosen_radius,
                     chosen_loss_decay_mode=chosen_loss_decay_mode,
                     chosen_allowed_loss_count=chosen_allowed_loss,
+                    chosen_win_count_delta=chosen_win_count_delta,
+                    chosen_required_win_count=point.guard_required_win_count,
                     target_dense_enable_rate=target,
                     local_dense_enable_rate=local_point.dense_enable_rate,
                     learned_dense_enable_rate=point.dense_shared_enable_rate,
@@ -3901,6 +3958,7 @@ def run_wiki_memory_learned_guard_sharing_sweep(
             guard_share_radius_options=clean_radii,
             guard_loss_decay_options=clean_loss_decay_modes,
             guard_allowed_loss_options=clean_allowed_losses,
+            guard_win_count_delta_options=clean_win_count_deltas,
             **eval_kwargs,
         )
         append_eval_points(eval_sweep.points, eval_seed)
@@ -3908,13 +3966,17 @@ def run_wiki_memory_learned_guard_sharing_sweep(
     radius_bits = max(1, int(np.ceil(np.log2(max(clean_radii) + 1))))
     decay_bits = max(1, int(np.ceil(np.log2(len(clean_loss_decay_modes)))))
     loss_bits = max(1, int(np.ceil(np.log2(max(clean_allowed_losses) + 1))))
-    radius_lut_bits = len(clean_blocks) * (radius_bits + decay_bits + loss_bits)
+    win_delta_bits = max(1, int(np.ceil(np.log2(len(clean_win_count_deltas)))))
+    radius_lut_bits = len(clean_blocks) * (
+        radius_bits + decay_bits + loss_bits + win_delta_bits
+    )
     return WikiMemoryLearnedGuardSharingResult(
         policy=sweep.policy,
         radius_lut_state_bytes=radius_lut_bits / 8.0,
         radius_options=clean_radii,
         loss_decay_options=clean_loss_decay_modes,
         allowed_loss_options=clean_allowed_losses,
+        win_count_delta_options=clean_win_count_deltas,
         min_dense_fraction_to_enable=min_dense_fraction_to_enable,
         entries=tuple(entries),
         points=tuple(eval_points),

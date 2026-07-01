@@ -27,11 +27,12 @@ def print_result(result: WikiMemoryLearnedGuardSharingResult) -> None:
         f"policy={result.policy}, radius_options={result.radius_options}, "
         f"decay_options={result.loss_decay_options}, "
         f"loss_options={result.allowed_loss_options}, "
+        f"win_delta_options={result.win_count_delta_options}, "
         f"lut_state={format_bytes(result.radius_lut_state_bytes)}"
     )
     print()
     print("Learned LUT")
-    headers = ["blk_pg", "radius", "decay", "loss", "train_n", "cost"]
+    headers = ["blk_pg", "radius", "decay", "loss", "dwin", "train_n", "cost"]
     header_line = " | ".join(f"{header:>10}" for header in headers)
     print(header_line)
     print("-" * len(header_line))
@@ -41,6 +42,7 @@ def print_result(result: WikiMemoryLearnedGuardSharingResult) -> None:
             f"{entry.chosen_share_radius_blocks}",
             entry.chosen_loss_decay_mode,
             f"{entry.chosen_allowed_loss_count}",
+            f"{entry.chosen_win_count_delta:+d}",
             f"{entry.training_points}",
             f"{entry.training_cost:0.3f}",
         ]
@@ -48,7 +50,19 @@ def print_result(result: WikiMemoryLearnedGuardSharingResult) -> None:
 
     print()
     print("Evaluation")
-    headers = ["seed", "dense%", "decay", "loss", "target", "local", "learned", "false", "d_w/l"]
+    headers = [
+        "seed",
+        "dense%",
+        "decay",
+        "loss",
+        "dwin",
+        "need",
+        "target",
+        "local",
+        "learned",
+        "false",
+        "d_w/l",
+    ]
     header_line = " | ".join(f"{header:>10}" for header in headers)
     print(header_line)
     print("-" * len(header_line))
@@ -58,6 +72,8 @@ def print_result(result: WikiMemoryLearnedGuardSharingResult) -> None:
             fmt_pct(point.dense_page_fraction),
             point.chosen_loss_decay_mode,
             f"{point.chosen_allowed_loss_count}",
+            f"{point.chosen_win_count_delta:+d}",
+            f"{point.chosen_required_win_count}",
             fmt_pct(point.target_dense_enable_rate),
             fmt_pct(point.local_dense_enable_rate),
             fmt_pct(point.learned_dense_enable_rate),
@@ -69,7 +85,8 @@ def print_result(result: WikiMemoryLearnedGuardSharingResult) -> None:
     print()
     print("Interpretation:")
     print("- This narrow audit learns the 512-page/radius-1 guard controller.")
-    print("- Ties prefer strict loss=0, then event-driven decay over permanent tolerance.")
+    print("- dwin is a small learned delta added to the base win-count threshold.")
+    print("- Ties prefer strict loss=0, higher win threshold, then event-driven decay.")
     print("- The held-out seed1501 row checks whether decay repairs the old 99/1 failure.")
 
 
@@ -81,6 +98,7 @@ def main() -> None:
             guard_share_radius_options=(1,),
             guard_loss_decay_options=("none", "win", "nonloss"),
             guard_allowed_loss_options=(0, 1),
+            guard_win_count_delta_options=(-1, 0, 1),
             quality_probe_event_options=((512, 256),),
             eval_seeds=(1201, 1501),
         )

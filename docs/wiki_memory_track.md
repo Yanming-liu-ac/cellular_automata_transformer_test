@@ -254,19 +254,19 @@ local tile choice.
 
 The learned guard LUT now chooses the full low-bit guard controller. Training
 on the 25%, 50%, and 75% dense mixed streams with block sizes 256, 512, and
-1,024 learns `256 -> radius 2/decay win/loss 0`,
-`512 -> radius 1/decay win/loss 0`, and
-`1024 -> radius 0/decay win/loss 0`. The table is 1.875B for these three
-geometry entries: radius bits, one decay-mode code, and one loss-threshold bit.
-Training-seed evaluation hits the target: 25% dense stays off, 50% dense rises
-from 50% local dense-block coverage to 100% for 256 and 512-page blocks, 75%
-dense remains 100%, and sparse false-enable stays 0.00%. The held-out seed
-audit that used to fail is now repaired without permanent tolerance: seed 1501
-has 99/1 dense wins/losses at 75% dense, and decay-on-win with strict
-`loss == 0` restores 100% learned dense coverage for 256, 512, and 1,024-page
-blocks with sparse false-enable still 0.00%. The current controller is now a
-learned local rule over sharing radius, event-driven loss decay, and loss
-tolerance.
+1,024 learns `256 -> radius 2/decay win/loss 0/dwin +1`,
+`512 -> radius 1/decay win/loss 0/dwin +1`, and
+`1024 -> radius 0/decay win/loss 0/dwin +1`. The table is 2.625B for these
+three geometry entries: radius bits, one decay-mode code, one loss-threshold
+bit, and one win-threshold-delta code. Training-seed evaluation hits the
+target: 25% dense stays off, 50% dense rises from 50% local dense-block
+coverage to 100% for 256 and 512-page blocks, 75% dense remains 100%, and
+sparse false-enable stays 0.00%. The held-out seed audit that used to fail is
+now repaired without permanent tolerance: seed 1501 has 99/1 dense wins/losses
+at 75% dense, and decay-on-win with strict `loss == 0` restores 100% learned
+dense coverage for 256, 512, and 1,024-page blocks with sparse false-enable
+still 0.00%. The current controller is now a learned local rule over sharing
+radius, event-driven loss decay, loss tolerance, and win threshold.
 
 The held-out loss-tolerance audit isolates the 512-page/radius-1 geometry
 and compares strict `loss=0` against tolerant `loss=1` on seeds 1201, 1301,

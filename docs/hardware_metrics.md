@@ -315,15 +315,17 @@ controlled evidence sharing across local blocks.
 
 The learned guard LUT is smaller than the counters. With three guard block
 geometries, radii 0-2, decay modes none/win/nonloss, and loss tolerances 0-1,
-the table is 15 bits, or 1.875B. It chooses radius 2/decay win/loss 0 for
-256-page blocks, radius 1/decay win/loss 0 for 512-page blocks, and radius
-0/decay win/loss 0 for 1,024-page blocks. That restores 50% dense coverage to
-100% for the finer blocks while keeping sparse false-enable at 0.00% on the
-training stream. The former held-out seed 1501 failure is now a positive stress
-case: a 99/1 dense wins/losses trace at 75% dense no longer trips the guard
-because decay-on-win restores 100% learned dense coverage with strict
-`loss == 0` and 0.00% sparse false-enable. The next hardware state should test
-a learned win threshold and a larger held-out seed/noise audit.
+plus win-threshold deltas -1/0/+1, the table is 21 bits, or 2.625B. It chooses
+radius 2/decay win/loss 0/dwin +1 for 256-page blocks, radius 1/decay
+win/loss 0/dwin +1 for 512-page blocks, and radius 0/decay win/loss 0/dwin +1
+for 1,024-page blocks. That restores 50% dense coverage to 100% for the finer
+blocks while keeping sparse false-enable at 0.00% on the training stream. The
+former held-out seed 1501 failure is now a positive stress case: a 99/1 dense
+wins/losses trace at 75% dense no longer trips the guard because decay-on-win
+restores 100% learned dense coverage with strict `loss == 0`, a one-count
+higher win threshold, and 0.00% sparse false-enable. The next hardware state
+should test a learned base win-threshold scale and a larger held-out seed/noise
+audit.
 
 The first loss-tolerance audit fixes the 512-page/radius-1 geometry and tests
 seeds 1201, 1301, 1401, and 1501. Strict `loss=0` has one dense-on failure,

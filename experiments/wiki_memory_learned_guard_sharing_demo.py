@@ -27,12 +27,13 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
         f"policy={result.policy}, radius_options={result.radius_options}, "
         f"decay_options={result.loss_decay_options}, "
         f"loss_options={result.allowed_loss_options}, "
+        f"win_delta_options={result.win_count_delta_options}, "
         f"enable_dense_at>={fmt_pct(result.min_dense_fraction_to_enable)}, "
         f"lut_state={format_bytes(result.radius_lut_state_bytes)}"
     )
     print()
     print("Learned guard LUT")
-    headers = ["blk_pg", "radius", "decay", "loss", "train_n", "cost"]
+    headers = ["blk_pg", "radius", "decay", "loss", "dwin", "train_n", "cost"]
     header_line = " | ".join(f"{header:>10}" for header in headers)
     print(header_line)
     print("-" * len(header_line))
@@ -42,6 +43,7 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
             f"{entry.chosen_share_radius_blocks}",
             entry.chosen_loss_decay_mode,
             f"{entry.chosen_allowed_loss_count}",
+            f"{entry.chosen_win_count_delta:+d}",
             f"{entry.training_points}",
             f"{entry.training_cost:0.3f}",
         ]
@@ -56,6 +58,8 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
         "radius",
         "decay",
         "loss",
+        "dwin",
+        "need",
         "target",
         "local",
         "learned",
@@ -74,6 +78,8 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
             f"{point.chosen_share_radius_blocks}",
             point.chosen_loss_decay_mode,
             f"{point.chosen_allowed_loss_count}",
+            f"{point.chosen_win_count_delta:+d}",
+            f"{point.chosen_required_win_count}",
             fmt_pct(point.target_dense_enable_rate),
             fmt_pct(point.local_dense_enable_rate),
             fmt_pct(point.learned_dense_enable_rate),
@@ -85,9 +91,9 @@ def print_learned_guard(result: WikiMemoryLearnedGuardSharingResult) -> None:
 
     print()
     print("Interpretation:")
-    print("- The LUT maps guard block size to same-tag sharing radius, loss decay, and tolerance.")
+    print("- The LUT maps guard block size to sharing radius, loss decay, tolerance, and win threshold delta.")
     print("- The training objective enables dense blocks at 50%+ dense while keeping sparse false-enable at zero.")
-    print("- Cost ties prefer strict loss first, then a conservative event-driven decay mode.")
+    print("- Cost ties prefer strict loss, a higher win threshold, then event-driven decay.")
     print("- decay=win repairs stale losses using later local dense-route wins.")
 
 
@@ -99,6 +105,7 @@ def main() -> None:
             guard_share_radius_options=(0, 1, 2),
             guard_loss_decay_options=("none", "win", "nonloss"),
             guard_allowed_loss_options=(0, 1),
+            guard_win_count_delta_options=(-1, 0, 1),
             quality_probe_event_options=((512, 256),),
             eval_seeds=(1201, 1301, 1401, 1501),
         )

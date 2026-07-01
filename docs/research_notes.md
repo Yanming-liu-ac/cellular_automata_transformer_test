@@ -433,18 +433,20 @@ not just when to flip a tile.
 
 The first learned version of that rule is still tiny, but it now learns the
 counter dynamics too. A guard LUT over block size learns
-`256 -> radius 2/decay win/loss 0`, `512 -> radius 1/decay win/loss 0`, and
-`1024 -> radius 0/decay win/loss 0` from the same mixed-stream objective: keep
-25% dense off, enable 50% and 75% dense, and never enable sparse blocks. The
-table is 1.875B in this diagnostic and recovers 100% dense coverage for the
-finer blocks that local counters miss. Held-out seed testing makes the result
-more honest. The old strict zero-loss version generalized to seeds 1301 and
-1401 but failed on seed 1501, where one dense loss in a 99/1 wins/losses case
-blocked coverage at 75% dense. The learned decay version repairs that case with
-strict `loss == 0`: decay-on-win restores 100% learned dense coverage for all
-three block sizes and keeps sparse false-enable at 0.00%. This is a better
-CA-chip shape than a global heuristic because the learned controller changes
-local counter dynamics rather than only relaxing the loss threshold.
+`256 -> radius 2/decay win/loss 0/dwin +1`,
+`512 -> radius 1/decay win/loss 0/dwin +1`, and
+`1024 -> radius 0/decay win/loss 0/dwin +1` from the same mixed-stream
+objective: keep 25% dense off, enable 50% and 75% dense, and never enable
+sparse blocks. The table is 2.625B in this diagnostic and recovers 100% dense
+coverage for the finer blocks that local counters miss. Held-out seed testing
+makes the result more honest. The old strict zero-loss version generalized to
+seeds 1301 and 1401 but failed on seed 1501, where one dense loss in a 99/1
+wins/losses case blocked coverage at 75% dense. The learned controller repairs
+that case with strict `loss == 0`: decay-on-win plus a one-count higher win
+threshold restores 100% learned dense coverage for all three block sizes and
+keeps sparse false-enable at 0.00%. This is a better CA-chip shape than a
+global heuristic because the controller changes local counter dynamics and
+comparison thresholds rather than only relaxing the loss gate.
 
 A first regression-style audit now exists for that failure mode. It fixes the
 512-page/radius-1 geometry and compares `loss=0` with `loss=1` across
