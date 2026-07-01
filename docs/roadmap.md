@@ -356,6 +356,9 @@ Implement:
   workloads.
 - extend the rare-directory trace-gate result into the dual-path synthetic LM,
   where demand comes from exact-memory lookups and candidate output events.
+- add candidate-output demand to the synthetic trace. The exact-query trace now
+  works; topic events should next demand the candidate rows that are scored for
+  output shortlist ranking.
 
 First trainable target:
 

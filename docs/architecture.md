@@ -223,6 +223,14 @@ content essentially exact. This is much cheaper than fixed refresh16 and much
 more accurate than global mismatch gating. The route/retrieval lane therefore
 becomes a first-class controller input to the CA cell.
 
+The dual-path synthetic LM gives the same answer for exact-memory lookups.
+Query events demand one fact row; topic events demand none. A 16-byte learned
+trace gate exposes content to the carrier almost only on query events, reaching
+about 99.6% demanded exactness at roughly 0.0019 channel writes/token/tick. This
+separates persistent content storage from transient compute exposure in the
+architecture: exact-memory and route lanes assert demand, and the cell writes
+content into the carrier only at those demanded rows.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

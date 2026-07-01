@@ -81,6 +81,8 @@ The first experiments compare:
   for route/query-demanded cells;
 - rare-directory query-trace demand gates that drive content exposure from
   actual retrieval occurrence positions;
+- synthetic exact-query demand gates that wake persistent content only for
+  exact-memory lookup events;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

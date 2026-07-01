@@ -19,6 +19,13 @@ import numpy as np
 
 from .candidate_cache import CandidateCacheConfig, LowBitCandidateCache
 from .dense_context import DenseContextConfig, LowBitDenseContext
+from .propagation import (
+    DemandContentGateLUT,
+    DemandContentGatePoint,
+    evaluate_lut_trace_demand_content_gate,
+    evaluate_trace_demand_content_gate,
+    train_trace_demand_content_gate_lut,
+)
 from .retrieval import HashRouteCAMConfig, TieredHashRouteCAM, TieredHashRouteCAMConfig, keyed_hash
 
 
@@ -146,6 +153,24 @@ class SyntheticLMResult:
     total_memory_bytes: float
 
 
+@dataclass(frozen=True)
+class SyntheticLMDemandGateResult:
+    """Content-gate diagnostic driven by synthetic exact-query demand."""
+
+    fact_count: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    bits: int
+    train_seed: int
+    eval_seed: int
+    write_cost: float
+    lut_state_bytes: float
+    lut_write_state_count: int
+    lut: DemandContentGateLUT
+    points: Tuple[DemandContentGatePoint, ...]
+
+
 def make_fact_pairs(config: SyntheticLMConfig, seed: int) -> List[Tuple[int, int]]:
     """Create deterministic key/value facts within the vocabulary."""
 
@@ -190,6 +215,38 @@ def sample_topic_token(config: SyntheticLMConfig, rng: np.random.Generator) -> i
     probabilities = 1.0 / np.power(ranks, config.zipf_exponent)
     probabilities /= probabilities.sum()
     return int(rng.choice(config.hot_tokens, p=probabilities))
+
+
+def make_exact_query_demand_trace(
+    config: SyntheticLMConfig,
+    seed: int,
+) -> Tuple[np.ndarray, ...]:
+    """Return one demand trace for exact-memory query events.
+
+    Topic events do not demand exact fact rows. Query events demand the fact row
+    selected by the same event-order process as ``DualPathSyntheticLM.run``.
+    """
+
+    rng = np.random.default_rng(seed)
+    query_indices = rng.choice(
+        config.fact_count,
+        size=config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * config.topic_events + ["query"] * config.query_events
+    )
+    rng.shuffle(event_types)
+
+    trace = []
+    query_cursor = 0
+    for event_type in event_types:
+        if event_type == "query":
+            trace.append(np.array([int(query_indices[query_cursor])], dtype=np.int32))
+            query_cursor += 1
+        else:
+            trace.append(np.empty(0, dtype=np.int32))
+    return tuple(trace)
 
 
 class DualPathSyntheticLM:
@@ -497,3 +554,84 @@ def run_synthetic_lm_trial(seed: int = 0, config: SyntheticLMConfig | None = Non
 
     lm = DualPathSyntheticLM(config or SyntheticLMConfig(), seed=seed)
     return lm.run()
+
+
+def run_synthetic_lm_demand_gate_sweep(
+    config: SyntheticLMConfig | None = None,
+    policies: Tuple[str, ...] = (
+        "none",
+        "fixed_refresh16",
+        "mismatch_ge8",
+        "demand_mismatch_ge1",
+        "demand_mismatch_ge4",
+    ),
+    bits: int = 4,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+    write_cost: float = 0.15,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+) -> SyntheticLMDemandGateResult:
+    """Train/evaluate content gates on synthetic exact-query demand."""
+
+    gate_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+    )
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+
+    train_trace = make_exact_query_demand_trace(gate_config, seed=train_seed)
+    eval_trace = make_exact_query_demand_trace(gate_config, seed=eval_seed)
+    lut = train_trace_demand_content_gate_lut(
+        demand_trace=train_trace,
+        length=gate_config.fact_count,
+        bits=bits,
+        seed=train_seed + 8192,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+    )
+
+    points = []
+    for policy in tuple(dict.fromkeys(str(policy).lower() for policy in policies)):
+        points.append(
+            evaluate_trace_demand_content_gate(
+                policy=policy,
+                demand_trace=eval_trace,
+                length=gate_config.fact_count,
+                bits=bits,
+                seed=eval_seed + 8192,
+            )
+        )
+    points.append(
+        evaluate_lut_trace_demand_content_gate(
+            lut=lut,
+            demand_trace=eval_trace,
+            length=gate_config.fact_count,
+            bits=bits,
+            seed=eval_seed + 8192,
+            policy=f"learned_exact_trace_lut_c{write_cost:0.2f}",
+        )
+    )
+
+    return SyntheticLMDemandGateResult(
+        fact_count=gate_config.fact_count,
+        topic_events=gate_config.topic_events,
+        query_events=gate_config.query_events,
+        total_events=gate_config.topic_events + gate_config.query_events,
+        bits=bits,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        write_cost=write_cost,
+        lut_state_bytes=lut.state_bytes,
+        lut_write_state_count=lut.write_state_count,
+        lut=lut,
+        points=tuple(points),
+    )

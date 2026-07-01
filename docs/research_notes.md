@@ -216,6 +216,15 @@ right direction: once demand comes from actual retrieval queries, the gate can
 move content only at queried occurrence cells instead of reconstructing the
 whole carrier.
 
+The same trace-demand interface now works on the dual-path synthetic LM's exact
+query events. Topic events demand no exact fact row; query events demand the
+selected fact row. On the small 512-fact, 768-event diagnostic, fixed refresh16
+still spends 0.187 channel writes/token/tick and reaches only 13.3% demanded
+exactness. The learned exact-query trace LUT spends about 0.0019 writes and
+reaches 99.6% demanded exactness. This is an even clearer systems result than
+the rare-directory trace: when demand is truly sparse, content exposure should
+be event-routed, not maintained continuously.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -202,7 +202,15 @@ from .retrieval import (
     TieredLookupResult,
     run_recall_trial,
 )
-from .synthetic_lm import DualPathSyntheticLM, SyntheticLMConfig, SyntheticLMResult, run_synthetic_lm_trial
+from .synthetic_lm import (
+    DualPathSyntheticLM,
+    make_exact_query_demand_trace,
+    SyntheticLMDemandGateResult,
+    SyntheticLMConfig,
+    SyntheticLMResult,
+    run_synthetic_lm_demand_gate_sweep,
+    run_synthetic_lm_trial,
+)
 
 __all__ = [
     "CellularMoE",
@@ -312,6 +320,7 @@ __all__ = [
     "PropagationResult",
     "RecallTrialResult",
     "SyntheticLMConfig",
+    "SyntheticLMDemandGateResult",
     "SyntheticLMResult",
     "TieredHashRouteCAM",
     "TieredHashRouteCAMConfig",
@@ -319,6 +328,7 @@ __all__ = [
     "TileConfig",
     "harc_ca_edges",
     "line_edges",
+    "make_exact_query_demand_trace",
     "profile_chip",
     "propagation_distances",
     "compare_to_transformer_kv",
@@ -385,6 +395,7 @@ __all__ = [
     "run_memory_task",
     "run_recall_trial",
     "run_synthetic_lm_trial",
+    "run_synthetic_lm_demand_gate_sweep",
     "shortest_propagation_steps",
     "sweep_memory_tasks",
     "train_repeat_admission_lut",

@@ -10,7 +10,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from cellular_transformer.synthetic_lm import SyntheticLMConfig, run_synthetic_lm_trial
+from cellular_transformer.synthetic_lm import (
+    SyntheticLMConfig,
+    run_synthetic_lm_demand_gate_sweep,
+    run_synthetic_lm_trial,
+)
 
 
 def fmt_pct(value: float) -> str:
@@ -138,6 +142,46 @@ def main() -> None:
     print("- Topic-phase rows use a separate scoring sketch updated only by topic events.")
     print("- Topic-cache rows use 2 * topic-phase score + candidate-cache score.")
     print("- This is a non-trained inference skeleton, not an LLM quality result.")
+    print()
+
+    gate = run_synthetic_lm_demand_gate_sweep()
+    print("Synthetic exact-query content gate")
+    print(
+        f"facts={gate.fact_count}, events={gate.total_events}, "
+        f"query_events={gate.query_events}, lut={gate.lut_state_bytes:0.1f}B, "
+        f"write_states={gate.lut_write_state_count}/{len(gate.lut.writes)}"
+    )
+    gate_headers = [
+        "policy",
+        "wr/tok/t",
+        "demand",
+        "d_exact",
+        "d_err",
+        "carrierM",
+        "errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{h:>18}" for h in gate_headers))
+    print("-" * 176)
+    for point in gate.points:
+        row = [
+            point.policy,
+            f"{point.gate_channel_writes_per_token_tick:0.4f}",
+            fmt_pct(point.mean_demand_fraction),
+            fmt_pct(point.demand_exact_rate),
+            fmt_pct(point.demand_mean_abs_error),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            f"{point.carrier_final_entropy_bits:0.2f}",
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>18}" for cell in row))
+
+    print()
+    print("Synthetic gate interpretation:")
+    print("- Demand comes from exact-memory query events in the mixed synthetic event stream.")
+    print("- Topic events do not demand exact fact rows, so the learned gate should avoid full-field refresh.")
 
 
 if __name__ == "__main__":

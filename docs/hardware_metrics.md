@@ -130,6 +130,13 @@ writes/token/tick and leaves demanded exactness around 10%-13%. This is the
 current best evidence that demand-routed content exposure can keep local write
 traffic low while preserving exact queried content.
 
+On the dual-path synthetic exact-query trace, demand is even sparser: one fact
+row on query events and no exact row on topic events. The learned trace LUT
+spends about 0.0019 channel writes/token/tick and reaches 99.6% demanded
+exactness. Fixed refresh16 still costs 0.187 writes/token/tick. This suggests
+the content lane can remain mostly idle during topic-only decode steps and wake
+only for exact-memory demand.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

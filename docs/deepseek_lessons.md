@@ -340,6 +340,12 @@ demanded content with only about 0.03 channel writes/token/tick. The systems
 lesson is the same as CSA/HCA: compression and routing are useful only when the
 controller knows which path is active.
 
+The dual-path synthetic LM exact-query trace pushes the same point further:
+topic events leave the exact-content lane idle, while query events demand one
+fact row. The learned gate reaches about 99.6% demanded exactness at roughly
+0.0019 channel writes/token/tick. This is path specialization as a CA rule:
+idle content stays persistent, active content is exposed locally.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because
