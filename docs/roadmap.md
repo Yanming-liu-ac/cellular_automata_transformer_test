@@ -338,8 +338,9 @@ Implement:
 - multi-token / multi-tick prediction heads;
 - tiny Transformer teacher for distillation experiments.
 - optional Muon-style optimizer experiment for the shared recurrent rule.
-- extend dynamic propagation from the current 128-tick source-pulse diagnostic
-  to 1,000-tick random-state and trained-state stability sweeps.
+- extend the 1,000-tick random-state stability sweep into trained-state sweeps
+  that optimize for content entropy preservation, not just avoiding zero
+  collapse or saturation.
 
 First trainable target:
 

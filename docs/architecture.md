@@ -165,6 +165,16 @@ contexts while keeping saturation near 33% of low-bit entries instead of 100%.
 This makes grouped rule channels part of the architecture, not just an
 optimization detail.
 
+The 1,000-tick unforced stability sweep adds the complementary constraint.
+Scalar residual averaging and raw max-routing both collapse into low-entropy
+fixed states, and raw max-routing saturates on dense-random inputs. A simple
+leaky `mhc_damped` variant also fails because it decays to zero. The grouped
+rule is the current scaffold because it avoids both zero collapse and global
+saturation from sparse-random, dense-random, and structured-pulse initial
+states. It still converges to a low-entropy attractor, so the architecture needs
+trained local dynamics and memory-lane writes to carry content on top of that
+stable grouped carrier.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

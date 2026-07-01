@@ -135,6 +135,21 @@ modeling, but it gives the first constructive evidence that grouped
 route/local/envelope channels are a better CA primitive than a single scalar
 diffusion state.
 
+The next stability sweep removes the forced source and runs 4-bit HARC dynamics
+for 1,000 ticks from sparse-random, dense-random, and structured-pulse initial
+states. This separates "can propagate a pulse" from "can remain a usable
+recurrent state." The scalar residual rule collapses into low-entropy rest
+states. `route_max` is confirmed to be a propagation primitive only: dense
+random inputs saturate to 100%, while other inputs still collapse to a uniform
+high-level state. A naive `mhc_damped` leak prevents saturation but collapses to
+zero, so simple damping is not the fix. The original `mhc_grouped` rule is the
+only hand-coded rule in this sweep that avoids both collapse and global
+saturation across all three initial states. It ends near a low-entropy
+multi-channel attractor, about 1.58 bits of level entropy, which is stable but
+not yet information-rich. The next trainable rule should preserve this grouped
+stability scaffold while learning content-preserving perturbations and memory
+injection.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

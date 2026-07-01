@@ -66,6 +66,49 @@ class DynamicPropagationResult:
     points: Tuple[DynamicPropagationPoint, ...]
 
 
+@dataclass(frozen=True)
+class LongRolloutStabilityPoint:
+    """Long low-bit rollout stability result from an unforced initial state."""
+
+    topology: str
+    rule: str
+    init_mode: str
+    length: int
+    bits: int
+    ticks: int
+    seed: int
+    graph_nodes: int
+    graph_edges: int
+    initial_active_fraction: float
+    final_active_fraction: float
+    initial_saturation_fraction: float
+    final_saturation_fraction: float
+    peak_saturation_fraction: float
+    initial_mean_level: float
+    final_mean_level: float
+    peak_mean_level: float
+    initial_entropy_bits: float
+    final_entropy_bits: float
+    min_entropy_bits: float
+    mean_abs_step: float
+    checksum: int
+    collapsed: bool
+    saturated: bool
+
+
+@dataclass(frozen=True)
+class LongRolloutStabilityResult:
+    """Sweep of unforced long-rollout stability checks."""
+
+    lengths: Tuple[int, ...]
+    topologies: Tuple[str, ...]
+    rules: Tuple[str, ...]
+    init_modes: Tuple[str, ...]
+    bits: int
+    ticks: int
+    points: Tuple[LongRolloutStabilityPoint, ...]
+
+
 def _connect(edges: EdgeMap, a: Node, b: Node) -> None:
     edges.setdefault(a, []).append(b)
     edges.setdefault(b, []).append(a)
@@ -257,7 +300,7 @@ def _step_dynamic_state(
     rule: str,
     neighbors: List[np.ndarray],
     max_value: int,
-    source_index: int,
+    source_index: int | None,
 ) -> np.ndarray:
     rule = rule.lower()
     if rule == "residual_avg":
@@ -265,7 +308,8 @@ def _step_dynamic_state(
         neighbor_mean = _aggregate_neighbor_mean(current, neighbors, current)
         delta = np.sign(neighbor_mean - current).astype(np.int16)
         next_state = np.clip(current + delta, 0, max_value).astype(np.uint8)[:, None]
-        next_state[source_index, 0] = max_value
+        if source_index is not None:
+            next_state[source_index, 0] = max_value
         return next_state
 
     if rule == "route_max":
@@ -273,10 +317,11 @@ def _step_dynamic_state(
         neighbor_max = _aggregate_neighbor_max(current, neighbors, current)
         delta = np.sign(neighbor_max - current).astype(np.int16)
         next_state = np.clip(current + delta, 0, max_value).astype(np.uint8)[:, None]
-        next_state[source_index, 0] = max_value
+        if source_index is not None:
+            next_state[source_index, 0] = max_value
         return next_state
 
-    if rule == "mhc_grouped":
+    if rule in {"mhc_grouped", "mhc_damped"}:
         local = state[:, 0].astype(np.int16)
         route = state[:, 1].astype(np.int16)
         envelope = state[:, 2].astype(np.int16)
@@ -284,16 +329,23 @@ def _step_dynamic_state(
         route_max = _aggregate_neighbor_max(route, neighbors, route)
 
         route_target = np.maximum(route_max, local_mean)
-        route_delta = np.clip(route_target - route, -1, 2)
-        next_route = np.clip(route + route_delta, 0, max_value)
+        if rule == "mhc_damped":
+            route_delta = np.clip(route_target - route, 0, 2)
+            next_route = np.clip(route + route_delta - 1, 0, max_value)
+        else:
+            route_delta = np.clip(route_target - route, -1, 2)
+            next_route = np.clip(route + route_delta, 0, max_value)
 
         local_target = (local_mean + next_route) // 2
         next_local = np.clip(local + np.sign(local_target - local), 0, max_value)
 
-        envelope_target = np.maximum(next_local, next_route) // 2
+        if rule == "mhc_damped":
+            envelope_target = (next_local + next_route) // 3
+        else:
+            envelope_target = np.maximum(next_local, next_route) // 2
         next_envelope = np.clip(envelope + np.sign(envelope_target - envelope), 0, max_value)
 
-        budget = max_value * 2
+        budget = max_value + max_value // 2 if rule == "mhc_damped" else max_value * 2
         total = next_local + next_route + next_envelope
         overflow = np.maximum(total - budget, 0)
         next_envelope = np.maximum(0, next_envelope - overflow)
@@ -302,14 +354,15 @@ def _step_dynamic_state(
         next_route = np.maximum(0, next_route - overflow)
 
         next_state = np.stack([next_local, next_route, next_envelope], axis=1).astype(np.uint8)
-        next_state[source_index] = np.array([max_value, max_value, max_value // 2], dtype=np.uint8)
+        if source_index is not None:
+            next_state[source_index] = np.array([max_value, max_value, max_value // 2], dtype=np.uint8)
         return next_state
 
-    raise ValueError("rule must be one of: residual_avg, route_max, mhc_grouped")
+    raise ValueError("rule must be one of: residual_avg, route_max, mhc_grouped, mhc_damped")
 
 
 def _signal_level(state: np.ndarray, rule: str) -> np.ndarray:
-    if rule == "mhc_grouped":
+    if rule in {"mhc_grouped", "mhc_damped"}:
         return np.maximum(state[:, 0], state[:, 1])
     return state[:, 0]
 
@@ -339,8 +392,8 @@ def evaluate_dynamic_propagation(
         raise ValueError("radius must be positive")
 
     rule = rule.lower()
-    if rule not in {"residual_avg", "route_max", "mhc_grouped"}:
-        raise ValueError("rule must be one of: residual_avg, route_max, mhc_grouped")
+    if rule not in {"residual_avg", "route_max", "mhc_grouped", "mhc_damped"}:
+        raise ValueError("rule must be one of: residual_avg, route_max, mhc_grouped, mhc_damped")
 
     edges = _graph_for_topology(topology, length, radius)
     nodes = _ordered_nodes(edges)
@@ -353,9 +406,9 @@ def evaluate_dynamic_propagation(
     token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
     max_value = (1 << bits) - 1
     threshold = max(1, max_value // 2)
-    channels = 3 if rule == "mhc_grouped" else 1
+    channels = 3 if rule in {"mhc_grouped", "mhc_damped"} else 1
     state = np.zeros((len(nodes), channels), dtype=np.uint8)
-    if rule == "mhc_grouped":
+    if rule in {"mhc_grouped", "mhc_damped"}:
         state[source_index] = np.array([max_value, max_value, max_value // 2], dtype=np.uint8)
     else:
         state[source_index, 0] = max_value
@@ -453,6 +506,223 @@ def run_dynamic_propagation_sweep(
         lengths=clean_lengths,
         topologies=clean_topologies,
         rules=clean_rules,
+        bits=bits,
+        ticks=ticks,
+        points=tuple(points),
+    )
+
+
+def _level_entropy_bits(state: np.ndarray, max_value: int) -> float:
+    counts = np.bincount(state.reshape(-1).astype(np.int16), minlength=max_value + 1)
+    total = int(np.sum(counts))
+    if total <= 0:
+        return 0.0
+    probabilities = counts[counts > 0].astype(np.float64) / float(total)
+    return float(-np.sum(probabilities * np.log2(probabilities)))
+
+
+def _initialize_dynamic_state(
+    init_mode: str,
+    rule: str,
+    nodes: List[Node],
+    node_index: Dict[Node, int],
+    length: int,
+    max_value: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    init_mode = init_mode.lower()
+    channels = 3 if rule in {"mhc_grouped", "mhc_damped"} else 1
+    state = np.zeros((len(nodes), channels), dtype=np.uint8)
+
+    if init_mode == "sparse_random":
+        active = rng.random(state.shape) < 0.08
+        values = rng.integers(1, max_value + 1, size=state.shape, dtype=np.uint8)
+        state[:] = np.where(active, values, 0).astype(np.uint8)
+        return state
+
+    if init_mode == "dense_random":
+        state[:] = rng.integers(0, max_value + 1, size=state.shape, dtype=np.uint8)
+        return state
+
+    if init_mode == "structured_pulses":
+        pulse_positions = tuple(sorted({0, length // 3, (2 * length) // 3, length - 1}))
+        for token_index, position in enumerate(pulse_positions):
+            node = (0, position)
+            if node not in node_index:
+                continue
+            row = node_index[node]
+            if channels == 1:
+                state[row, 0] = max_value
+            else:
+                local = max(1, max_value - token_index)
+                route = max_value if token_index % 2 == 0 else max_value // 2
+                envelope = max_value // 2
+                state[row] = np.array([local, route, envelope], dtype=np.uint8)
+        return state
+
+    raise ValueError("init_mode must be one of: sparse_random, dense_random, structured_pulses")
+
+
+def _state_checksum(state: np.ndarray) -> int:
+    weights = np.arange(1, state.shape[1] + 1, dtype=np.uint64)
+    return int(np.sum(state.astype(np.uint64) * weights) % (2**63 - 1))
+
+
+def evaluate_long_rollout_stability(
+    length: int,
+    topology: str,
+    rule: str,
+    init_mode: str,
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 0,
+) -> LongRolloutStabilityPoint:
+    """Run an unforced low-bit CA rollout and measure collapse/saturation risk."""
+
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    rule = rule.lower()
+    if rule not in {"residual_avg", "route_max", "mhc_grouped", "mhc_damped"}:
+        raise ValueError("rule must be one of: residual_avg, route_max, mhc_grouped, mhc_damped")
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    max_value = (1 << bits) - 1
+    rng = np.random.default_rng(seed)
+    state = _initialize_dynamic_state(
+        init_mode=init_mode,
+        rule=rule,
+        nodes=nodes,
+        node_index=node_index,
+        length=length,
+        max_value=max_value,
+        rng=rng,
+    )
+
+    initial_active_fraction = float(np.count_nonzero(state)) / float(state.size)
+    initial_saturation_fraction = float(np.count_nonzero(state == max_value)) / float(state.size)
+    initial_mean_level = float(np.mean(state)) / float(max_value)
+    initial_entropy = _level_entropy_bits(state, max_value)
+    peak_saturation_fraction = initial_saturation_fraction
+    peak_mean_level = initial_mean_level
+    min_entropy = initial_entropy
+    total_abs_step = 0.0
+
+    for _ in range(ticks):
+        previous = state
+        state = _step_dynamic_state(
+            state=state,
+            rule=rule,
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        total_abs_step += float(
+            np.mean(np.abs(state.astype(np.int16) - previous.astype(np.int16))) / float(max_value)
+        )
+        saturation_fraction = float(np.count_nonzero(state == max_value)) / float(state.size)
+        mean_level = float(np.mean(state)) / float(max_value)
+        entropy = _level_entropy_bits(state, max_value)
+        peak_saturation_fraction = max(peak_saturation_fraction, saturation_fraction)
+        peak_mean_level = max(peak_mean_level, mean_level)
+        min_entropy = min(min_entropy, entropy)
+
+    final_active_fraction = float(np.count_nonzero(state)) / float(state.size)
+    final_saturation_fraction = float(np.count_nonzero(state == max_value)) / float(state.size)
+    final_mean_level = float(np.mean(state)) / float(max_value)
+    final_entropy = _level_entropy_bits(state, max_value)
+    collapsed = final_active_fraction < 0.01 or final_entropy < 0.10
+    saturated = peak_saturation_fraction > 0.80
+
+    return LongRolloutStabilityPoint(
+        topology=topology.lower(),
+        rule=rule,
+        init_mode=init_mode.lower(),
+        length=length,
+        bits=bits,
+        ticks=ticks,
+        seed=seed,
+        graph_nodes=len(nodes),
+        graph_edges=edge_count(edges),
+        initial_active_fraction=initial_active_fraction,
+        final_active_fraction=final_active_fraction,
+        initial_saturation_fraction=initial_saturation_fraction,
+        final_saturation_fraction=final_saturation_fraction,
+        peak_saturation_fraction=peak_saturation_fraction,
+        initial_mean_level=initial_mean_level,
+        final_mean_level=final_mean_level,
+        peak_mean_level=peak_mean_level,
+        initial_entropy_bits=initial_entropy,
+        final_entropy_bits=final_entropy,
+        min_entropy_bits=min_entropy,
+        mean_abs_step=total_abs_step / float(ticks),
+        checksum=_state_checksum(state),
+        collapsed=collapsed,
+        saturated=saturated,
+    )
+
+
+def run_long_rollout_stability_sweep(
+    lengths: Tuple[int, ...] = (512,),
+    topologies: Tuple[str, ...] = ("harc",),
+    rules: Tuple[str, ...] = ("residual_avg", "route_max", "mhc_grouped", "mhc_damped"),
+    init_modes: Tuple[str, ...] = ("sparse_random", "dense_random", "structured_pulses"),
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 101,
+) -> LongRolloutStabilityResult:
+    """Sweep long unforced low-bit rollouts for stability diagnostics."""
+
+    if len(lengths) == 0:
+        raise ValueError("lengths must not be empty")
+    clean_lengths = tuple(int(length) for length in lengths)
+    if any(length <= 0 for length in clean_lengths):
+        raise ValueError("lengths must be positive")
+    if len(topologies) == 0:
+        raise ValueError("topologies must not be empty")
+    clean_topologies = tuple(dict.fromkeys(str(topology).lower() for topology in topologies))
+    if len(rules) == 0:
+        raise ValueError("rules must not be empty")
+    clean_rules = tuple(dict.fromkeys(str(rule).lower() for rule in rules))
+    if len(init_modes) == 0:
+        raise ValueError("init_modes must not be empty")
+    clean_init_modes = tuple(dict.fromkeys(str(init_mode).lower() for init_mode in init_modes))
+
+    points = []
+    for length_index, length in enumerate(clean_lengths):
+        for topology_index, topology in enumerate(clean_topologies):
+            for rule_index, rule in enumerate(clean_rules):
+                for init_index, init_mode in enumerate(clean_init_modes):
+                    point_seed = seed + 1009 * length_index + 131 * topology_index + 17 * rule_index + init_index
+                    points.append(
+                        evaluate_long_rollout_stability(
+                            length=length,
+                            topology=topology,
+                            rule=rule,
+                            init_mode=init_mode,
+                            bits=bits,
+                            ticks=ticks,
+                            radius=radius,
+                            seed=point_seed,
+                        )
+                    )
+
+    return LongRolloutStabilityResult(
+        lengths=clean_lengths,
+        topologies=clean_topologies,
+        rules=clean_rules,
+        init_modes=clean_init_modes,
         bits=bits,
         ticks=ticks,
         points=tuple(points),

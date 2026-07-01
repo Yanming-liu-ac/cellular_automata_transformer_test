@@ -66,6 +66,16 @@ The mHC-inspired grouped rule reaches all token cells in 24 ticks while limiting
 saturation to about 33.3% of entries. This is the first measured reason to keep
 separate local, route, and stability-envelope channels in the CA cell format.
 
+The 1,000-tick unforced stability check uses the same 4-bit HARC graph at
+512 tokens and starts from sparse random, dense random, and structured pulses.
+`residual_avg` and `route_max` collapse to low-entropy fixed states; `route_max`
+also reaches 100% saturation from dense random input. A leaky `mhc_damped`
+variant avoids saturation by erasing the state, so it is rejected. `mhc_grouped`
+keeps active state without global saturation across all three starts, but its
+final entropy is only about 1.58 bits. The next metric target is therefore not
+just "stable for 1,000 ticks"; it is stable with content entropy preserved under
+trained local rules.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

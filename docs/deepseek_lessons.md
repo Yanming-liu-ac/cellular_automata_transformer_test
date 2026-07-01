@@ -296,6 +296,15 @@ saturation near one third of low-bit entries. The lesson is practical: grouped
 state is not just a modeling flourish; it is how a low-bit CA can get both fast
 propagation and bounded rollout behavior.
 
+The 1,000-tick unforced check adds the training lesson. A hand-written damping
+constant is not enough: the `mhc_damped` variant simply erases state. The
+ungated max-route rule is fast but saturates or collapses. The grouped rule is
+the only current hand-coded scaffold that survives sparse-random, dense-random,
+and structured-pulse starts without zero collapse or global saturation, but it
+settles to a low-entropy attractor. This is exactly where V4's optimizer lesson
+matters: the CA rule needs trained, constrained dynamics, not just a manually
+tuned leak.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because
