@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_bank_sweep,
+    run_csa_hca_rare_directory_bloom_retirement_collision_sweep,
     run_csa_hca_rare_directory_bloom_retirement_compression_sweep,
     run_csa_hca_rare_directory_bloom_retirement_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
@@ -1059,7 +1060,57 @@ def main() -> None:
     print("Counting Bloom compression interpretation:")
     print("- 8 bits/entry with 2-bit counters keeps visible rare coverage at 100% in this sweep.")
     print("- 1-bit counters cut more SRAM, but they introduce small rare-token visibility loss.")
-    print("- The current hardware budget should move from c4 to c2 before trying learned promotion.")
+    print("- The current hardware budget should test c2 against adversarial collision before treating it as robust.")
+    print()
+
+    collision = run_csa_hca_rare_directory_bloom_retirement_collision_sweep()
+    print("Counting Bloom adversarial-collision sweep")
+    print(
+        f"rare_tokens={collision.rare_token_count}, "
+        f"salt={collision.sidecar_salt}, "
+        f"k={collision.hash_count}, "
+        f"hca_threshold={collision.hca_threshold}"
+    )
+    headers = [
+        "bpe",
+        "cbits",
+        "state",
+        "collide",
+        "miss",
+        "overlap",
+        "vis_rare",
+        "hot_poll",
+        "hca_r",
+        "false_hca",
+        "coverage",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 176)
+    for point in collision.points:
+        if point.bits_per_entry != 8 and point.counter_bits not in (1, 2, 4):
+            continue
+        row = [
+            str(point.bits_per_entry),
+            str(point.counter_bits),
+            f"{point.sidecar_state_bytes / 1024:0.1f}KB",
+            str(point.collider_tokens),
+            str(point.missing_colliders),
+            f"{point.mean_slot_overlap:0.2f}",
+            fmt_pct(point.visible_active_rare_rate),
+            fmt_pct(point.hot_polluted_token_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Counting Bloom collision interpretation:")
+    print("- 1-bit counters are not robust: adversarial hot deletes wipe rare-token visibility.")
+    print("- 2-bit counters improve normal streams but still lose visibility under chosen Bloom collisions.")
+    print("- 3-bit counters recover the robust point here and are the current sidecar budget target.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

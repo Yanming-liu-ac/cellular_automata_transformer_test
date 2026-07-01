@@ -250,9 +250,9 @@ Unified efficiency profile:
 - The current joint128 profile adds learned probe/fanout control metadata to
   rare128. It keeps local traffic about 52.28KB/event and raises on-chip state
   only to about 356.9KB.
-- The current retire128c2 profile adds the online `count1_retire15` counting
-  Bloom sidecar with 2-bit counters. It still keeps local traffic about
-  52.28KB/event, but raises on-chip state to about 383.8KB.
+- The current retire128c3 profile adds the online `count1_retire15` counting
+  Bloom sidecar with 3-bit counters. It still keeps local traffic about
+  52.28KB/event, but raises on-chip state to about 392.8KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -260,9 +260,9 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- With the current retire128c2 CSA/HCA-aware state, a 32-tile fabric now fits at
-  about 75.0% SRAM utilization and requires 24 16KB state tiles.
-- A 64-tile fabric stores the same state in about 37.5% of local SRAM.
+- With the current retire128c3 CSA/HCA-aware state, a 32-tile fabric now fits at
+  about 76.7% SRAM utilization and requires 25 16KB state tiles.
+- A 64-tile fabric stores the same state in about 38.4% of local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
   about 5.2% on 32 tiles and about 2.6% on 64 tiles under the proxy assumptions.
 - This defines a budget for learned rules and richer output heads; it is not
@@ -303,12 +303,12 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- test 1-bit retirement counters on harder collision and adversarial repeated-key
-  streams, because they cut sidecar state to about 18KB but lose about 1% visible
-  rare-token rate in the current sweep.
-- train a delayed-promotion gate against the retire128c2 budget so one-hit rare
+- train a delayed-promotion gate against the retire128c3 budget so one-hit rare
   tokens, hot-token retirement, and sidecar update pressure are optimized
   jointly rather than by hand thresholds.
+- add adversarial repeated-key and multi-collider deletion tests beyond the
+  current one-collider Bloom-slot stress, because c2 already fails the robust
+  visibility target under chosen collisions.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

@@ -638,12 +638,27 @@ split_rare bpe=8 counter=2 state=26.9KB  visible_rare=100.0%  coverage=99.5%
 repeated bpe=8 counter=2   state=26.9KB  visible_rare=100.0%  coverage=99.1%
 ```
 
-The new conservative compressed point is `8 bits/entry, 2-bit counters`. It
-keeps the measured rare-token visibility at 100% in this sweep, preserves the
-same HCA and rare-stress coverage as 4-bit counters, and cuts sidecar state from
-about 44.9KB to about 26.9KB. The 1-bit counter point is attractive at about
-18KB, but it produces a small rare-token visibility loss, so it should remain an
-aggressive candidate until tested on harder collision streams.
+The normal-stream compressed point is `8 bits/entry, 2-bit counters`. It keeps
+the measured rare-token visibility at 100% in this sweep, preserves the same HCA
+and rare-stress coverage as 4-bit counters, and cuts sidecar state from about
+44.9KB to about 26.9KB. The 1-bit counter point is attractive at about 18KB, but
+it produces a small rare-token visibility loss, so it should remain an
+aggressive candidate.
+
+The adversarial-collision sweep chooses hot tokens that share Bloom slots with
+rare tokens before retiring them:
+
+```text
+bpe=8 counter=1  mean_overlap=1.62  visible_rare=1.6%    false_HCA=0.8%  coverage=99.2%
+bpe=8 counter=2  mean_overlap=1.62  visible_rare=98.4%   false_HCA=0.0%  coverage=100.0%
+bpe=8 counter=3  mean_overlap=1.62  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+bpe=8 counter=4  mean_overlap=1.62  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+```
+
+This demotes c2 from "robust baseline" to "normal-stream compression point."
+The current robust sidecar target is `8 bits/entry, 3-bit counters`: it keeps
+adversarial visible rare-token rate at 100% while cutting sidecar state from
+about 44.9KB to about 35.9KB.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 
@@ -797,6 +812,7 @@ rare128 CSA/HCA local bytes/event: about 52.28 KB
 joint128 CSA/HCA local bytes/event: about 52.28 KB
 retire128c4 CSA/HCA local bytes/event: about 52.28 KB
 retire128c2 CSA/HCA local bytes/event: about 52.28 KB
+retire128c3 CSA/HCA local bytes/event: about 52.28 KB
 Transformer KV read/token: about 384 MB
 legacy on-chip HARC-CA state: about 183.8 KB
 wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
@@ -805,9 +821,10 @@ rare128 CSA/HCA on-chip HARC-CA state: about 354.6 KB
 joint128 CSA/HCA on-chip HARC-CA state: about 356.9 KB
 retire128c4 CSA/HCA on-chip HARC-CA state: about 401.8 KB
 retire128c2 CSA/HCA on-chip HARC-CA state: about 383.8 KB
+retire128c3 CSA/HCA on-chip HARC-CA state: about 392.8 KB
 ```
 
-The retire128c2 CSA/HCA-aware profile adds about 832.4B/event over the legacy
+The retire128c3 CSA/HCA-aware profile adds about 832.5B/event over the legacy
 profile:
 
 ```text
@@ -815,7 +832,7 @@ HCA lazy summary read: about 6B/event
 HCA lazy summary update: about 12B/event
 learned probe/fanout LUT reads: about 0.17B/event
 counting Bloom sidecar read: about 0.38B/event
-counting Bloom sidecar update: about 0.17B/event
+counting Bloom sidecar update: about 0.22B/event
 CSA block-summary score reads: about 150B/event
 CSA rare-directory read: about 0.50B/event
 CSA selected token-cell reads: about 663.2B/event
@@ -827,10 +844,10 @@ compact128 point uses about 256KB of block summaries. The current joint128 point
 uses about 128KB of block summaries, about 30.8KB of rare-token directory state,
 2.28KB of learned probe/fanout control metadata, and 12KB of lazy HCA summary
 metadata/counters. The retire128 family adds the online `count1_retire15`
-counting Bloom sidecar. The first 4-bit-counter version raises
-state to about 401.8KB. The current compressed 2-bit-counter version lowers that
-to about 383.8KB while still adding less than 1B/event of local sidecar
-read/update traffic.
+counting Bloom sidecar. The first 4-bit-counter version raises state to about
+401.8KB. The normal-stream 2-bit version lowers that to about 383.8KB, but the
+adversarial-collision robust 3-bit version is now the current budget point at
+about 392.8KB.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -864,13 +881,13 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the retire128c2 CSA/HCA-aware 383.8KB HARC-CA state and
+bytes/cycle/tile. With the retire128c3 CSA/HCA-aware 392.8KB HARC-CA state and
 52.28KB local bytes/event, a 32-tile configuration still fits:
 
 ```text
-32 tiles: 512KB SRAM, 75.0% state utilization, 24 state tiles required, 5.2% bandwidth utilization
-64 tiles: 1MB SRAM, 37.5% state utilization, 24 state tiles required, 2.6% bandwidth utilization
-128 tiles: 2MB SRAM, 18.7% state utilization, 24 state tiles required, 1.3% bandwidth utilization
+32 tiles: 512KB SRAM, 76.7% state utilization, 25 state tiles required, 5.2% bandwidth utilization
+64 tiles: 1MB SRAM, 38.4% state utilization, 25 state tiles required, 2.6% bandwidth utilization
+128 tiles: 2MB SRAM, 19.2% state utilization, 25 state tiles required, 1.3% bandwidth utilization
 ```
 
 These are design-budget numbers. They do not prove timing, routing, area, yield,

@@ -541,12 +541,13 @@ online sidecar raises state from about 356.9KB to about 401.8KB but adds less
 than 1B/event of local traffic. This is a useful CA-chip result because it
 separates the bottleneck: the next problem is sidecar SRAM compression, not
 sidecar bandwidth.
-The compression sweep then finds the next DeepSeek-like step: metadata should be
-as narrow as the measured routing task allows, but no narrower. Two-bit sidecar
-counters keep visible rare-token coverage at 100.0% in the current stress set
-and lower the total event-profile state to about 383.8KB. One-bit counters are
-tempting, but their small rare-visibility loss makes them a training target
-rather than a default.
+The compression and adversarial-collision sweeps then find the next
+DeepSeek-like step: metadata should be as narrow as the measured routing task
+allows, but no narrower. Two-bit sidecar counters look sufficient on normal
+streams, but targeted hot-token deletions reduce visible rare-token rate to
+about 98.4%. Three-bit counters restore the robust point and keep the total
+event-profile state about 392.8KB. One-bit counters are tempting, but the
+adversarial sweep effectively rejects them for exact sidecar use.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

@@ -18,6 +18,7 @@ from cellular_transformer.efficiency import (
     joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
     retiring_sidecar_csa_hca_context_budget,
+    robust_retiring_sidecar_csa_hca_context_budget,
     wide_csa_hca_context_budget,
 )
 from cellular_transformer.hardware import format_bytes
@@ -55,7 +56,8 @@ def main() -> None:
     rare_context_budget = rare_directory_csa_hca_context_budget()
     joint_context_budget = joint_control_csa_hca_context_budget()
     retiring_context_budget = retiring_sidecar_csa_hca_context_budget()
-    context_budget = compressed_retiring_sidecar_csa_hca_context_budget()
+    compressed_context_budget = compressed_retiring_sidecar_csa_hca_context_budget()
+    context_budget = robust_retiring_sidecar_csa_hca_context_budget()
     headers = [
         "profile",
         "moe_ticks",
@@ -79,7 +81,8 @@ def main() -> None:
         ("rare128", rare_context_budget),
         ("joint128", joint_context_budget),
         ("retire128c4", retiring_context_budget),
-        ("retire128c2", context_budget),
+        ("retire128c2", compressed_context_budget),
+        ("retire128c3", context_budget),
     ):
         for moe_ticks in (1, 2, 4, 8):
             rows.append((label, moe_ticks, maybe_context))
@@ -118,7 +121,7 @@ def main() -> None:
         context_summary=context_budget,
     )
     harc = comparison.harc
-    print("Detailed compressed retirement-sidecar CSA/HCA-aware profile:")
+    print("Detailed robust retirement-sidecar CSA/HCA-aware profile:")
     print(f"  exact_query_fraction={harc.exact_query_fraction:0.3f}")
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
@@ -151,7 +154,8 @@ def main() -> None:
     print("- rare128 uses 128KB block summaries plus a small exact rare-token directory.")
     print("- joint128 adds learned probe/fanout control metadata to rare128.")
     print("- retire128c4 adds the original 4-bit counting Bloom sidecar.")
-    print("- retire128c2 uses the compressed 2-bit counter sidecar selected by the geometry sweep.")
+    print("- retire128c2 is the normal-stress compressed 2-bit sidecar.")
+    print("- retire128c3 is the adversarial-collision robust sidecar used by the current budget.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")
 
