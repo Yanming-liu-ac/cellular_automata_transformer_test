@@ -536,6 +536,11 @@ while preserving a 1-bit query plane for fast routing. The cost, about 44-45KB
 of local state for this context geometry, is the CA equivalent of paying for
 expert-routing or FP4 scale metadata: it is worthwhile only if the compiler or
 training loop can account for it and then compress it.
+The retire128 event profile closes that accounting loop. Adding the conservative
+online sidecar raises state from about 356.9KB to about 401.8KB but adds less
+than 1B/event of local traffic. This is a useful CA-chip result because it
+separates the bottleneck: the next problem is sidecar SRAM compression, not
+sidecar bandwidth.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

@@ -119,6 +119,7 @@ from .efficiency import (
     current_csa_hca_context_budget,
     joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
+    retiring_sidecar_csa_hca_context_budget,
     wide_csa_hca_context_budget,
 )
 from .admission_policy import (
@@ -253,6 +254,7 @@ __all__ = [
     "current_csa_hca_context_budget",
     "joint_control_csa_hca_context_budget",
     "rare_directory_csa_hca_context_budget",
+    "retiring_sidecar_csa_hca_context_budget",
     "wide_csa_hca_context_budget",
     "compare_output_heads",
     "estimate_output_head",

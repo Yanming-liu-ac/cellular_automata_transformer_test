@@ -773,21 +773,25 @@ wide64 CSA/HCA local bytes/event: about 52.10 KB
 compact128 CSA/HCA local bytes/event: about 52.28 KB
 rare128 CSA/HCA local bytes/event: about 52.28 KB
 joint128 CSA/HCA local bytes/event: about 52.28 KB
+retire128 CSA/HCA local bytes/event: about 52.28 KB
 Transformer KV read/token: about 384 MB
 legacy on-chip HARC-CA state: about 183.8 KB
 wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
 compact128 CSA/HCA on-chip HARC-CA state: about 451.8 KB
 rare128 CSA/HCA on-chip HARC-CA state: about 354.6 KB
 joint128 CSA/HCA on-chip HARC-CA state: about 356.9 KB
+retire128 CSA/HCA on-chip HARC-CA state: about 401.8 KB
 ```
 
-The joint128 CSA/HCA-aware profile adds about 831.9B/event over the legacy
+The retire128 CSA/HCA-aware profile adds about 832.5B/event over the legacy
 profile:
 
 ```text
 HCA lazy summary read: about 6B/event
 HCA lazy summary update: about 12B/event
 learned probe/fanout LUT reads: about 0.17B/event
+counting Bloom sidecar read: about 0.38B/event
+counting Bloom sidecar update: about 0.28B/event
 CSA block-summary score reads: about 150B/event
 CSA rare-directory read: about 0.50B/event
 CSA selected token-cell reads: about 663.2B/event
@@ -798,7 +802,9 @@ context traffic, but it needs about 512KB of CSA block summaries. The
 compact128 point uses about 256KB of block summaries. The current joint128 point
 uses about 128KB of block summaries, about 30.8KB of rare-token directory state,
 2.28KB of learned probe/fanout control metadata, and 12KB of lazy HCA summary
-metadata/counters.
+metadata/counters. The current retire128 point adds the online
+`count1_retire15` counting Bloom sidecar. It raises state to about 401.8KB, but
+adds less than 1B/event of local sidecar read/update traffic.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -832,14 +838,14 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the joint128 CSA/HCA-aware 356.9KB HARC-CA state and
-52.28KB local bytes/event, a 32-tile configuration now has meaningful SRAM
-headroom:
+bytes/cycle/tile. With the retire128 CSA/HCA-aware 401.8KB HARC-CA state and
+52.28KB local bytes/event, a 32-tile configuration still fits, but SRAM headroom
+is tighter:
 
 ```text
-32 tiles: 512KB SRAM, 69.7% state utilization, 23 state tiles required, 5.2% bandwidth utilization
-64 tiles: 1MB SRAM, 34.9% state utilization, 23 state tiles required, 2.6% bandwidth utilization
-128 tiles: 2MB SRAM, 17.4% state utilization, 23 state tiles required, 1.3% bandwidth utilization
+32 tiles: 512KB SRAM, 78.5% state utilization, 26 state tiles required, 5.2% bandwidth utilization
+64 tiles: 1MB SRAM, 39.2% state utilization, 26 state tiles required, 2.6% bandwidth utilization
+128 tiles: 2MB SRAM, 19.6% state utilization, 26 state tiles required, 1.3% bandwidth utilization
 ```
 
 These are design-budget numbers. They do not prove timing, routing, area, yield,

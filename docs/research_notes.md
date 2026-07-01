@@ -653,6 +653,17 @@ to about 0.03-0.04B/token in the stress cases, but they leave most final rare
 tokens out of the sidecar, so they should be treated as learned promotion
 candidates rather than the conservative exact-recall baseline.
 
+The forty-fifth sweep folds that conservative retirement sidecar into the
+unified event and floorplan profiles. The new `retire128` profile keeps the
+joint128 rare directory, learned probe/fanout control, lazy HCA summary, and
+adds the measured `count1_retire15` sidecar budget. Local traffic stays about
+52.28KB/event because the sidecar adds only about 0.38B/event of presence reads
+and 0.28B/event of updates. State rises from about 356.9KB to about 401.8KB. In
+the 32-tile, 16KB/tile floorplan proxy, SRAM utilization rises from about 69.7%
+to about 78.5% and state tiles from 23 to 26. This keeps the online sidecar
+inside the current local-SRAM budget, but it also makes sidecar compression the
+next concrete hardware target.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
