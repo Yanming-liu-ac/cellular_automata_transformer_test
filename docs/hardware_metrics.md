@@ -100,9 +100,17 @@ the persistent content lane with the mHC carrier and writes only when their
 writes/token/tick, lower than refresh16, and lowers average carrier error from
 28.5% to 21.9%, while average exact carrier matches fall from 12.3% to 10.2%.
 The more aggressive `mismatch_ge6` point costs about 0.250 writes/token/tick
-and lowers average error to 15.6%; `mismatch_ge4` costs about 0.467 and lowers average error to
-10.0%. The budgeted top-error rows should be tracked only as upper bounds
+and lowers average error to 15.6%; `mismatch_ge4` costs about 0.467 and lowers
+average error to 10.0%. The budgeted top-error rows should be tracked only as upper bounds
 because global top-error selection is not a natural local CA primitive.
+
+The first learned write-gate LUT is 8 bytes: 64 one-bit actions over mismatch,
+route, and envelope buckets. With write cost 0.55 it enables two actions and,
+on an independent seed, lands on the same tradeoff as `mismatch_ge8`: about
+0.146 channel writes/token/tick and 21.3% average carrier error. Fixed refresh16
+on the same seed needs 0.186 writes/token/tick and has 28.9% average error. The
+hardware conclusion is that the controller size is negligible; the remaining
+problem is better labels/features, not table storage.
 
 ## Retrieval-Lane Metrics
 

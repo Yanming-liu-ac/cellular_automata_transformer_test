@@ -348,6 +348,9 @@ Implement:
 - promote the local `mismatch_ge8` gate into a tiny learned write-gate LUT using
   content-carrier mismatch, route activity, and envelope level as features; use
   the budget_top rows only as an upper-bound target, not as hardware behavior.
+- improve the learned write-gate objective. The first 8-byte LUT only recovers a
+  threshold-like policy, so the next labels should be task-weighted by active
+  route/query demand instead of pure carrier reconstruction error.
 
 First trainable target:
 

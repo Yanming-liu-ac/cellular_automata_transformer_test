@@ -14,6 +14,7 @@ from cellular_transformer.propagation import (
     run_content_gate_sweep,
     run_content_retention_sweep,
     run_dynamic_propagation_sweep,
+    run_learned_content_gate_sweep,
     run_long_rollout_stability_sweep,
     summarize_lengths,
 )
@@ -231,6 +232,48 @@ def main() -> None:
     print("- mismatch gates are local: they compare the persistent content lane with the carrier lane.")
     print("- budget_top rows are upper bounds for a future learned gate with a hard write budget.")
     print("- A useful gate should beat fixed_refresh16 on average carrier exactness at lower write traffic.")
+    print()
+
+    learned_gate = run_learned_content_gate_sweep()
+    print("Learned content-to-carrier LUT gate")
+    print(
+        f"lut={learned_gate.lut.state_bytes:0.1f}B, "
+        f"write_states={learned_gate.lut.write_state_count}/{len(learned_gate.lut.writes)}, "
+        f"cost={learned_gate.write_cost:0.2f}, "
+        f"route_w={learned_gate.route_weight:0.2f}, "
+        f"env_w={learned_gate.envelope_weight:0.2f}"
+    )
+    headers = [
+        "policy",
+        "wr/tok/t",
+        "gate_r",
+        "carrierF",
+        "carrierM",
+        "errF",
+        "errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{h:>16}" for h in headers))
+    print("-" * 162)
+    for point in learned_gate.points:
+        row = [
+            point.policy,
+            f"{point.gate_channel_writes_per_token_tick:0.4f}",
+            fmt_pct(point.mean_gate_fraction),
+            fmt_pct(point.carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.carrier_mean_abs_error),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            fmt_entropy(point.carrier_final_entropy_bits),
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>16}" for cell in row))
+
+    print()
+    print("Learned-gate interpretation:")
+    print("- The LUT uses only mismatch, route, and envelope buckets, so its table is hardware-sized.")
+    print("- This is a first local controller, not a trained language rule; it should beat at least one hand gate to stay interesting.")
 
 
 if __name__ == "__main__":

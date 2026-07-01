@@ -321,6 +321,12 @@ from persistent content. This is the CA analog of path-aware gating: do not
 collapse all residual paths every tick; expose the persistent path to the active
 carrier only when the local state says it is useful.
 
+The first learned version of that gate is only an 8-byte LUT. It learns a
+threshold-like two-state policy, matching `mismatch_ge8` rather than surpassing
+it. That is still useful: the control format is small enough for hardware, and
+the failure mode is now precise. Better gates need task-weighted labels and
+additional local demand features, not a larger controller.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

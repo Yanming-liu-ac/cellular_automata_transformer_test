@@ -197,6 +197,14 @@ the next architecture block into a tiny write-gate LUT: content-carrier
 mismatch, route activity, and local envelope state should decide whether the
 content lane writes into the mHC carrier on a given tick.
 
+The first learned version of that gate is deliberately tiny: 64 one-bit entries
+indexed by mismatch, route, and envelope buckets, or 8 bytes total. It learns a
+two-entry policy that essentially matches `mismatch_ge8`. This is enough to
+replace fixed refresh16 with lower write traffic and lower average carrier
+error, but it does not yet outperform the hand threshold. The architecture
+therefore keeps the LUT gate, but the next version should train it with
+task-weighted demand signals rather than only carrier mismatch statistics.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

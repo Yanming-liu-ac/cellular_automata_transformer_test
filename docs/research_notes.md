@@ -179,6 +179,18 @@ budgeted top-error rows are useful upper bounds, but they use a global top-k
 selection in the simulator. The hardware candidate is therefore a local
 mismatch or learned local gate, not global budget sorting.
 
+The first learned write-gate LUT makes that candidate concrete. The LUT has
+only 64 states, 8 bytes, indexed by local content-carrier mismatch, route
+level, and envelope level. With write cost 0.55 it enables two states. On an
+independent rollout it matches the `mismatch_ge8` tradeoff: about
+0.146 channel writes/token/tick, 11.2% average exact carrier matches, and
+21.3% average carrier error. That beats fixed refresh16 on write traffic and
+error, but it does not beat the hand threshold or the global budget-top upper
+bound. The useful result is therefore not "learning solved content exposure";
+it is that the gate fits in a tiny LUT and the next training objective must use
+richer features or task-weighted demand labels to move beyond threshold-like
+behavior.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

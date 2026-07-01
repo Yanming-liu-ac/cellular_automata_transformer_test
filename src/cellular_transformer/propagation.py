@@ -190,6 +190,73 @@ class ContentGateResult:
     points: Tuple[ContentGatePoint, ...]
 
 
+@dataclass(frozen=True)
+class ContentGateLUT:
+    """Tiny local LUT for content-to-carrier write gating."""
+
+    writes: Tuple[bool, ...]
+    mismatch_thresholds: Tuple[int, ...] = (1, 4, 8)
+    route_thresholds: Tuple[int, ...] = (1, 4, 8)
+    envelope_thresholds: Tuple[int, ...] = (1, 4, 8)
+
+    def __post_init__(self) -> None:
+        expected = (
+            (len(self.mismatch_thresholds) + 1)
+            * (len(self.route_thresholds) + 1)
+            * (len(self.envelope_thresholds) + 1)
+        )
+        if len(self.writes) != expected:
+            raise ValueError("write table length does not match feature bucket dimensions")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.writes) / 8
+
+    @property
+    def write_state_count(self) -> int:
+        return sum(1 for value in self.writes if value)
+
+    def indices(
+        self,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        mismatch_bucket = np.searchsorted(self.mismatch_thresholds, mismatch, side="right")
+        route_bucket = np.searchsorted(self.route_thresholds, route, side="right")
+        envelope_bucket = np.searchsorted(self.envelope_thresholds, envelope, side="right")
+        route_bucket_count = len(self.route_thresholds) + 1
+        envelope_bucket_count = len(self.envelope_thresholds) + 1
+        return (mismatch_bucket * route_bucket_count + route_bucket) * envelope_bucket_count + envelope_bucket
+
+    def gate_mask(
+        self,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        table = np.array(self.writes, dtype=np.bool_)
+        return table[self.indices(mismatch, route, envelope)]
+
+
+@dataclass(frozen=True)
+class LearnedContentGateResult:
+    """Trained content-to-carrier LUT and evaluation points."""
+
+    length: int
+    topology: str
+    bits: int
+    train_ticks: int
+    eval_ticks: int
+    write_cost: float
+    route_weight: float
+    envelope_weight: float
+    train_seed: int
+    eval_seed: int
+    lut: ContentGateLUT
+    points: Tuple[ContentGatePoint, ...]
+
+
 def _connect(edges: EdgeMap, a: Node, b: Node) -> None:
     edges.setdefault(a, []).append(b)
     edges.setdefault(b, []).append(a)
@@ -1233,4 +1300,250 @@ def run_content_gate_sweep(
         bits=bits,
         ticks=ticks,
         points=tuple(points),
+    )
+
+
+def train_content_gate_lut(
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 401,
+    write_cost: float = 0.55,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+) -> ContentGateLUT:
+    """Train a tiny local write-gate LUT from rollout mismatch statistics."""
+
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+    if write_cost < 0.0:
+        raise ValueError("write_cost must be non-negative")
+    if route_weight < 0.0 or envelope_weight < 0.0:
+        raise ValueError("route and envelope weights must be non-negative")
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    template = ContentGateLUT(writes=tuple(False for _ in range(64)))
+    benefit_sums = np.zeros(len(template.writes), dtype=np.float64)
+    counts = np.zeros(len(template.writes), dtype=np.int64)
+
+    for _ in range(ticks):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        indices = template.indices(mismatch, route, envelope)
+        normalized_error = mismatch.astype(np.float64) / float(max_value)
+        route_activity = route.astype(np.float64) / float(max_value)
+        envelope_activity = envelope.astype(np.float64) / float(max_value)
+        benefit = normalized_error * (
+            1.0 + route_weight * route_activity + envelope_weight * envelope_activity
+        )
+        np.add.at(benefit_sums, indices, benefit)
+        np.add.at(counts, indices, 1)
+
+    mean_benefit = np.divide(
+        benefit_sums,
+        counts,
+        out=np.zeros_like(benefit_sums),
+        where=counts > 0,
+    )
+    writes = tuple(bool(count > 0 and value >= write_cost) for count, value in zip(counts, mean_benefit))
+    return ContentGateLUT(writes=writes)
+
+
+def evaluate_lut_content_gate(
+    lut: ContentGateLUT,
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 503,
+    policy: str = "learned_lut",
+) -> ContentGatePoint:
+    """Evaluate a trained content-to-carrier LUT on an independent rollout."""
+
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    gate_token_writes = 0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+    for _ in range(ticks):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        selected = token_indices[lut.gate_mask(mismatch, route, envelope)]
+        if len(selected) > 0:
+            _inject_content_into_carrier(carrier, content_values, selected)
+            gate_token_writes += int(len(selected))
+
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+    final_content = content_values[token_indices]
+    carrier_token_content = carrier[token_indices, 0]
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return ContentGatePoint(
+        topology=topology.lower(),
+        policy=policy,
+        length=length,
+        bits=bits,
+        ticks=ticks,
+        seed=seed,
+        graph_nodes=len(nodes),
+        graph_edges=edge_count(edges),
+        state_bits_per_token=4 * bits,
+        gate_token_writes=gate_token_writes,
+        gate_channel_writes_per_token_tick=3 * gate_token_writes / float(length * ticks),
+        mean_gate_fraction=gate_token_writes / float(length * ticks),
+        content_exact_retention_rate=float(np.mean(final_content == initial_token_content)),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        carrier_final_mean_level=float(np.mean(carrier)) / float(max_value),
+        checksum=int(checksum),
+    )
+
+
+def run_learned_content_gate_sweep(
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    train_ticks: int = 1000,
+    eval_ticks: int = 1000,
+    radius: int = 1,
+    train_seed: int = 401,
+    eval_seed: int = 503,
+    write_cost: float = 0.55,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+) -> LearnedContentGateResult:
+    """Train and evaluate a local LUT content-to-carrier gate."""
+
+    lut = train_content_gate_lut(
+        length=length,
+        topology=topology,
+        bits=bits,
+        ticks=train_ticks,
+        radius=radius,
+        seed=train_seed,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+    )
+    baseline = run_content_gate_sweep(
+        lengths=(length,),
+        topologies=(topology,),
+        policies=("fixed_refresh16", "mismatch_ge8", "mismatch_ge6", "budget_top5pct"),
+        bits=bits,
+        ticks=eval_ticks,
+        radius=radius,
+        seed=eval_seed,
+    )
+    learned = evaluate_lut_content_gate(
+        lut=lut,
+        length=length,
+        topology=topology,
+        bits=bits,
+        ticks=eval_ticks,
+        radius=radius,
+        seed=eval_seed,
+        policy=f"learned_lut_c{write_cost:0.2f}",
+    )
+    return LearnedContentGateResult(
+        length=length,
+        topology=topology.lower(),
+        bits=bits,
+        train_ticks=train_ticks,
+        eval_ticks=eval_ticks,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        lut=lut,
+        points=baseline.points + (learned,),
     )
