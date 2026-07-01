@@ -684,6 +684,24 @@ three-entry minimum directory read is the simple robust guard: it restores 100%
 coverage with about 3.24B/query more directory traffic and only a small drop in
 token-read reduction.
 
+The threshold-15 normal fanout-guard sweep checks whether that guard is too
+expensive on non-adversarial cases:
+
+```text
+min_read=2  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
+min_read=3  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
+min_read=2  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
+min_read=3  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
+min_read=2  split_rare     coverage=99.7%   avg_read=2.00  dir_read=6.50B/query   token_read_reduction=84.8x
+min_read=3  split_rare     coverage=100.0%  avg_read=3.00  dir_read=9.75B/query   token_read_reduction=84.7x
+min_read=2  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
+min_read=3  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
+```
+
+The g3 guard therefore enters the unified profile as `retire128c3g3`: it fixes
+the repeated-key collision corner and split-rare coverage, while the reference
+normal path remains at the same directory traffic.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text
@@ -837,6 +855,7 @@ joint128 CSA/HCA local bytes/event: about 52.28 KB
 retire128c4 CSA/HCA local bytes/event: about 52.28 KB
 retire128c2 CSA/HCA local bytes/event: about 52.28 KB
 retire128c3 CSA/HCA local bytes/event: about 52.28 KB
+retire128c3g3 CSA/HCA local bytes/event: about 52.28 KB
 Transformer KV read/token: about 384 MB
 legacy on-chip HARC-CA state: about 183.8 KB
 wide64 CSA/HCA on-chip HARC-CA state: about 707.8 KB
@@ -846,9 +865,10 @@ joint128 CSA/HCA on-chip HARC-CA state: about 356.9 KB
 retire128c4 CSA/HCA on-chip HARC-CA state: about 401.8 KB
 retire128c2 CSA/HCA on-chip HARC-CA state: about 383.8 KB
 retire128c3 CSA/HCA on-chip HARC-CA state: about 392.8 KB
+retire128c3g3 CSA/HCA on-chip HARC-CA state: about 392.8 KB
 ```
 
-The retire128c3 CSA/HCA-aware profile adds about 832.5B/event over the legacy
+The retire128c3g3 CSA/HCA-aware profile adds about 832.5B/event over the legacy
 profile:
 
 ```text
@@ -862,6 +882,11 @@ CSA rare-directory read: about 0.50B/event
 CSA selected token-cell reads: about 663.2B/event
 ```
 
+The g3 fanout guard does not add SRAM state beyond the existing 42B fanout LUT,
+and it does not increase the normal reference directory read path in this
+profile. Its extra read cost is scenario-dependent: spread-out rare-token cases
+pay the third directory entry, while strong reference HCA queries still skip it.
+
 The wide64 baseline spends less selected-token traffic, about 648B/event total
 context traffic, but it needs about 512KB of CSA block summaries. The
 compact128 point uses about 256KB of block summaries. The current joint128 point
@@ -870,8 +895,8 @@ uses about 128KB of block summaries, about 30.8KB of rare-token directory state,
 metadata/counters. The retire128 family adds the online `count1_retire15`
 counting Bloom sidecar. The first 4-bit-counter version raises state to about
 401.8KB. The normal-stream 2-bit version lowers that to about 383.8KB, but the
-adversarial-collision robust 3-bit version is now the current budget point at
-about 392.8KB.
+adversarial-collision robust 3-bit version with the g3 fanout guard is now the
+current budget point at about 392.8KB.
 
 With a 512-token candidate output head and exact-query bypass, output scoring
 adds about 22KB/event in the current synthetic setup. A full-vocabulary head
@@ -905,7 +930,7 @@ For chip mapping, track:
 - proxy maximum events/s.
 
 The first floorplan proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32 local
-bytes/cycle/tile. With the retire128c3 CSA/HCA-aware 392.8KB HARC-CA state and
+bytes/cycle/tile. With the retire128c3g3 CSA/HCA-aware 392.8KB HARC-CA state and
 52.28KB local bytes/event, a 32-tile configuration still fits:
 
 ```text

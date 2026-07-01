@@ -514,6 +514,45 @@ def main() -> None:
     print("- This is the first trainable control-plane block for the rare exact-memory lane.")
     print()
 
+    print("Threshold-15 normal fanout guard sweep")
+    headers = [
+        "min_read",
+        "scenario",
+        "coverage",
+        "avg_rd",
+        "exp_r",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 108)
+    for min_read in (2, 3):
+        guard_fanout = run_csa_hca_rare_directory_learned_fanout_sweep(
+            hca_threshold=15,
+            min_read_blocks_per_token=min_read,
+            coverage_target=0.95,
+        )
+        for point in guard_fanout.points:
+            if point.scenario not in ("zipf_reference", "rare_burst", "split_rare", "repeated_name"):
+                continue
+            row = [
+                str(min_read),
+                point.scenario,
+                fmt_pct(point.repaired_relevant_coverage),
+                f"{point.avg_directory_read_blocks_per_hit:0.2f}",
+                fmt_pct(point.expanded_read_rate),
+                format_bytes(point.directory_read_bytes_per_query),
+                f"{point.token_read_reduction:0.1f}x",
+            ]
+            print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Threshold-15 fanout guard interpretation:")
+    print("- The min_read=3 guard leaves zipf_reference, rare_burst, and repeated_name traffic unchanged.")
+    print("- It raises split_rare directory reads from 6.50B/query to 9.75B/query and restores 100% split coverage.")
+    print("- This supports promoting the g3 guard into the unified event profile without changing normal reference traffic.")
+    print()
+
     joint = run_csa_hca_rare_directory_joint_policy_sweep()
     print("Joint HCA-confidence probe and fanout control")
     print(

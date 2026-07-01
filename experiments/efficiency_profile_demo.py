@@ -15,6 +15,7 @@ from cellular_transformer.efficiency import (
     compact_csa_hca_context_budget,
     compressed_retiring_sidecar_csa_hca_context_budget,
     compare_to_transformer_kv,
+    fanout_guard_retiring_sidecar_csa_hca_context_budget,
     joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
     retiring_sidecar_csa_hca_context_budget,
@@ -58,6 +59,7 @@ def main() -> None:
     retiring_context_budget = retiring_sidecar_csa_hca_context_budget()
     compressed_context_budget = compressed_retiring_sidecar_csa_hca_context_budget()
     context_budget = robust_retiring_sidecar_csa_hca_context_budget()
+    fanout_guard_context_budget = fanout_guard_retiring_sidecar_csa_hca_context_budget()
     headers = [
         "profile",
         "moe_ticks",
@@ -83,6 +85,7 @@ def main() -> None:
         ("retire128c4", retiring_context_budget),
         ("retire128c2", compressed_context_budget),
         ("retire128c3", context_budget),
+        ("retire128c3g3", fanout_guard_context_budget),
     ):
         for moe_ticks in (1, 2, 4, 8):
             rows.append((label, moe_ticks, maybe_context))
@@ -118,10 +121,10 @@ def main() -> None:
         moe=moe_result,
         moe_config=moe_config,
         moe_ticks_per_event=4,
-        context_summary=context_budget,
+        context_summary=fanout_guard_context_budget,
     )
     harc = comparison.harc
-    print("Detailed robust retirement-sidecar CSA/HCA-aware profile:")
+    print("Detailed robust retirement-sidecar CSA/HCA-aware profile with g3 fanout guard:")
     print(f"  exact_query_fraction={harc.exact_query_fraction:0.3f}")
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
@@ -155,7 +158,9 @@ def main() -> None:
     print("- joint128 adds learned probe/fanout control metadata to rare128.")
     print("- retire128c4 adds the original 4-bit counting Bloom sidecar.")
     print("- retire128c2 is the normal-stress compressed 2-bit sidecar.")
-    print("- retire128c3 is the adversarial-collision robust sidecar used by the current budget.")
+    print("- retire128c3 is the adversarial-collision robust sidecar before the fanout guard.")
+    print("- retire128c3g3 is the current budget: it adds the repeated-key three-entry fanout guard.")
+    print("- The g3 guard does not change normal reference traffic in this profile.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")
 

@@ -250,9 +250,10 @@ Unified efficiency profile:
 - The current joint128 profile adds learned probe/fanout control metadata to
   rare128. It keeps local traffic about 52.28KB/event and raises on-chip state
   only to about 356.9KB.
-- The current retire128c3 profile adds the online `count1_retire15` counting
-  Bloom sidecar with 3-bit counters. It still keeps local traffic about
-  52.28KB/event, but raises on-chip state to about 392.8KB.
+- The current retire128c3g3 profile adds the online `count1_retire15` counting
+  Bloom sidecar with 3-bit counters and the three-entry repeated-key fanout
+  guard. It still keeps normal reference local traffic about 52.28KB/event, and
+  keeps on-chip state about 392.8KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -260,7 +261,7 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- With the current retire128c3 CSA/HCA-aware state, a 32-tile fabric now fits at
+- With the current retire128c3g3 CSA/HCA-aware state, a 32-tile fabric now fits at
   about 76.7% SRAM utilization and requires 25 16KB state tiles.
 - A 64-tile fabric stores the same state in about 38.4% of local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
@@ -306,12 +307,9 @@ Next retrieval work:
 - train a delayed-promotion gate against the retire128c3 budget so one-hit rare
   tokens, hot-token retirement, and sidecar update pressure are optimized
   jointly rather than by hand thresholds.
-- promote the repeated-key fanout guard into the unified event profile:
-  `min_read=3` restores 100% coverage under the retire128c3 8-collider stress,
-  but it should be measured against normal-stream traffic before becoming the
-  default budget.
 - add recency/query-context features to the trained fanout LUT so the three-entry
-  read guard triggers only for repeated-key or spread-out rare-token cases.
+  read guard triggers only for repeated-key or spread-out rare-token cases; the
+  current `retire128c3g3` budget proves the guard fits normal reference traffic.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - train a joint admission/probe/fanout policy so HCA threshold, exact-directory

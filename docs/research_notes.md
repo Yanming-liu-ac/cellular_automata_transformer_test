@@ -709,6 +709,20 @@ repeated-key fanout guard. It is a clean CA-chip trade: one extra local metadata
 entry read closes the adversarial coverage hole without changing the sidecar
 state format.
 
+The forty-ninth sweep checks that guard against the normal threshold-15 fanout
+profile before promoting it into the unified event budget. `min_read=3` leaves
+reference traffic unchanged at 3.25B/query, rare-burst traffic unchanged at
+3.25B/query, and repeated-name traffic unchanged at 12.87B/query. It changes
+only the split-rare path in this sweep: coverage moves from 99.7% to 100.0%,
+average directory entries per hit move from 2.00 to 3.00, directory traffic
+moves from 6.50B/query to 9.75B/query, and token-read reduction barely moves
+from 84.8x to 84.7x. The unified profile therefore adds a new
+`retire128c3g3` budget point with the same measured normal reference event
+traffic and state as `retire128c3`: about 52.28KB/event and about 392.8KB
+on-chip state. The next policy target is not more SRAM; it is a context-aware
+fanout LUT that triggers the third read only for repeated-key or spread-out rare
+cases.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

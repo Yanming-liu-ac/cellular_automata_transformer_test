@@ -556,7 +556,11 @@ the same lesson: raising the abstract coverage target from 95% to 100% does not
 move the repeated-key corner, but raising the minimum directory read guard from
 two entries to three restores 100.0% coverage. The cost is local and explicit:
 directory traffic rises from 6.88B/query to 10.12B/query, and token-read
-reduction moves from 78.2x to 76.6x.
+reduction moves from 78.2x to 76.6x. Checking the same guard under the normal
+threshold-15 fanout profile keeps reference, rare-burst, and repeated-name
+traffic unchanged; only split-rare moves from 6.50B/query to 9.75B/query while
+coverage reaches 100.0%. This is the right hardware pattern: make the robust
+case explicit, then verify that the hot reference path does not pay for it.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
