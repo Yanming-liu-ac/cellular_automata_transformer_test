@@ -26,6 +26,8 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
         f"select_groups={result.selected_groups}, select_pages={result.selected_pages}, "
         f"summary={result.summary_banks}x{result.summary_width}x{result.summary_bits}-bit, "
         f"events={result.query_events + result.update_events}, "
+        f"revision_rate={result.revision_update_rate:0.2f}, "
+        f"probe_rate={result.error_probe_query_rate:0.2f}, "
         f"state={format_bytes(result.state_bytes)}"
     )
     headers = [
@@ -37,19 +39,25 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
         "overall",
         "recent",
         "stale",
+        "route_m",
+        "value_m",
         "read/q",
         "flat/q",
         "cut",
         "write/u",
+        "key_u",
+        "rev_u",
         "refresh",
         "pages/r",
         "groups/r",
         "errbook",
         "errfix",
+        "probe_q",
+        "probe_r",
         "prov",
     ]
-    print(" | ".join(f"{header:>12}" for header in headers))
-    print("-" * 230)
+    print(" | ".join(f"{header:>11}" for header in headers))
+    print("-" * 260)
     for point in result.points:
         row = [
             point.policy,
@@ -60,25 +68,33 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
             fmt_pct(point.overall_recall),
             fmt_pct(point.recent_update_recall),
             fmt_pct(point.stale_miss_rate),
+            fmt_pct(point.route_miss_rate),
+            fmt_pct(point.value_miss_rate),
             f"{point.cells_read_per_query:0.1f}",
             f"{point.flat_cells_read_per_query:0.1f}",
             fmt_pct(point.read_reduction_rate),
             f"{point.cells_written_per_update:0.1f}",
+            f"{point.key_updates}",
+            f"{point.revision_updates}",
             f"{point.refresh_events}",
             f"{point.mean_pages_refreshed:0.1f}",
             f"{point.mean_groups_refreshed:0.1f}",
             f"{point.error_book_repairs}",
             f"{point.error_book_recoveries}",
+            f"{point.error_probe_queries}",
+            fmt_pct(point.error_probe_recall),
             fmt_pct(point.provenance_precision),
         ]
-        print(" | ".join(f"{cell:>12}" for cell in row))
+        print(" | ".join(f"{cell:>11}" for cell in row))
 
     print()
     print("Interpretation:")
     print("- flat/q is a full exact scan over all page facts.")
     print("- read/q is group summary routing, page summary routing, then exact fact reads.")
     print("- stale counts misses where the queried page was dirty when routing failed.")
+    print("- value_m catches routed pages whose stored fact value is stale.")
     print("- errfix counts failed probes that would succeed immediately after repair.")
+    print("- probe_r is recall on repeated failed-query probes drawn from the error book.")
 
 
 def main() -> None:

@@ -210,13 +210,16 @@ first prototype uses 256 pages, four facts per page, four links per page,
 16-page groups, and 4x256x4-bit summaries. It keeps about 146.5KB of page,
 group, fact, link, version, and dirty metadata.
 
-The exact-update policy reaches perfect recall but writes about 18,452
+The exact-update policy reaches perfect recall but writes about 18,460
 score-equivalent cells per fact edit. The `trigger16_age16` local policy keeps
-99.02% recall with 0.39% stale misses and writes about 11,651 cells/update.
-Reads stay about 359 cells/query, compared with 1,024 exact fact cells for a
+96.48% recall with 3.52% stale misses and writes about 11,418 cells/update.
+Adding error-book repair raises recall to 97.66%, repeated-probe recall to
+99.21%, and value-stale misses fall to 0.39% at about 11,910 cells/update.
+Reads stay about 357 cells/query, compared with 1,024 exact fact cells for a
 flat scan. The no-refresh control proves the failure mode: writes fall to four
-metadata cells/update, but stale misses climb to 16.8%. This makes stale miss
-rate the main safety metric for any more aggressive write-saving policy.
+metadata cells/update, but stale misses climb to 43.55%. This makes stale miss
+rate, value-miss rate, and error-probe recall the main safety metrics for any
+more aggressive write-saving policy.
 
 ## Retrieval-Lane Metrics
 

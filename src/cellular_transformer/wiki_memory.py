@@ -35,6 +35,8 @@ class WikiMemoryConfig:
     update_events: int = 256
     multihop_query_rate: float = 0.35
     recent_update_query_rate: float = 0.45
+    revision_update_rate: float = 0.50
+    error_probe_query_rate: float = 0.25
 
     def __post_init__(self) -> None:
         if self.page_count <= 0:
@@ -67,6 +69,10 @@ class WikiMemoryConfig:
             raise ValueError("multihop_query_rate must be in [0, 1]")
         if not 0.0 <= self.recent_update_query_rate <= 1.0:
             raise ValueError("recent_update_query_rate must be in [0, 1]")
+        if not 0.0 <= self.revision_update_rate <= 1.0:
+            raise ValueError("revision_update_rate must be in [0, 1]")
+        if not 0.0 <= self.error_probe_query_rate <= 1.0:
+            raise ValueError("error_probe_query_rate must be in [0, 1]")
 
     @property
     def group_count(self) -> int:
@@ -128,6 +134,7 @@ class WikiMemoryTrialPoint:
     recent_update_recall: float
     stale_miss_rate: float
     route_miss_rate: float
+    value_miss_rate: float
     provenance_precision: float
     cells_read_per_query: float
     flat_cells_read_per_query: float
@@ -138,6 +145,10 @@ class WikiMemoryTrialPoint:
     mean_groups_refreshed: float
     error_book_repairs: int
     error_book_recoveries: int
+    error_probe_queries: int
+    error_probe_recall: float
+    key_updates: int
+    revision_updates: int
     dirty_pages_end: int
     state_bytes: float
 
@@ -157,6 +168,8 @@ class WikiMemorySweepResult:
     summary_bits: int
     query_events: int
     update_events: int
+    revision_update_rate: float
+    error_probe_query_rate: float
     state_bytes: float
     points: Tuple[WikiMemoryTrialPoint, ...]
 
@@ -169,6 +182,27 @@ class _RouteResult:
     source_page: int | None
 
 
+@dataclass(frozen=True)
+class _WikiQuery:
+    kind: str
+    route_key: int
+    target: int
+    source_page: int
+    source_slot: int
+    target_page: int
+    target_slot: int
+    recent: bool
+
+
+@dataclass(frozen=True)
+class _AnswerResult:
+    hit: bool
+    stale: bool
+    precise: bool
+    cells_read: int
+    route_found: bool
+
+
 class _SyntheticWikiMemory:
     """Mutable synthetic wiki backed by low-bit page and group summaries."""
 
@@ -177,6 +211,8 @@ class _SyntheticWikiMemory:
         self.rng = np.random.default_rng(seed)
         self.fact_keys = np.zeros((config.page_count, config.facts_per_page), dtype=np.int64)
         self.fact_values = np.zeros_like(self.fact_keys)
+        self.truth_fact_keys = np.zeros_like(self.fact_keys)
+        self.truth_fact_values = np.zeros_like(self.fact_values)
         self.page_versions = np.zeros(config.page_count, dtype=np.int32)
         self.page_topics = np.arange(config.page_count, dtype=np.int32) % config.topic_count
         self.links = np.zeros((config.page_count, config.links_per_page), dtype=np.int32)
@@ -203,6 +239,8 @@ class _SyntheticWikiMemory:
                 key = int(keyed_hash(page * 1009 + slot, 17) & ((1 << 31) - 1))
                 self.fact_keys[page, slot] = key
                 self.fact_values[page, slot] = self._value_for_key(key)
+                self.truth_fact_keys[page, slot] = self.fact_keys[page, slot]
+                self.truth_fact_values[page, slot] = self.fact_values[page, slot]
 
         for page in range(self.config.page_count):
             same_topic = np.flatnonzero(self.page_topics == self.page_topics[page])
@@ -236,8 +274,11 @@ class _SyntheticWikiMemory:
         touched = 0
         max_value = self.config.max_summary_value
         for page in pages.astype(np.int32):
+            self.fact_keys[page] = self.truth_fact_keys[page]
+            self.fact_values[page] = self.truth_fact_values[page]
             self.page_summary[page].fill(0)
             touched += self.config.summary_banks * self.config.summary_width
+            touched += self.config.facts_per_page * 2
             for key in self.fact_keys[page]:
                 for bank, slot in enumerate(self._slots(int(key))):
                     value = int(self.page_summary[page, bank, slot])
@@ -281,13 +322,25 @@ class _SyntheticWikiMemory:
             return cells, pages, groups, True
         return 0, 0, 0, False
 
-    def update_fact(self, policy: WikiMemoryRefreshPolicy) -> Tuple[int, int, int, bool]:
+    def update_fact(self, policy: WikiMemoryRefreshPolicy) -> Tuple[int, int, int, bool, str]:
         page = int(self.rng.integers(0, self.config.page_count))
         slot = int(self.rng.integers(0, self.config.facts_per_page))
-        new_key = int(keyed_hash(1_000_003 + self.update_cursor * 65537 + page * 257 + slot, 29))
-        new_key &= (1 << 31) - 1
-        self.fact_keys[page, slot] = new_key
-        self.fact_values[page, slot] = self._value_for_key(new_key)
+        if self.rng.random() < self.config.revision_update_rate:
+            key = int(self.truth_fact_keys[page, slot])
+            new_value = int(
+                keyed_hash(2_000_003 + self.update_cursor * 65537 + key * 131, 43)
+                & ((1 << 31) - 1)
+            )
+            self.truth_fact_values[page, slot] = new_value
+            update_kind = "revision"
+        else:
+            new_key = int(
+                keyed_hash(1_000_003 + self.update_cursor * 65537 + page * 257 + slot, 29)
+            )
+            new_key &= (1 << 31) - 1
+            self.truth_fact_keys[page, slot] = new_key
+            self.truth_fact_values[page, slot] = self._value_for_key(new_key)
+            update_kind = "key"
         self.page_versions[page] += 1
         self.dirty_pages[page] = True
         self.dirty_groups[self._group_for_page(page)] = True
@@ -300,8 +353,8 @@ class _SyntheticWikiMemory:
         update_cells = 4
         if policy.refresh_on_update:
             refresh_cells, pages, groups = self._refresh_dirty()
-            return update_cells + refresh_cells, pages, groups, refresh_cells > 0
-        return update_cells, 0, 0, False
+            return update_cells + refresh_cells, pages, groups, refresh_cells > 0, update_kind
+        return update_cells, 0, 0, False, update_kind
 
     def _score_groups(self, key: int) -> np.ndarray:
         slots = self._slots(key)
@@ -345,13 +398,17 @@ class _SyntheticWikiMemory:
                 return _RouteResult(True, cells_read, selected_pages, page)
         return _RouteResult(False, cells_read, selected_pages, None)
 
-    def repair_page(self, page: int) -> Tuple[int, int, int]:
-        page_array = np.array([int(page)], dtype=np.int32)
+    def repair_pages(self, pages: Tuple[int, ...]) -> Tuple[int, int, int]:
+        clean_pages = tuple(sorted(set(int(page) for page in pages)))
+        if len(clean_pages) == 0:
+            return 0, 0, 0
+        page_array = np.array(clean_pages, dtype=np.int32)
         page_cells = self._refresh_pages(page_array)
-        group_cells = self._refresh_groups(np.array([self._group_for_page(page)], dtype=np.int32))
-        return page_cells + group_cells, 1, 1
+        groups = tuple(sorted({self._group_for_page(page) for page in clean_pages}))
+        group_cells = self._refresh_groups(np.array(groups, dtype=np.int32))
+        return page_cells + group_cells, len(clean_pages), len(groups)
 
-    def sample_query(self) -> Tuple[str, int, int, int, bool]:
+    def sample_query(self) -> _WikiQuery:
         use_recent = (
             len(self.recent_pages) > 0
             and self.rng.random() < self.config.recent_update_query_rate
@@ -365,42 +422,68 @@ class _SyntheticWikiMemory:
         if self.rng.random() < self.config.multihop_query_rate:
             target_page = int(self.links[page, int(self.rng.integers(0, self.config.links_per_page))])
             target_slot = int(self.rng.integers(0, self.config.facts_per_page))
-            return (
-                "multihop",
-                int(self.fact_keys[page, slot]),
-                int(self.fact_keys[target_page, target_slot]),
-                target_page,
-                use_recent,
+            return _WikiQuery(
+                kind="multihop",
+                route_key=int(self.truth_fact_keys[page, slot]),
+                target=int(self.truth_fact_keys[target_page, target_slot]),
+                source_page=page,
+                source_slot=slot,
+                target_page=target_page,
+                target_slot=target_slot,
+                recent=use_recent,
             )
-        return (
-            "single",
-            int(self.fact_keys[page, slot]),
-            int(self.fact_values[page, slot]),
-            page,
-            use_recent,
+        return _WikiQuery(
+            kind="single",
+            route_key=int(self.truth_fact_keys[page, slot]),
+            target=int(self.truth_fact_values[page, slot]),
+            source_page=page,
+            source_slot=slot,
+            target_page=page,
+            target_slot=slot,
+            recent=use_recent,
         )
 
-    def answer_query(self, query: Tuple[str, int, int, int, bool]) -> Tuple[bool, bool, bool, int]:
-        kind, route_key, target, target_page, _ = query
-        routed = self.route_key(route_key)
+    def refresh_query_target(self, query: _WikiQuery) -> _WikiQuery:
+        if query.kind == "multihop":
+            target = int(self.truth_fact_keys[query.target_page, query.target_slot])
+        else:
+            target = int(self.truth_fact_values[query.target_page, query.target_slot])
+        return _WikiQuery(
+            kind=query.kind,
+            route_key=int(self.truth_fact_keys[query.source_page, query.source_slot]),
+            target=target,
+            source_page=query.source_page,
+            source_slot=query.source_slot,
+            target_page=query.target_page,
+            target_slot=query.target_slot,
+            recent=query.recent,
+        )
+
+    def answer_query(self, query: _WikiQuery) -> _AnswerResult:
+        routed = self.route_key(query.route_key)
         cells_read = routed.cells_read
         if not routed.found:
-            stale = bool(self.dirty_pages[target_page])
-            return False, stale, False, cells_read
+            stale = bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
+            return _AnswerResult(False, stale, False, cells_read, False)
 
-        if kind == "single":
+        if query.kind == "single":
             page = int(routed.source_page) if routed.source_page is not None else -1
-            found = bool(page == target_page and np.any(self.fact_values[page] == int(target)))
-            stale = bool((not found) and self.dirty_pages[target_page])
-            return found, stale, found, cells_read
+            found = bool(
+                page == query.target_page and np.any(self.fact_values[page] == int(query.target))
+            )
+            stale = bool((not found) and self.dirty_pages[query.target_page])
+            return _AnswerResult(found, stale, found, cells_read, True)
 
         cells_read += self.config.links_per_page
         link_pages = self.links[int(routed.source_page)]
         cells_read += self.config.links_per_page * self.config.facts_per_page
         for page in link_pages:
-            if int(page) == target_page and bool(np.any(self.fact_keys[page] == int(target))):
-                return True, False, True, cells_read
-        return False, bool(self.dirty_pages[target_page]), False, cells_read
+            if int(page) == query.target_page and bool(
+                np.any(self.fact_keys[page] == int(query.target))
+            ):
+                return _AnswerResult(True, False, True, cells_read, True)
+        stale = bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
+        return _AnswerResult(False, stale, False, cells_read, True)
 
 
 def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int) -> WikiMemoryTrialPoint:
@@ -418,6 +501,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
     recent_hits = 0
     stale_misses = 0
     route_misses = 0
+    value_misses = 0
     provenance_hits = 0
     total_cells_read = 0
     total_flat_cells_read = 0
@@ -427,12 +511,19 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
     groups_refreshed = 0
     error_repairs = 0
     error_recoveries = 0
+    error_probe_queries = 0
+    error_probe_hits = 0
+    key_updates = 0
+    revision_updates = 0
+    error_book: List[_WikiQuery] = []
 
     for event_type in event_types:
         if event_type == "update":
-            cells, pages, groups, refreshed = wiki.update_fact(policy)
+            cells, pages, groups, refreshed, update_kind = wiki.update_fact(policy)
             total_cells_written += cells
             updates += 1
+            key_updates += int(update_kind == "key")
+            revision_updates += int(update_kind == "revision")
             if refreshed:
                 refresh_events += 1
                 pages_refreshed += pages
@@ -446,33 +537,52 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
             pages_refreshed += pages
             groups_refreshed += groups
 
-        query = wiki.sample_query()
-        kind, _, _, target_page, recent = query
-        hit, stale, precise, cells_read = wiki.answer_query(query)
+        is_error_probe = (
+            len(error_book) > 0 and wiki.rng.random() < config.error_probe_query_rate
+        )
+        if is_error_probe:
+            error_probe_queries += 1
+            query = wiki.refresh_query_target(
+                error_book[int(wiki.rng.integers(0, len(error_book)))]
+            )
+        else:
+            query = wiki.sample_query()
+        answer = wiki.answer_query(query)
         queries += 1
-        total_cells_read += cells_read
+        total_cells_read += answer.cells_read
         total_flat_cells_read += config.page_count * config.facts_per_page
-        if kind == "single":
+        if query.kind == "single":
             single_queries += 1
-            single_hits += int(hit)
+            single_hits += int(answer.hit)
         else:
             multihop_queries += 1
-            multihop_hits += int(hit)
-        recent_queries += int(recent)
-        recent_hits += int(recent and hit)
-        stale_misses += int((not hit) and stale)
-        route_misses += int(not hit)
-        provenance_hits += int(hit and precise)
+            multihop_hits += int(answer.hit)
+        recent_queries += int(query.recent)
+        recent_hits += int(query.recent and answer.hit)
+        stale_misses += int((not answer.hit) and answer.stale)
+        route_misses += int(not answer.route_found)
+        value_misses += int(answer.route_found and not answer.hit)
+        provenance_hits += int(answer.hit and answer.precise)
+        error_probe_hits += int(is_error_probe and answer.hit)
 
-        if (not hit) and policy.error_book_repair:
-            repair_cells, repair_pages, repair_groups = wiki.repair_page(target_page)
+        recovered = False
+        if (not answer.hit) and policy.error_book_repair:
+            repair_cells, repair_pages, repair_groups = wiki.repair_pages(
+                (query.source_page, query.target_page)
+            )
             total_cells_written += repair_cells
             refresh_events += 1
             pages_refreshed += repair_pages
             groups_refreshed += repair_groups
             error_repairs += 1
-            repaired_hit, _, _, _ = wiki.answer_query(query)
-            error_recoveries += int(repaired_hit)
+            repaired = wiki.answer_query(query)
+            recovered = repaired.hit
+            error_recoveries += int(recovered)
+
+        if not answer.hit:
+            error_book.append(query)
+            if len(error_book) > 128:
+                error_book = error_book[-128:]
 
     overall_hits = single_hits + multihop_hits
     cells_read_per_query = total_cells_read / float(queries)
@@ -494,6 +604,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
         recent_update_recall=recent_hits / float(recent_queries) if recent_queries else 0.0,
         stale_miss_rate=stale_misses / float(queries),
         route_miss_rate=route_misses / float(queries),
+        value_miss_rate=value_misses / float(queries),
         provenance_precision=provenance_hits / float(overall_hits) if overall_hits else 0.0,
         cells_read_per_query=cells_read_per_query,
         flat_cells_read_per_query=flat_cells_read_per_query,
@@ -504,6 +615,12 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
         mean_groups_refreshed=groups_refreshed / float(refresh_events) if refresh_events else 0.0,
         error_book_repairs=error_repairs,
         error_book_recoveries=error_recoveries,
+        error_probe_queries=error_probe_queries,
+        error_probe_recall=(
+            error_probe_hits / float(error_probe_queries) if error_probe_queries else 0.0
+        ),
+        key_updates=key_updates,
+        revision_updates=revision_updates,
         dirty_pages_end=int(np.count_nonzero(wiki.dirty_pages)),
         state_bytes=config.state_bytes,
     )
@@ -541,6 +658,8 @@ def run_wiki_memory_sweep(
         summary_bits=sweep_config.summary_bits,
         query_events=sweep_config.query_events,
         update_events=sweep_config.update_events,
+        revision_update_rate=sweep_config.revision_update_rate,
+        error_probe_query_rate=sweep_config.error_probe_query_rate,
         state_bytes=sweep_config.state_bytes,
         points=points,
     )

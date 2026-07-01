@@ -411,12 +411,13 @@ attention-over-context baselines. This is a better first product-shaped target
 than replacing the entire Transformer stack, because mutable knowledge is where
 local CA storage, versioning, and sparse routing are naturally strong.
 
-The first synthetic wiki-memory benchmark now exists. `trigger16_age16` reaches
-99.02% recall at 359 cells/query and about 11,651 cells/update, versus
-100.0% recall and about 18,452 cells/update for exact update refresh. The next
-step is to add explicit contradiction clusters and repeated failed probes so the
-error-book lane has a real workload, then compare the routed CA fabric with a
-flat vector/RAG-style retrieval proxy.
+The first synthetic wiki-memory benchmark now exists. With truth/memory
+separated, `trigger16_age16` reaches 96.48% recall at about 357 cells/query and
+11,418 cells/update, versus 100.0% recall and about 18,460 cells/update for
+exact update refresh. Adding error-book repair raises recall to 97.66% and
+repeated failed-probe recall to 99.21% at about 11,910 cells/update. The next
+step is to add explicit contradiction clusters, then compare the routed CA
+fabric with a flat vector/RAG-style retrieval proxy.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

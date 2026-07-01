@@ -109,25 +109,31 @@ Baselines:
 The first NumPy prototype is `experiments/wiki_memory_demo.py`. It builds a
 256-page synthetic wiki with four facts per page, four links per page, 16-page
 groups, and 4x256x4-bit page/group summaries. Queries mix single-hop fact reads
-and two-hop link reads; updates mutate fact keys and values, then mark only the
-local page and group as dirty.
+and two-hop link reads. Updates now change the source-of-truth first, then mark
+only the local page and group dirty; refresh or error-book repair is required
+before the routed memory cells see the new key or revised value. Half of the
+updates are value revisions, and 25% of eligible queries replay an error-book
+probe.
 
 The exact-update baseline refreshes page and group summaries after every fact
-edit. It reaches 100.0% recall, but writes about 18,452 score-equivalent cells
+edit. It reaches 100.0% recall, but writes about 18,460 score-equivalent cells
 per update. The conservative triggered policy, `trigger16_age16`, refreshes
 when 16 pages are dirty or the summary is 16 update steps old. On the same
-event stream it reaches 99.02% overall recall, 98.22% recall on recently updated
-pages, and 0.39% stale misses. It reads about 359 cells/query versus 1,024 for
-a flat exact page-fact scan, a 64.9% read reduction, while update writes fall to
-about 11,651 cells/update. With no refresh, recall drops to 80.27% and stale
-misses rise to 16.80%.
+event stream it reaches 96.48% overall recall, 93.81% recall on recently updated
+pages, and 3.52% stale misses while writing about 11,418 cells/update. Adding
+error-book repair raises recall to 97.66%, repeated failed-probe recall to
+99.21%, and reduces value-stale misses to 0.39%, at about 11,910 cells/update.
+Reads stay about 357 cells/query versus 1,024 for a flat exact page-fact scan, a
+65.1% read reduction. With no refresh, recall drops to 56.45% and stale misses
+rise to 43.55%.
 
 This is not yet a learned memory system, but it establishes the first measurable
 wiki-memory claim: local dirty/age summary refresh can keep mutable facts mostly
-queryable while avoiding full-wiki scans. The error-book repair path is present
-but still weak in this trace: it repairs five failed probes and immediately
-recovers two of them, so the next benchmark should make repeated failed probes
-and contradiction clusters explicit.
+queryable while avoiding full-wiki scans. The error-book repair path now has a
+real workload: it recovers all 12 repaired probes immediately and improves
+repeated-probe recall from 90.70% to 99.21%. The next step is to make
+contradiction clusters explicit instead of treating each value revision as an
+independent fact edit.
 
 ## Kill Criteria
 
