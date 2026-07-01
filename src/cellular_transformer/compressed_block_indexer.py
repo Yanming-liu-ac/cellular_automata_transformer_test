@@ -968,6 +968,36 @@ class CsaHcaRareDirectoryBloomBankResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomSaltSelectionResult:
+    """Selected Bloom-sidecar salt evaluated after hot-token scoring."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    bits_per_entry: int
+    hash_count: int
+    bank_count: int
+    bank_mode: str
+    salt_count: int
+    selected_salt_index: int
+    selected_sidecar_salt: int
+    selection_metric: str
+    route_train_scenarios: Tuple[str, ...]
+    selection_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    route_lut: LowBitDirectoryAwareHcaRouteLUT
+    fanout_lut: LowBitRareDirectoryFanoutLUT
+    selection_points: Tuple[CsaHcaRareDirectoryBloomSaltPoint, ...]
+    eval_points: Tuple[CsaHcaRareDirectoryBloomSaltPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -4051,6 +4081,241 @@ def run_csa_hca_rare_directory_bloom_bank_sweep(
         route_lut=route_lut,
         fanout_lut=fanout_lut,
         points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_bloom_salt_selection_sweep(
+    salt_count: int = 16,
+    bits_per_entry: int = 8,
+    hash_count: int = 3,
+    bank_count: int = 8,
+    bank_mode: str = "by_hash",
+    route_train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    selection_scenarios: Tuple[str, ...] = ("zipf_reference",),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    route_positive_rate_threshold: float = 0.50,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 31,
+    selection_seed: int = 41,
+    eval_seed: int = 37,
+    sidecar_salt: int = 9173,
+    sidecar_salt_stride: int = 1543,
+) -> CsaHcaRareDirectoryBloomSaltSelectionResult:
+    """Select a Bloom-sidecar salt by minimizing hot-token false positives."""
+
+    if salt_count <= 0:
+        raise ValueError("salt_count must be positive")
+    if bits_per_entry <= 0:
+        raise ValueError("bits_per_entry must be positive")
+    if hash_count <= 0:
+        raise ValueError("hash_count must be positive")
+    if bank_count <= 0:
+        raise ValueError("bank_count must be positive")
+    if bank_mode not in ("modulo", "by_hash", "hash_slot"):
+        raise ValueError("bank_mode must be one of: modulo, by_hash, hash_slot")
+    if len(selection_scenarios) == 0:
+        raise ValueError("selection_scenarios must not be empty")
+    if len(eval_scenarios) == 0:
+        raise ValueError("eval_scenarios must not be empty")
+
+    route_lut, route_training_samples = train_directory_aware_hca_route_lut(
+        train_scenarios=route_train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+    fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=tuple(s for s in route_train_scenarios if s != "zipf_reference")
+        or route_train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=True,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed + 4096,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    def evaluate_scenario(
+        scenario: str,
+        seed: int,
+        salts: Tuple[Tuple[int, int], ...],
+    ) -> Tuple[CsaHcaRareDirectoryBloomSaltPoint, ...]:
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=seed,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+        directory_tokens = tuple(sorted(int(token) for token in directory))
+        bit_count = max(1, int(len(directory_tokens) * bits_per_entry))
+
+        points = []
+        for salt_index, current_salt in salts:
+            sidecar = LowBitPresenceBloomSidecar(
+                bit_count=bit_count,
+                hash_count=hash_count,
+                bank_count=bank_count,
+                bank_mode=bank_mode,
+                salt=current_salt,
+            )
+            for token in directory_tokens:
+                sidecar.insert(token)
+            points.append(
+                _evaluate_rare_directory_bloom_salt_point(
+                    salt_index=salt_index,
+                    sidecar_salt=current_salt,
+                    bits_per_entry=bits_per_entry,
+                    scenario=scenario,
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    directory_entry_bytes=directory_entry_bytes,
+                    hca_threshold=hca_threshold,
+                    route_lut=route_lut,
+                    fanout_lut=fanout_lut,
+                    sidecar=sidecar,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                )
+            )
+        return tuple(points)
+
+    candidate_salts = tuple(
+        (salt_index, sidecar_salt + salt_index * sidecar_salt_stride)
+        for salt_index in range(salt_count)
+    )
+    selection_points = []
+    for scenario_index, scenario in enumerate(selection_scenarios):
+        selection_points.extend(
+            evaluate_scenario(
+                scenario=scenario,
+                seed=selection_seed + scenario_index * 997,
+                salts=candidate_salts,
+            )
+        )
+
+    score_by_salt = {}
+    for salt_index, _ in candidate_salts:
+        salt_points = [point for point in selection_points if point.salt_index == salt_index]
+        mean_hot_fp = sum(point.hot_sidecar_false_positive_rate for point in salt_points) / len(salt_points)
+        mean_fp = sum(point.sidecar_false_positive_query_rate for point in salt_points) / len(salt_points)
+        mean_hca = sum(point.hca_query_rate for point in salt_points) / len(salt_points)
+        mean_conflict = sum(point.query_bank_conflict_rate for point in salt_points) / len(salt_points)
+        score_by_salt[salt_index] = (mean_hot_fp, mean_fp, -mean_hca, mean_conflict)
+    selected_salt_index = min(score_by_salt, key=lambda salt_index: score_by_salt[salt_index])
+    selected_sidecar_salt = sidecar_salt + selected_salt_index * sidecar_salt_stride
+
+    eval_points = []
+    selected = ((selected_salt_index, selected_sidecar_salt),)
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        eval_points.extend(
+            evaluate_scenario(
+                scenario=scenario,
+                seed=eval_seed + scenario_index * 997,
+                salts=selected,
+            )
+        )
+
+    return CsaHcaRareDirectoryBloomSaltSelectionResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        bits_per_entry=bits_per_entry,
+        hash_count=hash_count,
+        bank_count=bank_count,
+        bank_mode=bank_mode,
+        salt_count=salt_count,
+        selected_salt_index=selected_salt_index,
+        selected_sidecar_salt=selected_sidecar_salt,
+        selection_metric="min mean hot_fp, then fp_q, then max HCA",
+        route_train_scenarios=route_train_scenarios,
+        selection_scenarios=selection_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=route_training_samples + fanout_training_samples,
+        route_lut=route_lut,
+        fanout_lut=fanout_lut,
+        selection_points=tuple(selection_points),
+        eval_points=tuple(eval_points),
     )
 
 

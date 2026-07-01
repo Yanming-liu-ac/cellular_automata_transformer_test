@@ -396,6 +396,14 @@ bank (`by_hash`) removes same-query bank conflicts without changing false
 positives or HCA routing. This is a CA-chip-friendly result: some efficiency
 comes from the memory fabric layout, not from adding model state.
 
+Once `by_hash` is fixed, the remaining salt choice can be selected by objective.
+Scanning 16 salts on a reference selection stream chooses salt index 14; on the
+evaluation stream it keeps reference HCA routing at 84.0%, holds hot-token
+sidecar false positives to about 0.9%, and keeps query bank conflicts at 0%.
+The rare stress cases still route through CSA with 100.0% split-rare and 98.4%
+repeated-name coverage. This makes the sidecar a compiled CA memory primitive:
+geometry, bank layout, and salt are selected together.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

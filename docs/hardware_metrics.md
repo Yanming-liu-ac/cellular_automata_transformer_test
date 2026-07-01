@@ -561,6 +561,20 @@ removes same-query bank conflicts in this model. The physical caveat is that
 each hash function now needs a banked address path, but that is a local SRAM
 layout issue rather than a model-quality tradeoff.
 
+With `by_hash` fixed, a salt-selection sweep chooses the Bloom salt that
+minimizes hot-token false positives on a held-out reference selection stream:
+
+```text
+selected salt index=14  salt=30775
+reference      fp_q=1.1%  hot_fp=0.9%  HCA=84.0%  q_bank_conflict=0.0%  reduction=193.5x
+split_rare     fp_q=0.0%  hot_fp=0.0%  HCA=0.0%   q_bank_conflict=0.0%  coverage=100.0%
+repeated_name  fp_q=0.0%  hot_fp=0.0%  HCA=0.0%   q_bank_conflict=0.0%  coverage=98.4%
+```
+
+This is better than leaving the salt fixed at an arbitrary average point:
+reference HCA routing is near the ideal sidecar while the bank-conflict rate is
+zero. Salt selection is now part of the sidecar compiler contract.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

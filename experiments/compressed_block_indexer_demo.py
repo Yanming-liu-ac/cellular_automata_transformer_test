@@ -20,6 +20,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_bank_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
+    run_csa_hca_rare_directory_bloom_salt_selection_sweep,
     run_csa_hca_rare_directory_bloom_salt_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_presence_sidecar_sweep,
@@ -845,6 +846,45 @@ def main() -> None:
     print("- Bank mapping does not change Bloom false positives, but it changes read-port pressure.")
     print("- by_hash assigns each hash function to its own bank and removes same-query bank conflicts here.")
     print("- This is the first clean SRAM-layout win for the sidecar path.")
+    print()
+
+    selected_salt = run_csa_hca_rare_directory_bloom_salt_selection_sweep()
+    print("Bloom sidecar salt-selection sweep")
+    print(
+        f"selected_index={selected_salt.selected_salt_index}, "
+        f"selected_salt={selected_salt.selected_sidecar_salt}, "
+        f"metric={selected_salt.selection_metric}"
+    )
+    headers = [
+        "scenario",
+        "fp_q",
+        "hot_fp",
+        "hca_r",
+        "coverage",
+        "q_conf",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 110)
+    for point in selected_salt.eval_points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.scenario,
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            fmt_pct(point.hot_sidecar_false_positive_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            fmt_pct(point.query_bank_conflict_rate),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Bloom salt-selection interpretation:")
+    print("- Selecting salt against hot-token false positives recovers most of the ideal HCA hot path.")
+    print("- by_hash keeps bank conflicts at zero while salt selection controls false positives.")
+    print("- The next step is update scheduling for the selected sidecar under streaming inserts.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

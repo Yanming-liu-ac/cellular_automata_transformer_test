@@ -621,6 +621,15 @@ hashing the slot to a bank averages 37.6%, and assigning hash functions to banks
 hot-token false positives are unchanged because the bit array is unchanged. This
 is the first sidecar result that is purely a memory-layout win.
 
+The forty-second sweep adds the first compiler-like salt selection objective.
+Under `by_hash`, the sweep scans 16 salts on a reference selection stream and
+chooses the salt with lowest mean hot-token false positives. The selected salt
+has index 14. On the evaluation reference stream it gets about 1.1% sidecar
+false positives, 0.9% hot-token false positives, 84.0% HCA routing, and no query
+bank conflicts. The rare stress cases remain unchanged at 100.0% split-rare and
+98.4% repeated-name coverage. This turns the sidecar from a fixed hash table
+into a small compiled control memory.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

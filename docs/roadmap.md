@@ -159,6 +159,10 @@ Compressed block-index result:
   sidecar, `by_hash` banking removes same-query bank conflicts, while modulo and
   hash-slot banking average about 36-38% query conflicts. This is a pure layout
   improvement rather than a model-state change.
+- Salt selection is now measured under `by_hash`. Scanning 16 salts on a
+  reference selection stream picks salt index 14; evaluation keeps reference HCA
+  routing at 84.0%, hot-token false positives at 0.9%, query bank conflicts at
+  0.0%, and rare stress coverage at 100.0% split-rare / 98.4% repeated-name.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -296,8 +300,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- add a salt-selection objective that minimizes hot-token false positives under
-  the `by_hash` bank layout, then measure update scheduling pressure per tile.
+- measure selected-sidecar update scheduling pressure per tile under streaming
+  context inserts.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

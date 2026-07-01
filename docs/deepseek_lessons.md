@@ -520,6 +520,10 @@ The bank-mapping sweep separates a layout problem from a model problem:
 `by_hash` banking removes same-query sidecar bank conflicts without changing the
 Bloom contents or routing labels. This is the CA version of a fused-kernel
 lesson: the data layout is part of the model system.
+The salt-selection sweep completes the same point from the compiler side:
+selecting the hash salt against hot-token false positives recovers most of the
+ideal HCA path without increasing state. For CA hardware, routing metadata is
+not static bookkeeping; it is part of the learned or compiled model artifact.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
