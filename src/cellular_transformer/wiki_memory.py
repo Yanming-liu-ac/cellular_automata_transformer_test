@@ -478,6 +478,52 @@ class WikiMemoryDenseTileResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryDensityAwareTilePoint:
+    """One mixed sparse/dense region tile-sizing point."""
+
+    total_pages: int
+    dense_page_fraction: float
+    dense_query_fraction: float
+    sparse_pages: int
+    dense_pages: int
+    sparse_facts_per_page: int
+    dense_facts_per_page: int
+    dense_tile_enabled: bool
+    baseline_overall_recall: float
+    aware_overall_recall: float
+    all_dense_overall_recall: float
+    flat_overall_recall: float
+    baseline_cells_read_per_query: float
+    aware_cells_read_per_query: float
+    all_dense_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    baseline_state_bytes: float
+    aware_state_bytes: float
+    all_dense_state_bytes: float
+    density_tag_state_bytes: float
+    aware_read_reduction_vs_flat: float
+    aware_read_reduction_vs_baseline: float
+    aware_state_increase_vs_baseline: float
+    aware_state_saving_vs_all_dense: float
+    aware_training_examples: int
+
+
+@dataclass(frozen=True)
+class WikiMemoryDensityAwareTileResult:
+    """Density-aware mixed-region tile-sizing sweep."""
+
+    policy: str
+    target_route_coverage: float
+    query_events: int
+    update_events: int
+    summary_banks: int
+    summary_width: int
+    summary_bits: int
+    region_directory_cells_per_query: int
+    points: Tuple[WikiMemoryDensityAwareTilePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -2105,5 +2151,278 @@ def run_wiki_memory_dense_tile_sweep(
         summary_banks=first_config.summary_banks,
         summary_width=first_config.summary_width,
         summary_bits=first_config.summary_bits,
+        points=tuple(points),
+    )
+
+
+def _weighted_pair(sparse_value: float, dense_value: float, dense_weight: float) -> float:
+    return (1.0 - dense_weight) * sparse_value + dense_weight * dense_value
+
+
+def run_wiki_memory_density_aware_tile_sweep(
+    total_pages: int = 2048,
+    dense_page_fractions: Tuple[float, ...] = (0.25, 0.50, 0.75),
+    sparse_facts_per_page: int = 8,
+    dense_facts_per_page: int = 32,
+    summary_width: int = 256,
+    sparse_group_size: int = 16,
+    dense_group_size: int = 4,
+    sparse_max_groups: int = 32,
+    dense_max_groups: int = 48,
+    target_route_coverage: float = 1.0,
+    train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryDensityAwareTileResult:
+    """Compare uniform and density-aware tile sizing in mixed wiki regions."""
+
+    if total_pages <= 0:
+        raise ValueError("total_pages must be positive")
+    if total_pages % sparse_group_size != 0 or total_pages % dense_group_size != 0:
+        raise ValueError("total_pages must be divisible by both group sizes")
+    clean_fractions = tuple(dict.fromkeys(float(value) for value in dense_page_fractions))
+    if len(clean_fractions) == 0:
+        raise ValueError("dense_page_fractions must not be empty")
+
+    points = []
+    first_config = _density_config(total_pages, sparse_facts_per_page, summary_width)
+    region_directory_cells = 2 * first_config.summary_banks
+    density_tag_state_bytes = total_pages / 8.0
+    for dense_fraction in clean_fractions:
+        if not 0.0 < dense_fraction < 1.0:
+            raise ValueError("dense_page_fractions must be in (0, 1)")
+        dense_pages = int(round(total_pages * dense_fraction / sparse_group_size))
+        dense_pages *= sparse_group_size
+        dense_pages = max(sparse_group_size, min(total_pages - sparse_group_size, dense_pages))
+        sparse_pages = total_pages - dense_pages
+        dense_query_weight = dense_pages / float(total_pages)
+
+        sparse_base = replace(
+            _density_config(sparse_pages, sparse_facts_per_page, summary_width),
+            group_size=sparse_group_size,
+            selected_groups=4,
+            adaptive_max_groups=sparse_max_groups,
+            adaptive_score_margin=1,
+        )
+        dense_base = replace(
+            _density_config(dense_pages, dense_facts_per_page, summary_width),
+            group_size=sparse_group_size,
+            selected_groups=4,
+            adaptive_max_groups=sparse_max_groups,
+            adaptive_score_margin=1,
+        )
+        sparse_dense = replace(
+            _density_config(sparse_pages, sparse_facts_per_page, summary_width),
+            group_size=dense_group_size,
+            selected_groups=4,
+            adaptive_max_groups=dense_max_groups,
+            adaptive_score_margin=1,
+        )
+        dense_dense = replace(
+            _density_config(dense_pages, dense_facts_per_page, summary_width),
+            group_size=dense_group_size,
+            selected_groups=4,
+            adaptive_max_groups=dense_max_groups,
+            adaptive_score_margin=1,
+        )
+
+        sparse_base_lut = train_wiki_memory_fanout_lut(
+            config=sparse_base,
+            policy=policy,
+            train_seeds=train_seeds,
+            base_groups=4,
+            max_groups=sparse_max_groups,
+            target_route_coverage=target_route_coverage,
+        )
+        dense_base_lut = train_wiki_memory_fanout_lut(
+            config=dense_base,
+            policy=policy,
+            train_seeds=train_seeds,
+            base_groups=4,
+            max_groups=sparse_max_groups,
+            target_route_coverage=target_route_coverage,
+        )
+        sparse_dense_lut = train_wiki_memory_fanout_lut(
+            config=sparse_dense,
+            policy=policy,
+            train_seeds=train_seeds,
+            base_groups=4,
+            max_groups=dense_max_groups,
+            target_route_coverage=target_route_coverage,
+        )
+        dense_dense_lut = train_wiki_memory_fanout_lut(
+            config=dense_dense,
+            policy=policy,
+            train_seeds=train_seeds,
+            base_groups=4,
+            max_groups=dense_max_groups,
+            target_route_coverage=target_route_coverage,
+        )
+
+        sparse_base_point = _trial(
+            policy=policy,
+            config=sparse_base,
+            seed=seed,
+            route_mode="lut",
+            fanout_lut=sparse_base_lut,
+        )
+        dense_base_point = _trial(
+            policy=policy,
+            config=dense_base,
+            seed=seed,
+            route_mode="lut",
+            fanout_lut=dense_base_lut,
+        )
+        sparse_dense_point = _trial(
+            policy=policy,
+            config=sparse_dense,
+            seed=seed,
+            route_mode="lut",
+            fanout_lut=sparse_dense_lut,
+        )
+        dense_dense_point = _trial(
+            policy=policy,
+            config=dense_dense,
+            seed=seed,
+            route_mode="lut",
+            fanout_lut=dense_dense_lut,
+        )
+        sparse_flat_point = _trial(
+            policy=policy,
+            config=sparse_base,
+            seed=seed,
+            route_mode="flat",
+        )
+        dense_flat_point = _trial(
+            policy=policy,
+            config=dense_base,
+            seed=seed,
+            route_mode="flat",
+        )
+
+        dense_tile_enabled = (
+            dense_dense_point.overall_recall >= dense_base_point.overall_recall
+        )
+        aware_dense_point = dense_dense_point if dense_tile_enabled else dense_base_point
+        aware_dense_config = dense_dense if dense_tile_enabled else dense_base
+        aware_dense_lut = dense_dense_lut if dense_tile_enabled else dense_base_lut
+
+        baseline_recall = _weighted_pair(
+            sparse_base_point.overall_recall,
+            dense_base_point.overall_recall,
+            dense_query_weight,
+        )
+        aware_recall = _weighted_pair(
+            sparse_base_point.overall_recall,
+            aware_dense_point.overall_recall,
+            dense_query_weight,
+        )
+        all_dense_recall = _weighted_pair(
+            sparse_dense_point.overall_recall,
+            dense_dense_point.overall_recall,
+            dense_query_weight,
+        )
+        flat_recall = _weighted_pair(
+            sparse_flat_point.overall_recall,
+            dense_flat_point.overall_recall,
+            dense_query_weight,
+        )
+
+        baseline_read = _weighted_pair(
+            sparse_base_point.cells_read_per_query,
+            dense_base_point.cells_read_per_query,
+            dense_query_weight,
+        ) + region_directory_cells
+        aware_read = _weighted_pair(
+            sparse_base_point.cells_read_per_query,
+            aware_dense_point.cells_read_per_query,
+            dense_query_weight,
+        ) + region_directory_cells
+        all_dense_read = _weighted_pair(
+            sparse_dense_point.cells_read_per_query,
+            dense_dense_point.cells_read_per_query,
+            dense_query_weight,
+        ) + region_directory_cells
+        flat_read = _weighted_pair(
+            sparse_flat_point.cells_read_per_query,
+            dense_flat_point.cells_read_per_query,
+            dense_query_weight,
+        ) + region_directory_cells
+
+        baseline_state = (
+            sparse_base.state_bytes
+            + dense_base.state_bytes
+            + sparse_base_lut.state_bytes
+            + dense_base_lut.state_bytes
+        )
+        aware_state = (
+            sparse_base.state_bytes
+            + aware_dense_config.state_bytes
+            + sparse_base_lut.state_bytes
+            + aware_dense_lut.state_bytes
+            + density_tag_state_bytes
+        )
+        all_dense_state = (
+            sparse_dense.state_bytes
+            + dense_dense.state_bytes
+            + sparse_dense_lut.state_bytes
+            + dense_dense_lut.state_bytes
+        )
+
+        points.append(
+            WikiMemoryDensityAwareTilePoint(
+                total_pages=total_pages,
+                dense_page_fraction=dense_pages / float(total_pages),
+                dense_query_fraction=dense_query_weight,
+                sparse_pages=sparse_pages,
+                dense_pages=dense_pages,
+                sparse_facts_per_page=sparse_facts_per_page,
+                dense_facts_per_page=dense_facts_per_page,
+                dense_tile_enabled=dense_tile_enabled,
+                baseline_overall_recall=baseline_recall,
+                aware_overall_recall=aware_recall,
+                all_dense_overall_recall=all_dense_recall,
+                flat_overall_recall=flat_recall,
+                baseline_cells_read_per_query=baseline_read,
+                aware_cells_read_per_query=aware_read,
+                all_dense_cells_read_per_query=all_dense_read,
+                flat_cells_read_per_query=flat_read,
+                baseline_state_bytes=baseline_state,
+                aware_state_bytes=aware_state,
+                all_dense_state_bytes=all_dense_state,
+                density_tag_state_bytes=density_tag_state_bytes,
+                aware_read_reduction_vs_flat=(
+                    1.0 - aware_read / flat_read if flat_read > 0.0 else 0.0
+                ),
+                aware_read_reduction_vs_baseline=(
+                    1.0 - aware_read / baseline_read if baseline_read > 0.0 else 0.0
+                ),
+                aware_state_increase_vs_baseline=(
+                    aware_state - baseline_state
+                ),
+                aware_state_saving_vs_all_dense=(
+                    1.0 - aware_state / all_dense_state if all_dense_state > 0.0 else 0.0
+                ),
+                aware_training_examples=(
+                    sparse_base_lut.training_examples + aware_dense_lut.training_examples
+                ),
+            )
+        )
+
+    return WikiMemoryDensityAwareTileResult(
+        policy=policy.name,
+        target_route_coverage=target_route_coverage,
+        query_events=first_config.query_events,
+        update_events=first_config.update_events,
+        summary_banks=first_config.summary_banks,
+        summary_width=first_config.summary_width,
+        summary_bits=first_config.summary_bits,
+        region_directory_cells_per_query=region_directory_cells,
         points=tuple(points),
     )

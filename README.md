@@ -73,6 +73,7 @@ python experiments/wiki_memory_density_demo.py
 python experiments/wiki_memory_fanout_demo.py
 python experiments/wiki_memory_learned_fanout_grid_demo.py
 python experiments/wiki_memory_dense_tile_demo.py
+python experiments/wiki_memory_density_aware_tile_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -125,6 +126,8 @@ The first experiments compare:
   summaries or page-internal routing are needed;
 - dense routing-tile sweeps that split high-density wiki memory into smaller
   local tiles and restore recall under 32 facts/page pressure;
+- density-aware routing-tile sweeps that enable small tiles only when local
+  probe quality justifies the extra state;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

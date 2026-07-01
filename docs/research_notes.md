@@ -392,6 +392,16 @@ recall at about 2,897 cells/query, while flat scan reaches 95.12% at about
 8,474 cells/query. The cost is roughly 96.6KB-192.6KB of extra summary state
 over the tested page counts, which is a plausible CA-chip trade.
 
+The density-aware tile sweep adds a quality guard to avoid blindly applying the
+dense geometry everywhere. In a 2,048-page mixed wiki with 8 facts/page sparse
+regions and 32 facts/page dense regions, the guard keeps 16-page tiles when the
+dense region is only 25% of pages because the four-page tile lowers recall on
+that small region. At 50% and 75% dense pages it turns the dense tile on and
+recovers 99.22% and 99.32% recall, compared with 79.00% and 64.60% for uniform
+16-page tiles. The read path stays far below flat scan: 1,158.5 versus 4,280.6
+cells/query at 50% dense, and 1,842.6 versus 5,359.6 at 75% dense. This is the
+first real density-aware routing policy in the wiki-memory track.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

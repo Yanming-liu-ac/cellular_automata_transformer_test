@@ -443,6 +443,14 @@ learned max48 fanout LUT. It fixes the 1,024-page, 32 facts/page case at
 case at 99.22% recall and about 2,897 cells/query. The next step is to make the
 tile size itself density-aware and then test mixed sparse/dense wiki regions.
 
+That density-aware version now exists for a two-region mixed wiki. It keeps
+16-page tiles for sparse 8 facts/page regions, conditionally enables four-page
+tiles for dense 32 facts/page regions, and uses a local quality guard to avoid
+the small-region regression at 25% dense pages. At 50-75% dense pages it
+recovers flat-level recall while reading 65-73% fewer cells than flat scan. The
+next step is to replace the region-level density oracle with per-block density
+tags generated during normal summary refresh.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

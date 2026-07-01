@@ -208,6 +208,17 @@ cells/query versus flat's 95.12% recall and 8,474 cells/query. The cost is
 modest SRAM: about 96.6KB extra state at 1,024 pages, 192.6KB at 2,048 pages,
 plus a 1.69KB fanout LUT.
 
+The density-aware tile sweep adds the missing policy guard. It models a
+2,048-page wiki split into sparse 8 facts/page regions and dense 32 facts/page
+regions. A local quality probe enables four-page tiles only when they do not
+lower dense-region recall. With 25% dense pages, the guard leaves the dense
+region on the 16-page tile because the small region does not benefit; recall
+stays 99.02% and the only extra state is a 256B density tag table. With 50% and
+75% dense pages, the guard enables dense tiles, raising recall from 79.00% and
+64.60% to 99.22% and 99.32%. Reads are about 1,159 and 1,843 cells/query,
+versus flat's 4,281 and 5,360 cells/query. This is the first density-aware CA
+memory policy rather than a global geometry setting.
+
 ## Kill Criteria
 
 This track is not useful if:

@@ -277,6 +277,16 @@ cells/query and reach 99.22% recall, versus flat at 8,474 cells/query and
 95.12% recall. This is a better hardware move than simply raising fanout on
 16-page groups, because it improves the signal before the fanout decision.
 
+Density-aware tile sizing turns that into a conditional hardware policy. The
+mixed-region sweep stores a 1-bit density tag per page, 256B for 2,048 pages,
+and enables four-page tiles only when a local quality probe says dense recall
+does not drop. At 25% dense pages the guard rejects the small tile and saves
+12.62% state versus all-four-page tiling. At 50% dense pages it spends 96.84KB
+extra state over the uniform 16-page baseline, but improves recall from 79.00%
+to 99.22% and cuts flat reads by 72.94%. At 75% dense pages it spends 144.85KB
+extra state, improves recall from 64.60% to 99.32%, and cuts flat reads by
+65.62%. This is the current best CA-chip trade for mixed wiki density.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:
