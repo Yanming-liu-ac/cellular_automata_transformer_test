@@ -33,13 +33,14 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
         f"{100.0 * result.quality_probe_min_gain:0.1f}%, "
         f"summary={result.summary_banks}x{result.summary_width}x"
         f"{result.summary_bits}-bit, tag_bits={result.density_tag_bits}, "
-        f"counter={first.guard_counter_bits}b/{first.guard_counter_block_pages}p/"
-        f"need{first.guard_required_win_count}, "
-        f"share_r={first.guard_share_radius_blocks}"
+        f"counter={first.guard_counter_bits}b, locality=rows"
     )
     headers = [
         "dense%",
         "thr",
+        "blk_pg",
+        "sh_r",
+        "need",
         "s_tag",
         "d_tag",
         "q_s",
@@ -67,6 +68,9 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
         row = [
             fmt_pct(point.dense_page_fraction),
             f"{point.tag_threshold}",
+            f"{point.guard_counter_block_pages}",
+            f"{point.guard_share_radius_blocks}",
+            f"{point.guard_required_win_count}",
             f"{point.sparse_density_tag}",
             f"{point.dense_density_tag}",
             f"{point.sparse_probe_queries}",
@@ -98,7 +102,13 @@ def print_mixed_guard_counters(result: WikiMemoryMixedGuardCounterResult) -> Non
 
 
 def main() -> None:
-    print_mixed_guard_counters(run_wiki_memory_mixed_guard_counter_sweep())
+    print_mixed_guard_counters(
+        run_wiki_memory_mixed_guard_counter_sweep(
+            tag_thresholds=(2,),
+            guard_counter_block_page_options=(256, 512, 1024),
+            guard_share_radius_options=(0, 1, 2),
+        )
+    )
 
 
 if __name__ == "__main__":

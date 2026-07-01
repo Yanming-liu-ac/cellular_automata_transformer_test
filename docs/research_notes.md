@@ -418,13 +418,13 @@ need a local low-bit quality guard.
 
 The mixed-stream version is the first less-oracular version of that guard. It
 feeds sparse and dense regions from one 512-query / 256-update stream and stores
-two 4-bit counters per 512-page guard block. Sparse false-enable remains 0.00%,
-which is the safety property we need. Purely local counters under-cover the
-50% dense case, enabling only one of two dense blocks even though aggregate
-dense evidence is strong at 58/0 wins/losses. Same-tag one-hop sharing repairs
-that without opening sparse blocks: 50% dense becomes 2/2 dense blocks enabled,
-75% dense stays 3/3, and sparse false-enable remains 0.00%. This says the next
-CA rule should learn when to share local evidence, not just when to flip a tile.
+two 4-bit counters per guard block. The locality sweep is encouraging: sparse
+false-enable remains 0.00% across 256, 512, and 1,024-page blocks and sharing
+radii 0, 1, and 2. Purely local counters under-cover finer dense blocks: at
+50% dense, 256-page blocks reach 3/4 and 512-page blocks reach 1/2. Same-tag
+radius-1 sharing repairs both to full dense coverage without opening sparse
+blocks. This says the next CA rule should learn when to share local evidence,
+not just when to flip a tile.
 
 ## First Retrieval Prototype
 
