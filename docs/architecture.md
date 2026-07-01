@@ -404,6 +404,17 @@ The rare stress cases still route through CSA with 100.0% split-rare and 98.4%
 repeated-name coverage. This makes the sidecar a compiled CA memory primitive:
 geometry, bank layout, and salt are selected together.
 
+The first streaming-update check adds the missing temporal constraint. If the
+selected Bloom sidecar is filled by a naive "insert when count reaches N" rule,
+future hot tokens are written into the rare-token sidecar before the chip can
+know they will become hot. On the reference stream, `final_oracle` keeps 84.0%
+HCA routing with 0.9% hot-token false positives, but `count1`, `count2`, and
+even `count14` pollute 100% of final hot tokens and collapse HCA routing to
+0.0%. The update bandwidth is tiny, roughly 0.0015-0.054B/context token, so the
+problem is not write energy; it is irreversible metadata pollution. The sidecar
+needs delayed promotion, a counting/deletable Bloom variant, or a hot-token
+retirement rule before it can be the default streaming hardware path.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

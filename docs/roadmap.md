@@ -300,8 +300,11 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- measure selected-sidecar update scheduling pressure per tile under streaming
-  context inserts.
+- replace naive Bloom sidecar streaming insertion with delayed promotion,
+  counting/deletable Bloom state, or hot-token retirement, because count-threshold
+  insertion pollutes the HCA hot path.
+- quantify the update-state cost of that fix: extra counters, tombstones, aging
+  epochs, bank pressure, and whether it still fits the joint128 event profile.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

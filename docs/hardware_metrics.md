@@ -575,6 +575,30 @@ This is better than leaving the salt fixed at an arbitrary average point:
 reference HCA routing is near the ideal sidecar while the bank-conflict rate is
 zero. Salt selection is now part of the sidecar compiler contract.
 
+The next sweep tests whether that selected sidecar can be updated online with a
+simple count-threshold insertion rule. It cannot be the default rule as-is.
+`final_oracle` inserts only tokens that are rare at the end of the context, so
+it is an upper bound rather than a streaming policy:
+
+```text
+reference final_oracle  inserted=9007  rare_in=100.0%  hot_poll=0.0%    update=0.05154B/token  hot_fp=0.9%    HCA=84.0%  reduction=193.5x
+reference count1        inserted=9263  rare_in=100.0%  hot_poll=100.0%  update=0.05300B/token  hot_fp=100.0%  HCA=0.0%   reduction=85.3x
+reference count2        inserted=911   rare_in=7.3%    hot_poll=100.0%  update=0.00521B/token  hot_fp=100.0%  HCA=0.0%   reduction=85.3x
+reference count14       inserted=256   rare_in=0.0%    hot_poll=100.0%  update=0.00146B/token  hot_fp=100.0%  HCA=0.0%   reduction=85.3x
+split_rare final_oracle inserted=9170  rare_in=100.0%  hot_poll=0.0%    update=0.05247B/token  coverage=99.5%  reduction=84.9x
+split_rare count1       inserted=9425  rare_in=100.0%  hot_poll=100.0%  update=0.05393B/token  coverage=99.5%  reduction=84.9x
+repeated final_oracle   inserted=9195  rare_in=100.0%  hot_poll=0.0%    update=0.05261B/token  coverage=99.1%  reduction=52.7x
+repeated count1         inserted=9449  rare_in=100.0%  hot_poll=100.0%  update=0.05407B/token  coverage=99.1%  reduction=52.7x
+```
+
+The important failure mode is temporal. A token that is hot by the end of the
+context still crosses count 1, 2, 4, 8, and 14 on the way there, so naive
+streaming insertion pollutes the rare-token sidecar before the chip knows the
+token is hot. This does not damage rare recall in these stress cases because it
+routes more queries through CSA, but it destroys the hot HCA fast path. The next
+sidecar should therefore be counting/deletable, or should use delayed promotion
+with a hot-token retirement rule.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

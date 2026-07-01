@@ -22,6 +22,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_selection_sweep,
     run_csa_hca_rare_directory_bloom_salt_sweep,
+    run_csa_hca_rare_directory_bloom_streaming_update_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_presence_sidecar_sweep,
     run_csa_hca_rare_directory_route_lut_sweep,
@@ -885,6 +886,60 @@ def main() -> None:
     print("- Selecting salt against hot-token false positives recovers most of the ideal HCA hot path.")
     print("- by_hash keeps bank conflicts at zero while salt selection controls false positives.")
     print("- The next step is update scheduling for the selected sidecar under streaming inserts.")
+    print()
+
+    streaming = run_csa_hca_rare_directory_bloom_streaming_update_sweep()
+    print("Bloom sidecar streaming-update sweep")
+    print(
+        f"salt={streaming.sidecar_salt}, "
+        f"bpe={streaming.bits_per_entry}, "
+        f"k={streaming.hash_count}, "
+        f"banks={streaming.bank_count}, "
+        f"bank_mode={streaming.bank_mode}"
+    )
+    headers = [
+        "scenario",
+        "policy",
+        "insert",
+        "rare_in",
+        "hot_poll",
+        "upd/tok",
+        "bank/tok",
+        "hot_fp",
+        "hca_r",
+        "coverage",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 160)
+    for point in streaming.points:
+        if point.scenario != "zipf_reference" and point.policy not in (
+            "final_oracle",
+            "count1",
+            "count8",
+            "count14",
+        ):
+            continue
+        row = [
+            point.scenario,
+            point.policy,
+            str(point.inserted_tokens),
+            fmt_pct(point.inserted_final_rare_rate),
+            fmt_pct(point.hot_polluted_token_rate),
+            f"{point.update_bytes_per_context_token:0.5f}",
+            f"{point.max_bank_update_bytes_per_context_token:0.5f}",
+            fmt_pct(point.hot_sidecar_false_positive_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Bloom streaming-update interpretation:")
+    print("- final_oracle is an upper bound that inserts only final rare-directory tokens.")
+    print("- Naive count thresholds insert future hot tokens before they are known hot.")
+    print("- That pollution collapses the reference HCA fast path, so the sidecar needs delayed promotion or deletion.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

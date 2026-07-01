@@ -524,6 +524,12 @@ The salt-selection sweep completes the same point from the compiler side:
 selecting the hash salt against hot-token false positives recovers most of the
 ideal HCA path without increasing state. For CA hardware, routing metadata is
 not static bookkeeping; it is part of the learned or compiled model artifact.
+The streaming-update sweep adds the time dimension to that lesson. A static
+Bloom sidecar can be excellent after salt selection, but a naive count-threshold
+online insert rule writes future hot tokens into the rare-token sidecar and
+collapses the HCA fast path. The DeepSeek-style takeaway is that routing state
+updates, retirement, and load protection belong in the architecture, not in a
+post-hoc runtime patch.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

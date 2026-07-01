@@ -630,6 +630,17 @@ bank conflicts. The rare stress cases remain unchanged at 100.0% split-rare and
 98.4% repeated-name coverage. This turns the sidecar from a fixed hash table
 into a small compiled control memory.
 
+The forty-third sweep tests the same selected sidecar under streaming inserts.
+It shows that the static result is not enough. `final_oracle`, which inserts
+only tokens that are rare at the end of the context, keeps the reference stream
+at 84.0% HCA routing with about 0.052B/token of sidecar update traffic. But
+simple count-threshold policies insert future hot tokens before they are known
+hot. On the reference stream, `count1`, `count2`, `count4`, `count8`, and
+`count14` all pollute 100.0% of the final hot-token set and collapse HCA routing
+to 0.0%. Rare stress coverage remains high because the pollution routes more
+queries to CSA, but the hot path loses its purpose. The next sidecar must be
+delayed, counting/deletable, or paired with hot-token retirement.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
