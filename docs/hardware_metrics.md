@@ -300,6 +300,13 @@ small canary workload or online agreement counter rather than a global oracle.
 This separates the hardware roles cleanly: density tag wakes the alternative
 geometry, quality guard commits it.
 
+The mixed-stream counter diagnostic changes the state accounting. Using two
+4-bit counters per 512-page guard block, the 2,048-page mixed stream needs only
+4B of counter state. In the 512-query / 256-update run, sparse false-enable is
+0.00%, 25% dense enables no dense blocks, 75% dense enables 3/3 dense blocks,
+and 50% dense enables 1/2 dense blocks. The state is cheap enough; the hardware
+problem is now evidence distribution across local blocks.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:
