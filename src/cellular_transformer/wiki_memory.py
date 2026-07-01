@@ -899,6 +899,77 @@ class CAWikiCellLearnedRepairResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellSummaryPolicy:
+    """Claim-summary answer path with optional source-cell repair."""
+
+    name: str
+    read_sources: int = 0
+    use_summary: bool = True
+    summary_update_on_write: bool = True
+    source_repair_ticks: int = 0
+    source_repair_period: int = 1
+    error_repair_ticks: int = 0
+    error_threshold: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("name must not be empty")
+        if self.read_sources < 0:
+            raise ValueError("read_sources must be non-negative")
+        if self.source_repair_ticks < 0:
+            raise ValueError("source_repair_ticks must be non-negative")
+        if self.source_repair_period <= 0:
+            raise ValueError("source_repair_period must be positive")
+        if self.error_repair_ticks < 0:
+            raise ValueError("error_repair_ticks must be non-negative")
+        if self.error_threshold <= 0:
+            raise ValueError("error_threshold must be positive")
+
+
+@dataclass(frozen=True)
+class CAWikiCellSummaryPoint:
+    """One claim-summary answer-path measurement."""
+
+    policy: str
+    claim_count: int
+    sources_per_claim: int
+    read_sources: int
+    use_summary: bool
+    source_repair_ticks: int
+    source_repair_period: int
+    error_repair_ticks: int
+    queries: int
+    updates: int
+    recall: float
+    recent_recall: float
+    stale_answer_rate: float
+    summary_stale_rate: float
+    stale_source_rate: float
+    consistent_claim_rate: float
+    cells_read_per_query: float
+    source_cells_read_per_query: float
+    summary_cells_read_per_query: float
+    repair_cells_read_per_event: float
+    cells_written_per_update: float
+    cells_touched_per_event: float
+    repair_ticks: int
+    source_writes: int
+    summary_writes: int
+    counter_writes: int
+    state_bytes: float
+
+
+@dataclass(frozen=True)
+class CAWikiCellSummarySweepResult:
+    """Claim-summary CA wiki-cell sweep."""
+
+    config: CAWikiCellConfig
+    seed: int
+    summary_state_bytes: float
+    points: Tuple[CAWikiCellSummaryPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -4733,4 +4804,286 @@ def run_ca_wiki_cell_learned_repair_sweep(
         lut_state_bytes=lut_bits / 8.0,
         entries=tuple(entries),
         points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_summary_sweep(
+    config: CAWikiCellConfig | None = None,
+    policies: Tuple[CAWikiCellSummaryPolicy, ...] | None = None,
+    seed: int = 2501,
+) -> CAWikiCellSummarySweepResult:
+    """Evaluate a claim-summary answer path for high fan-in wiki cells.
+
+    The summary cell is a second-level local cell per claim. Updates write the
+    edited source page and, when enabled, the claim summary. Queries can answer
+    from the summary cell while source pages are repaired lazily.
+    """
+
+    cfg = config if config is not None else CAWikiCellConfig(sources_per_claim=16)
+    if policies is None:
+        policies = (
+            CAWikiCellSummaryPolicy(
+                name="summary_only",
+                read_sources=0,
+                source_repair_ticks=0,
+                error_repair_ticks=0,
+            ),
+            CAWikiCellSummaryPolicy(
+                name="summary_probe1",
+                read_sources=1,
+                source_repair_ticks=0,
+                error_repair_ticks=0,
+            ),
+            CAWikiCellSummaryPolicy(
+                name="summary_period4_repair",
+                read_sources=1,
+                source_repair_ticks=1,
+                source_repair_period=4,
+                error_repair_ticks=0,
+            ),
+            CAWikiCellSummaryPolicy(
+                name="summary_error_repair",
+                read_sources=1,
+                source_repair_ticks=0,
+                error_repair_ticks=1,
+                error_threshold=1,
+            ),
+        )
+    for policy in policies:
+        if policy.read_sources > cfg.sources_per_claim:
+            raise ValueError("policy read_sources must fit sources_per_claim")
+        if policy.error_threshold > cfg.max_counter_value:
+            raise ValueError("policy error_threshold must fit counter_bits")
+
+    base_rng = np.random.default_rng(seed)
+    event_stream = np.array(
+        [1] * cfg.update_events + [0] * cfg.query_events,
+        dtype=np.int8,
+    )
+    base_rng.shuffle(event_stream)
+    update_claims = base_rng.integers(0, cfg.claim_count, size=cfg.update_events)
+    update_sources = base_rng.integers(0, cfg.sources_per_claim, size=cfg.update_events)
+    query_claims = base_rng.integers(0, cfg.claim_count, size=cfg.query_events)
+    query_recent_draws = base_rng.random(cfg.query_events)
+    query_source_scores = base_rng.random((cfg.query_events, cfg.sources_per_claim))
+    value_deltas = base_rng.integers(1, 251, size=cfg.update_events)
+
+    max_value = 1 << min(cfg.value_bits, 30)
+    initial_values = base_rng.integers(0, max_value, size=cfg.claim_count, dtype=np.int64)
+    summary_cell_bits = (
+        cfg.value_bits + cfg.revision_bits + cfg.confidence_bits + cfg.tag_bits + 1
+    )
+    summary_state_bytes = cfg.claim_count * summary_cell_bits / 8.0
+
+    points: List[CAWikiCellSummaryPoint] = []
+    for policy in policies:
+        truth_values = initial_values.copy()
+        truth_revisions = np.zeros(cfg.claim_count, dtype=np.int64)
+        values = np.repeat(truth_values[:, None], cfg.sources_per_claim, axis=1)
+        revisions = np.zeros((cfg.claim_count, cfg.sources_per_claim), dtype=np.int64)
+        summary_values = truth_values.copy()
+        summary_revisions = np.zeros(cfg.claim_count, dtype=np.int64)
+        error_counters = np.zeros(cfg.claim_count, dtype=np.int64)
+        recent_claims: List[int] = []
+
+        query_index = 0
+        update_index = 0
+        hits = 0
+        recent_hits = 0
+        recent_queries = 0
+        stale_answers = 0
+        query_source_reads = 0
+        query_summary_reads = 0
+        repair_read_cells = 0
+        source_writes = 0
+        summary_writes = 0
+        counter_writes = 0
+        repair_ticks = 0
+
+        def source_consistent(claim: int) -> bool:
+            return bool(
+                np.all(revisions[claim] == truth_revisions[claim])
+                and np.all(values[claim] == truth_values[claim])
+            )
+
+        def summary_consistent(claim: int) -> bool:
+            return bool(
+                summary_revisions[claim] == truth_revisions[claim]
+                and summary_values[claim] == truth_values[claim]
+            )
+
+        def repair_sources_from_summary(claim: int, ticks: int) -> None:
+            nonlocal repair_read_cells, source_writes, counter_writes, repair_ticks
+            if ticks <= 0:
+                return
+            for _ in range(ticks):
+                repair_read_cells += cfg.sources_per_claim * 2
+                stale = (
+                    (revisions[claim] < summary_revisions[claim])
+                    | (values[claim] != summary_values[claim])
+                )
+                writes = int(np.sum(stale))
+                if writes:
+                    revisions[claim, stale] = summary_revisions[claim]
+                    values[claim, stale] = summary_values[claim]
+                    source_writes += writes
+                repair_ticks += 1
+                if source_consistent(claim):
+                    if error_counters[claim] > 0:
+                        error_counters[claim] -= 1
+                        counter_writes += 1
+                    break
+                if writes == 0:
+                    break
+
+        for event in event_stream:
+            if event:
+                claim = int(update_claims[update_index])
+                source = int(update_sources[update_index])
+                current_update_index = update_index
+                truth_revisions[claim] += 1
+                truth_values[claim] = (
+                    truth_values[claim] + int(value_deltas[update_index])
+                ) % max_value
+                values[claim, source] = truth_values[claim]
+                revisions[claim, source] = truth_revisions[claim]
+                source_writes += 1
+                if policy.summary_update_on_write:
+                    summary_values[claim] = truth_values[claim]
+                    summary_revisions[claim] = truth_revisions[claim]
+                    summary_writes += 1
+                update_index += 1
+                recent_claims.append(claim)
+                if len(recent_claims) > 64:
+                    del recent_claims[: len(recent_claims) - 64]
+                if current_update_index % policy.source_repair_period == 0:
+                    repair_sources_from_summary(claim, policy.source_repair_ticks)
+                continue
+
+            use_recent = (
+                len(recent_claims) > 0
+                and query_recent_draws[query_index] < cfg.recent_query_rate
+            )
+            if use_recent:
+                claim = recent_claims[
+                    int(query_source_scores[query_index, 0] * len(recent_claims))
+                    % len(recent_claims)
+                ]
+                recent_queries += 1
+            else:
+                claim = int(query_claims[query_index])
+
+            selected_sources = np.argsort(query_source_scores[query_index])[
+                : policy.read_sources
+            ]
+            query_source_reads += int(len(selected_sources))
+            if policy.use_summary:
+                query_summary_reads += 1
+                answer_revision = int(summary_revisions[claim])
+                answer_value = int(summary_values[claim])
+            elif len(selected_sources):
+                selected_revisions = revisions[claim, selected_sources]
+                selected_values = values[claim, selected_sources]
+                best_offset = int(np.argmax(selected_revisions))
+                answer_revision = int(selected_revisions[best_offset])
+                answer_value = int(selected_values[best_offset])
+            else:
+                answer_revision = -1
+                answer_value = -1
+
+            hit = (
+                answer_revision == int(truth_revisions[claim])
+                and answer_value == int(truth_values[claim])
+            )
+            if hit:
+                hits += 1
+                if use_recent:
+                    recent_hits += 1
+            else:
+                stale_answers += 1
+
+            source_disagreement = False
+            if len(selected_sources):
+                source_pairs = {
+                    (int(revisions[claim, source]), int(values[claim, source]))
+                    for source in selected_sources
+                }
+                source_disagreement = len(source_pairs) > 1
+                if policy.use_summary:
+                    source_disagreement = source_disagreement or any(
+                        int(revisions[claim, source]) != int(summary_revisions[claim])
+                        or int(values[claim, source]) != int(summary_values[claim])
+                        for source in selected_sources
+                    )
+            if (not hit or source_disagreement) and policy.error_repair_ticks > 0:
+                if error_counters[claim] < cfg.max_counter_value:
+                    error_counters[claim] += 1
+                    counter_writes += 1
+                if error_counters[claim] >= policy.error_threshold:
+                    repair_sources_from_summary(claim, policy.error_repair_ticks)
+            elif error_counters[claim] > 0 and source_consistent(claim):
+                error_counters[claim] -= 1
+                counter_writes += 1
+            query_index += 1
+
+        consistent_claims = sum(1 for claim in range(cfg.claim_count) if source_consistent(claim))
+        stale_sources = int(
+            np.sum(
+                (revisions != truth_revisions[:, None])
+                | (values != truth_values[:, None])
+            )
+        )
+        stale_summaries = sum(
+            1 for claim in range(cfg.claim_count) if not summary_consistent(claim)
+        )
+        total_events = cfg.query_events + cfg.update_events
+        query_read_cells = query_source_reads + query_summary_reads
+        total_touched = (
+            query_read_cells
+            + repair_read_cells
+            + source_writes
+            + summary_writes
+            + counter_writes
+        )
+        points.append(
+            CAWikiCellSummaryPoint(
+                policy=policy.name,
+                claim_count=cfg.claim_count,
+                sources_per_claim=cfg.sources_per_claim,
+                read_sources=policy.read_sources,
+                use_summary=policy.use_summary,
+                source_repair_ticks=policy.source_repair_ticks,
+                source_repair_period=policy.source_repair_period,
+                error_repair_ticks=policy.error_repair_ticks,
+                queries=cfg.query_events,
+                updates=cfg.update_events,
+                recall=hits / float(cfg.query_events),
+                recent_recall=(
+                    recent_hits / float(recent_queries) if recent_queries else 0.0
+                ),
+                stale_answer_rate=stale_answers / float(cfg.query_events),
+                summary_stale_rate=stale_summaries / float(cfg.claim_count),
+                stale_source_rate=stale_sources / float(cfg.page_count),
+                consistent_claim_rate=consistent_claims / float(cfg.claim_count),
+                cells_read_per_query=query_read_cells / float(cfg.query_events),
+                source_cells_read_per_query=query_source_reads / float(cfg.query_events),
+                summary_cells_read_per_query=query_summary_reads / float(cfg.query_events),
+                repair_cells_read_per_event=repair_read_cells / float(total_events),
+                cells_written_per_update=(
+                    (source_writes + summary_writes) / float(max(1, cfg.update_events))
+                ),
+                cells_touched_per_event=total_touched / float(total_events),
+                repair_ticks=repair_ticks,
+                source_writes=source_writes,
+                summary_writes=summary_writes,
+                counter_writes=counter_writes,
+                state_bytes=cfg.state_bytes + summary_state_bytes,
+            )
+        )
+
+    return CAWikiCellSummarySweepResult(
+        config=cfg,
+        seed=seed,
+        summary_state_bytes=summary_state_bytes,
+        points=tuple(points),
     )

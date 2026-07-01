@@ -1260,6 +1260,22 @@ Per-bucket budget savings versus strict mode:
 This is the first chip-facing quality mode for CA Wiki Cell: a tiny mode bit can
 trade maintenance traffic for a measured failure budget.
 
+A second-level claim-summary lane changes the high fan-in metric. On the
+16-source, 256-update case:
+
+```text
+flat source scan:      100.00% recall, 16.00 reads/query, 13.63 touch/event, 79.83% stale sources
+strict source repair:  100.00% recall,  2.00 reads/query, 62.40 touch/event,  0.00% stale sources
+summary_only:          100.00% recall,  1.00 reads/query,  1.20 touch/event, 79.83% stale sources
+summary_probe1:        100.00% recall,  2.00 reads/query,  2.00 touch/event, 79.83% stale sources
+summary_period4:       100.00% recall,  2.00 reads/query,  4.35 touch/event, 65.19% stale sources
+summary_error_repair:  100.00% recall,  2.00 reads/query, 10.23 touch/event, 13.18% stale sources
+```
+
+The summary lane adds 336B for 128 claims in this diagnostic. It is therefore a
+better answer-path primitive than whole-source repair, but it leaves provenance
+freshness as a separate background CA problem.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

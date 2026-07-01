@@ -527,6 +527,18 @@ ids per bucket take 7.50B. This is now a plausible chip interface: critical
 facts can be kept in strict mode while ordinary wiki pages use lower-cost
 background repair.
 
+The claim-summary lane is the first direct repair for high fan-in source
+traffic. On the 16-source, 256-update case, strict source repair costs
+62.40 cells/event to keep all source pages fresh. A single summary cell per
+claim adds only 336B of state for 128 claims. If queries answer from that
+summary, `summary_only` gets 100% answer recall with 1.00 read/query and
+1.20 cells/event, but source staleness remains 79.83%. Adding query-triggered
+source repair (`summary_error_repair`) keeps 100% answer recall at
+10.23 cells/event and lowers source staleness to 13.18%. This says the chip
+should not force answer recall and source freshness through the same mechanism:
+summary cells should serve the fast answer path, and local CA repair should
+serve provenance freshness.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

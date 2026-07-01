@@ -363,6 +363,21 @@ where fan-in is wide: 16-source/128-update saves 12.40%, and
 policy: high-confidence memory pages can use strict repair, while ordinary
 mutable wiki pages can use budget repair.
 
+The second-level claim-summary diagnostic attacks the 16-source traffic problem
+directly. For 128 claims with 16 sources/claim and 256 updates, flat source scan
+gets 100.00% answer recall at 16.00 reads/query and 13.63 touch/event, but
+leaves 79.83% source cells stale. Strict source repair keeps query reads at
+2.00 and source staleness at 0.00%, but costs 62.40 touch/event. Adding one
+low-bit summary cell per claim costs only 336B of extra state. `summary_only`
+then reaches 100.00% answer recall with 1.00 read/query and 1.20 touch/event,
+because updates write both the edited source and the claim summary. This is not
+a complete provenance repair: source staleness remains 79.83%. The
+`summary_error_repair` point keeps answer recall at 100.00%, uses 2.00
+reads/query, costs 10.23 touch/event, and lowers source staleness to 13.18%.
+This is the cleaner architecture for high fan-in claims: a summary lane answers
+fast, while background CA repair handles source freshness according to the
+strict/budget mode bit.
+
 ## Kill Criteria
 
 This track is not useful if:

@@ -560,6 +560,16 @@ saving 9.47% traffic. The next roadmap item is no longer just "learn repair";
 it is to attach the mode bit to page importance and to reduce the 16-source
 strict traffic with source subtiles.
 
+The second-level claim-summary version now covers that roadmap item for the
+answer path. On the 16-source, 256-update case, one summary cell per claim adds
+336B of state, reaches 100% answer recall with 1.00 read/query and
+1.20 cells/event, and avoids the 62.40 cells/event strict source-repair path.
+It does not make source repair disappear: source staleness remains 79.83%
+without background repair, and falls to 13.18% with query-triggered repair at
+10.23 cells/event. The next geometry milestone is therefore source-subtile
+repair behind the summary lane, so provenance freshness can improve without
+reverting to whole-claim repair.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
