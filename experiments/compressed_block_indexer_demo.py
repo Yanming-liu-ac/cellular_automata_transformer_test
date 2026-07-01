@@ -15,6 +15,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_policy_trial,
     run_csa_hca_rare_directory_adaptive_policy_sweep,
     run_csa_hca_rare_directory_joint_policy_sweep,
+    run_csa_hca_rare_directory_joint_threshold_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_stress_sweep,
@@ -542,6 +543,42 @@ def main() -> None:
     print("- HCA bank confidence can suppress directory probes for strong hot tokens.")
     print("- confidence_probe keeps reference traffic near never_probe while retaining rare recall.")
     print("- The remaining false-HCA cases are now an explicit probe-LUT recall/traffic tradeoff.")
+    print()
+
+    threshold = run_csa_hca_rare_directory_joint_threshold_sweep()
+    print("Joint-control HCA threshold sweep")
+    headers = [
+        "thr",
+        "scenario",
+        "probe_r",
+        "hca_r",
+        "false_hca",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 126)
+    for point in threshold.points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            f"{point.hca_threshold}",
+            point.scenario,
+            fmt_pct(point.directory_probe_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Threshold interpretation:")
+    print("- Threshold 6 is too permissive for split rare tokens in this stress set.")
+    print("- Thresholds 8-15 keep similar rare coverage after joint probe/fanout control.")
+    print("- Higher thresholds reduce early probes, making threshold 15 the cheaper exact-recall mode here.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

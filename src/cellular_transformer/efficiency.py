@@ -327,8 +327,8 @@ def joint_control_csa_hca_context_budget() -> ContextSummaryBudget:
     This keeps the rare128 storage geometry but adds the measured low-bit control
     state from the joint probe/fanout sweep: a 42B fanout LUT, a 40B HCA
     confidence probe LUT, and about 2.25KB of per-row spread metadata. The
-    reference-stream ``confidence_probe`` point keeps rare-directory reads near
-    the old average path while making the exact-memory guard trainable.
+    threshold-15 ``confidence_probe`` point keeps rare-directory reads near the
+    old average path while making the exact-memory guard and fanout trainable.
     """
 
     block_summary_state = 512 * 4 * 128 * 4 / 8

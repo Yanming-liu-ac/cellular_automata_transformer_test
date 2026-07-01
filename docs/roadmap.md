@@ -130,6 +130,10 @@ Compressed block-index result:
   probes, keeping reference directory traffic at 0.50B/query instead of
   3.25B/query, while keeping about 97.7% repeated-name coverage at
   12.77B/query.
+- Sweeping HCA threshold under joint control rejects threshold 6 and shows that
+  thresholds 8-15 keep similar rare coverage. Threshold 15 removes early probes
+  in the split/repeated stress cases while keeping about 98.7% split-rare and
+  98.3% repeated-name coverage.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -267,9 +271,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- replace the hand-set threshold-15 HCA gate, fixed `dir_k=6` directory fanout,
-  and always-off guard with learned or metadata-driven admission/fanout/guard
-  policies, then re-run the bursty rare-token and repeated-name stress tests.
+- replace the hand threshold sweep with a trained joint threshold/probe/fanout
+  table and re-run the bursty rare-token and repeated-name stress tests.
 - add recency/query-context features to the trained fanout LUT and then train a
   joint admission/probe/fanout policy so HCA threshold, exact-directory
   override, and read budget are optimized as one hardware control table.

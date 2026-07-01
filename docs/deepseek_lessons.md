@@ -466,6 +466,11 @@ When this control plane is folded into the unified event profile, the current
 joint128 budget still uses about 52.28KB/event and about 356.9KB of on-chip
 state. That is the right direction for a CA-first chip: learned routing improves
 recall behavior without turning into a large dense state or a global read path.
+The threshold sweep adds the matching policy lesson: once exact-memory probe and
+fanout are learned, the HCA threshold should be chosen jointly with them. In the
+current stress set, threshold 15 is cheaper than threshold 8 because it removes
+early probes while preserving the same rare coverage under the learned fanout
+path.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

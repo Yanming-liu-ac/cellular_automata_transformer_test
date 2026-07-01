@@ -582,6 +582,24 @@ class CsaHcaRareDirectoryJointPolicyResult:
 
 
 @dataclass(frozen=True)
+class CsaHcaRareDirectoryJointThresholdResult:
+    """HCA-threshold sweep under the joint probe/fanout control policy."""
+
+    thresholds: Tuple[int, ...]
+    policy: str
+    probe_mode: str
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    directory_blocks_per_token: int
+    coverage_target: float
+    points: Tuple[CsaHcaRareDirectoryJointPolicyPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -2369,6 +2387,87 @@ def run_csa_hca_rare_directory_joint_policy_sweep(
         training_samples=training_samples + probe_training_samples,
         lut=lut,
         probe_lut=probe_lut,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_joint_threshold_sweep(
+    thresholds: Tuple[int, ...] = (6, 8, 10, 12, 15),
+    policy: Tuple[str, str] = ("confidence_probe", "confidence"),
+    train_scenarios: Tuple[str, ...] = (
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "split_rare",
+        "repeated_name",
+    ),
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    probe_positive_rate_threshold: float = 0.25,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 19,
+    eval_seed: int = 37,
+) -> CsaHcaRareDirectoryJointThresholdResult:
+    """Sweep HCA thresholds after joint probe/fanout control is available."""
+
+    if len(thresholds) == 0:
+        raise ValueError("thresholds must not be empty")
+    if len(policy) != 2:
+        raise ValueError("policy must be a (name, probe_mode) tuple")
+    sorted_thresholds = tuple(sorted({int(threshold) for threshold in thresholds}))
+    if any(threshold <= 0 for threshold in sorted_thresholds):
+        raise ValueError("thresholds must be positive")
+
+    points = []
+    for threshold in sorted_thresholds:
+        result = run_csa_hca_rare_directory_joint_policy_sweep(
+            train_scenarios=train_scenarios,
+            eval_scenarios=eval_scenarios,
+            policies=(policy,),
+            hca_threshold=threshold,
+            directory_blocks_per_token=directory_blocks_per_token,
+            min_read_blocks_per_token=min_read_blocks_per_token,
+            coverage_target=coverage_target,
+            probe_positive_rate_threshold=probe_positive_rate_threshold,
+            span_thresholds=span_thresholds,
+            max_overlap_bucket=max_overlap_bucket,
+            block_size=block_size,
+            summary_width=summary_width,
+            csa_blocks=csa_blocks,
+            global_width=global_width,
+            tail_blocks=tail_blocks,
+            context_length=context_length,
+            queries=queries,
+            train_seed=train_seed,
+            eval_seed=eval_seed,
+        )
+        points.extend(result.points)
+
+    return CsaHcaRareDirectoryJointThresholdResult(
+        thresholds=sorted_thresholds,
+        policy=policy[0],
+        probe_mode=policy[1],
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        directory_blocks_per_token=directory_blocks_per_token,
+        coverage_target=coverage_target,
         points=tuple(points),
     )
 

@@ -333,6 +333,16 @@ repeated-name stress it still probes about 74.2% of queries, gets about 97.7%
 coverage, and spends 12.77B/query. The remaining 0.8% false-HCA rate is now an
 explicit probe-LUT recall/traffic tradeoff rather than hidden behavior.
 
+Sweeping the HCA threshold after joint control is available changes the
+recommendation. Threshold 6 is too permissive: split-rare coverage collapses in
+the current stress generator. Thresholds 8, 10, 12, and 15 keep almost the same
+rare coverage, but higher thresholds reduce early probes. At threshold 15,
+`confidence_probe` has 0.0% early probe rate on split-rare and repeated-name
+stress, keeps about 98.7% split-rare and 98.3% repeated-name coverage, and keeps
+reference directory traffic at 0.50B/query. So the current exact-recall mode is
+again threshold 15, but now with learned probe/fanout control rather than a
+fixed no-guard rule.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

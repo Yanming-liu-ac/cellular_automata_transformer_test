@@ -550,6 +550,16 @@ floorplan proxy, state utilization moves from 69.3% to about 69.7%, still
 requiring 23 state tiles. This means learned probe/fanout control fits inside
 the existing CA-chip budget instead of invalidating it.
 
+The thirty-fifth sweep varies the HCA threshold under the same learned
+probe/fanout control. Threshold 6 is rejected because split-rare coverage
+collapses in the stress generator. Thresholds 8, 10, 12, and 15 have nearly the
+same split/repeated coverage, but the early probe rate falls as the threshold
+rises. At threshold 15, `confidence_probe` needs no early probe on split-rare or
+repeated-name stress, keeps about 98.7% split-rare and 98.3% repeated-name
+coverage, and spends the same 6.45B/query and 12.54B/query directory traffic as
+the lower thresholds. This moves the current recommendation back to threshold
+15, now with learned probe/fanout control instead of the old hand no-guard rule.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

@@ -444,6 +444,23 @@ recall. The remaining false-HCA rate is about 0.8% on split/repeated stress,
 which can be traded against probe traffic by changing the probe table training
 target.
 
+Sweeping HCA threshold under the same `confidence_probe` control shows the next
+policy simplification:
+
+```text
+t6   split_rare     probe=97.7%  false-HCA=0.0%  coverage=0.0%   dir read=3.17B/query
+t8   repeated_name  probe=77.3%  false-HCA=0.8%  coverage=98.3%  dir read=12.54B/query
+t10  repeated_name  probe=25.0%  false-HCA=0.8%  coverage=98.3%  dir read=12.54B/query
+t12  repeated_name  probe=5.5%   false-HCA=0.8%  coverage=98.3%  dir read=12.54B/query
+t15  repeated_name  probe=0.0%   false-HCA=0.8%  coverage=98.3%  dir read=12.54B/query
+t15  split_rare     probe=0.0%   false-HCA=0.8%  coverage=98.7%  dir read=6.45B/query
+```
+
+The earlier threshold-8 conservative mode is no longer the best default once
+the learned exact-memory control plane exists. Threshold 15 keeps the same
+measured recall in this stress set, avoids early probes, and still uses the LUT
+fanout when the token is routed to CSA.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text
