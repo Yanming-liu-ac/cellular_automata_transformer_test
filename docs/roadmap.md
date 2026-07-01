@@ -364,9 +364,13 @@ Implement:
 - keep the phase/rank/mismatch exact exposure gate as the content-lane rule.
   The 9-byte LUT reaches 100.0% demanded exactness on the candidate sparsity
   sweep and avoids the sparse 2-row/4-row misses from the generic learned LUT.
-- build a real low-bit candidate reducer in front of that gate. The current
-  sweep uses oracle candidate-row counts; the next diagnostic should produce
-  those 8-16 demanded rows from local scores, rank buckets, and route state.
+- build a real low-bit candidate reducer in front of that gate. The first
+  topic-phase reducer now produces top-M demand from local scores: top-16 keeps
+  82.8% of top-64 topic-hit quality at 28.8 channel writes/event, and top-32
+  keeps 91.7% at 58.1 writes/event.
+- replace full-pool candidate scoring with hierarchical or bank-local top-k.
+  The current reducer still reads all 512 candidate rows, or 2,048 low-bit score
+  cells per topic event, before choosing top-M.
 
 First trainable target:
 

@@ -252,6 +252,17 @@ its dynamic state buckets were too fragmented. Hardware target: keep output
 content demand near 8-16 rows, and use phase/rank/mismatch for the exact content
 exposure gate.
 
+The next diagnostic replaces oracle candidate-row counts with an actual low-bit
+candidate reducer. It ranks a 512-row static candidate pool with the
+topic-phase dense sketch, then exposes only top-M rows to the content gate. On
+the small 512-fact, 768-event trace, top-64 has a 61.1% topic hit rate. Reducing
+to 8, 16, and 32 rows gives 41.8%, 50.6%, and 56.1% hit rate, retaining 68.4%,
+82.8%, and 91.7% of top-64 quality. The 9-byte content gate stays exact in all
+cases. Channel writes per mixed event are 16.1, 28.8, 58.1, and 115.4 for 8,
+16, 32, and 64 rows. This is the first real reducer result: top-16 is a useful
+energy/quality point, but the current reducer still scores all 512 candidates
+with 2,048 low-bit score reads per topic event.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

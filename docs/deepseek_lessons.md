@@ -363,6 +363,12 @@ beats the larger generic route/envelope-aware learned gate on sparse candidate
 demand because it uses the right control signal. For CA hardware, tiny tables
 can work if their inputs match the active path.
 
+The first reducer diagnostic shows the DeepSeek-style tradeoff in miniature:
+top-16 candidate exposure keeps about 82.8% of top-64 topic quality at about a
+quarter of the content-gate writes, while top-32 keeps 91.7% at about half the
+writes. The missing piece is not the exact exposure rule; it is a more local
+candidate-ranking fabric that avoids scoring all rows.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

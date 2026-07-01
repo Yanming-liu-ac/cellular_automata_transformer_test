@@ -161,6 +161,15 @@ exactness for 1-64 candidate rows, with writes equal to the local
 writes, so the chip still needs candidate reduction before exact content
 exposure.
 
+The first low-bit reducer trace uses the topic-phase dense sketch to rank all
+512 candidate rows before the content gate. It confirms the expected budget:
+top-16 content demand costs 28.8 channel writes per mixed event and preserves
+82.8% of top-64 topic-hit quality; top-32 costs 58.1 writes/event and preserves
+91.7%. The top-64 baseline costs 115.4 writes/event. The remaining hardware
+cost is candidate scoring: this first reducer still reads 2,048 low-bit score
+cells per topic event, so the next reducer needs hierarchical or bank-local
+top-k selection rather than scoring every candidate row every topic step.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

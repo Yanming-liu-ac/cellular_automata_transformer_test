@@ -253,6 +253,14 @@ content mismatches persistent content. This 9-byte table reaches 100.0%
 demanded exactness on the synthetic sweep. Route/envelope activity should guide
 propagation and routing, but it is too noisy for this exact exposure decision.
 
+The first concrete reducer keeps that split. A topic-phase low-bit scorer ranks
+the 512-row candidate pool, and only the selected top-M rows assert
+candidate-output demand. Top-16 keeps 82.8% of the top-64 topic-hit rate while
+cutting content-gate writes from 115.4 to 28.8 channel writes per mixed event.
+Top-32 keeps 91.7% while costing 58.1 writes/event. This makes the next
+hardware block clear: a hierarchical candidate reducer should produce those
+top-16 or top-32 rows without reading every candidate score.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code
