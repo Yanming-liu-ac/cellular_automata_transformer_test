@@ -369,6 +369,11 @@ quarter of the content-gate writes, while top-32 keeps 91.7% at about half the
 writes. The missing piece is not the exact exposure rule; it is a more local
 candidate-ranking fabric that avoids scoring all rows.
 
+The group-summary reducer is closer to that fabric. It gets top-32 demand to
+93.6% of top-64 quality while cutting score reads by 81.25%. This mirrors the
+DeepSeek theme more directly: do not materialize every candidate path; summarize
+locally, route a small subset, then spend exact work only there.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

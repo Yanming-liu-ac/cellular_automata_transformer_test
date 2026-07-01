@@ -371,6 +371,9 @@ Implement:
 - replace full-pool candidate scoring with hierarchical or bank-local top-k.
   The current reducer still reads all 512 candidate rows, or 2,048 low-bit score
   cells per topic event, before choosing top-M.
+- model group-summary update cost. The first hierarchical reducer cuts score
+  reads to 256 cells/topic for top-16 and 384 for top-32, but it assumes local
+  group max summaries are already maintained.
 
 First trainable target:
 

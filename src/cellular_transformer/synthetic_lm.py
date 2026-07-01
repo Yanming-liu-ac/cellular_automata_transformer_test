@@ -279,6 +279,75 @@ class SyntheticLMCandidateReducerResult:
 
 
 @dataclass(frozen=True)
+class SyntheticLMHierarchicalCandidateReducerTrace:
+    """Demand trace produced by a group-summary candidate reducer."""
+
+    demand_trace: Tuple[np.ndarray, ...]
+    fact_count: int
+    candidate_pool_size: int
+    content_rows: int
+    reducer_rows: int
+    base_top_k: int
+    group_size: int
+    selected_groups: int
+    total_groups: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    candidate_score_source: str
+    base_topic_hit_rate: float
+    reduced_topic_hit_rate: float
+    group_score_cells_per_topic_event: float
+    fine_score_cells_per_topic_event: float
+    score_cells_per_topic_event: float
+    score_cells_per_event: float
+
+
+@dataclass(frozen=True)
+class SyntheticLMHierarchicalCandidateReducerPoint:
+    """One group-summary candidate reducer point with content-gate cost."""
+
+    reducer_rows: int
+    group_size: int
+    selected_groups: int
+    candidate_rows_scored: int
+    total_groups: int
+    content_rows: int
+    candidate_score_source: str
+    base_topic_hit_rate: float
+    reduced_topic_hit_rate: float
+    hit_retention_rate: float
+    mean_demand_fraction: float
+    group_score_cells_per_topic_event: float
+    fine_score_cells_per_topic_event: float
+    score_cells_per_topic_event: float
+    score_cells_per_event: float
+    score_cell_reduction_rate: float
+    phase_lut_state_bytes: float
+    phase_lut_write_state_count: int
+    phase_channel_writes_per_event: float
+    phase_demand_exact_rate: float
+    phase_demand_mean_abs_error: float
+
+
+@dataclass(frozen=True)
+class SyntheticLMHierarchicalCandidateReducerResult:
+    """Group-summary candidate reducer plus exact content-gate sweep."""
+
+    fact_count: int
+    candidate_pool_size: int
+    base_top_k: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    bits: int
+    train_seed: int
+    eval_seed: int
+    write_cost: float
+    points: Tuple[SyntheticLMHierarchicalCandidateReducerPoint, ...]
+
+
+@dataclass(frozen=True)
 class SyntheticLMPhasedDemandGateLUT:
     """Synthetic LM LUT with exact/candidate phase and candidate-rank buckets."""
 
@@ -818,23 +887,30 @@ class DualPathSyntheticLM:
             touched += self.dense.update(value)
         return touched
 
-    def rank_static_candidate_indices(self) -> tuple[np.ndarray, int]:
-        """Rank the static candidate pool using the current low-bit scorer."""
+    def score_static_candidates(self) -> tuple[np.ndarray, int]:
+        """Score the static candidate pool using the current low-bit scorer."""
 
         if self.config.candidate_strategy != "static":
-            raise ValueError("rank_static_candidate_indices requires static candidates")
+            raise ValueError("score_static_candidates requires static candidates")
         if self.candidates is None or self.candidate_slots is None:
             raise RuntimeError("static candidates are not initialized")
 
         cache_scores = np.zeros(len(self.candidates), dtype=np.int32)
         bank_indices = np.arange(self.config.dense_banks)[:, None]
-        scores, score_cells = self._candidate_scores(
+        return self._candidate_scores(
             candidate_slots=self.candidate_slots,
             cache_scores=cache_scores,
             bank_indices=bank_indices,
         )
+
+    def order_static_candidate_scores(self, scores: np.ndarray) -> np.ndarray:
+        """Return descending static candidate indices for already-computed scores."""
+
+        if self.candidates is None:
+            raise RuntimeError("static candidates are not initialized")
         index_tiebreaker = np.arange(len(self.candidates), dtype=np.int32)
         if self.config.candidate_scorer_lut is not None:
+            cache_scores = np.zeros(len(self.candidates), dtype=np.int32)
             learned_scores = np.empty(len(self.candidates), dtype=np.int32)
             for index, (dense_score, cache_score) in enumerate(zip(scores, cache_scores)):
                 dense_index = min(int(dense_score), self.config.candidate_scorer_dense_bins - 1)
@@ -848,7 +924,13 @@ class DualPathSyntheticLM:
             order = np.lexsort((index_tiebreaker, scores, learned_scores))[::-1]
         else:
             order = np.lexsort((index_tiebreaker, scores))[::-1]
-        return order.astype(np.int32), score_cells
+        return order.astype(np.int32)
+
+    def rank_static_candidate_indices(self) -> tuple[np.ndarray, int]:
+        """Rank the static candidate pool using the current low-bit scorer."""
+
+        scores, score_cells = self.score_static_candidates()
+        return self.order_static_candidate_scores(scores), score_cells
 
     def predict_topic_topk(self) -> tuple[set[int], int]:
         """Rank dense candidates by compressed-context estimate."""
@@ -1158,6 +1240,147 @@ def make_lowbit_candidate_reducer_demand_trace(
         candidate_score_source=trace_config.candidate_score_source,
         base_topic_hit_rate=base_topic_hits / float(trace_config.topic_events),
         reduced_topic_hit_rate=reduced_topic_hits / float(trace_config.topic_events),
+        score_cells_per_topic_event=score_cells / float(trace_config.topic_events),
+        score_cells_per_event=score_cells / float(total_events),
+    )
+
+
+def _hierarchical_candidate_reducer_indices(
+    scores: np.ndarray,
+    reducer_rows: int,
+    group_size: int,
+    selected_groups: int,
+) -> tuple[np.ndarray, int, int]:
+    if group_size <= 0:
+        raise ValueError("group_size must be positive")
+    if selected_groups <= 0:
+        raise ValueError("selected_groups must be positive")
+
+    candidate_count = len(scores)
+    group_count = (candidate_count + group_size - 1) // group_size
+    group_scores = np.full(group_count, np.iinfo(np.int32).min, dtype=np.int32)
+    for group in range(group_count):
+        start = group * group_size
+        end = min(start + group_size, candidate_count)
+        group_scores[group] = int(np.max(scores[start:end]))
+
+    group_tiebreaker = np.arange(group_count, dtype=np.int32)
+    group_order = np.lexsort((group_tiebreaker, group_scores))[::-1]
+    chosen_groups = group_order[: min(selected_groups, group_count)]
+    selected = []
+    for group in chosen_groups:
+        start = int(group) * group_size
+        end = min(start + group_size, candidate_count)
+        selected.extend(range(start, end))
+    selected_indices = np.array(selected, dtype=np.int32)
+    selected_tiebreaker = selected_indices
+    selected_order = np.lexsort((selected_tiebreaker, scores[selected_indices]))[::-1]
+    reduced = selected_indices[selected_order[: min(reducer_rows, len(selected_indices))]]
+    return reduced.astype(np.int32), group_count, int(len(selected_indices))
+
+
+def make_hierarchical_candidate_reducer_demand_trace(
+    config: SyntheticLMConfig | None = None,
+    reducer_rows: int = 16,
+    group_size: int = 16,
+    selected_groups: int = 4,
+    seed: int = 37,
+    base_top_k: int | None = None,
+) -> SyntheticLMHierarchicalCandidateReducerTrace:
+    """Build a trace using group-summary selection before candidate scoring."""
+
+    trace_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+        candidate_score_source="topic_phase",
+    )
+    if trace_config.candidate_strategy != "static":
+        raise ValueError("hierarchical reducer trace currently requires static candidates")
+    rows = min(max(1, int(reducer_rows)), trace_config.candidate_pool_size)
+    top_k = trace_config.topic_top_k if base_top_k is None else int(base_top_k)
+    top_k = min(max(1, top_k), trace_config.candidate_pool_size)
+    clean_group_size = max(1, int(group_size))
+    clean_selected_groups = max(1, int(selected_groups))
+
+    lm = DualPathSyntheticLM(trace_config, seed=seed)
+    lm.prefill()
+    if lm.candidates is None:
+        raise RuntimeError("static candidates are not initialized")
+
+    query_indices = lm.rng.choice(
+        len(lm.facts),
+        size=trace_config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * trace_config.topic_events + ["query"] * trace_config.query_events
+    )
+    lm.rng.shuffle(event_types)
+
+    trace = []
+    query_cursor = 0
+    base_topic_hits = 0
+    reduced_topic_hits = 0
+    group_score_cells = 0.0
+    fine_score_cells = 0.0
+    total_groups = 0
+    for event_type in event_types:
+        if event_type == "topic":
+            token = sample_topic_token(trace_config, lm.rng)
+            scores, full_score_cells = lm.score_static_candidates()
+            full_order = lm.order_static_candidate_scores(scores)
+            reduced_indices, group_count, selected_candidate_count = (
+                _hierarchical_candidate_reducer_indices(
+                    scores=scores,
+                    reducer_rows=rows,
+                    group_size=clean_group_size,
+                    selected_groups=clean_selected_groups,
+                )
+            )
+            total_groups = group_count
+            score_cells_per_candidate = full_score_cells / float(trace_config.candidate_pool_size)
+            group_score_cells += group_count * score_cells_per_candidate
+            fine_score_cells += selected_candidate_count * score_cells_per_candidate
+            base_indices = full_order[:top_k]
+            base_topic_hits += int(bool(np.any(lm.candidates[base_indices] == token)))
+            reduced_topic_hits += int(bool(np.any(lm.candidates[reduced_indices] == token)))
+            trace.append((trace_config.fact_count + reduced_indices).astype(np.int32))
+            lm.dense.update(token)
+            if lm.candidate_score_dense is not None:
+                lm.candidate_score_dense.update(token)
+            continue
+
+        fact_index = int(query_indices[query_cursor])
+        query_cursor += 1
+        key, expected = lm.facts[fact_index]
+        trace.append(np.array([fact_index], dtype=np.int32))
+        lm.dense.update(key)
+        lm.dense.update(expected)
+
+    total_events = trace_config.topic_events + trace_config.query_events
+    score_cells = group_score_cells + fine_score_cells
+    return SyntheticLMHierarchicalCandidateReducerTrace(
+        demand_trace=tuple(trace),
+        fact_count=trace_config.fact_count,
+        candidate_pool_size=trace_config.candidate_pool_size,
+        content_rows=trace_config.fact_count + trace_config.candidate_pool_size,
+        reducer_rows=rows,
+        base_top_k=top_k,
+        group_size=clean_group_size,
+        selected_groups=clean_selected_groups,
+        total_groups=total_groups,
+        topic_events=trace_config.topic_events,
+        query_events=trace_config.query_events,
+        total_events=total_events,
+        candidate_score_source=trace_config.candidate_score_source,
+        base_topic_hit_rate=base_topic_hits / float(trace_config.topic_events),
+        reduced_topic_hit_rate=reduced_topic_hits / float(trace_config.topic_events),
+        group_score_cells_per_topic_event=group_score_cells / float(trace_config.topic_events),
+        fine_score_cells_per_topic_event=fine_score_cells / float(trace_config.topic_events),
         score_cells_per_topic_event=score_cells / float(trace_config.topic_events),
         score_cells_per_event=score_cells / float(total_events),
     )
@@ -1487,6 +1710,142 @@ def run_synthetic_lm_candidate_reducer_sweep(
         )
 
     return SyntheticLMCandidateReducerResult(
+        fact_count=reducer_config.fact_count,
+        candidate_pool_size=reducer_config.candidate_pool_size,
+        base_top_k=base_top_k,
+        topic_events=reducer_config.topic_events,
+        query_events=reducer_config.query_events,
+        total_events=reducer_config.topic_events + reducer_config.query_events,
+        bits=bits,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        write_cost=write_cost,
+        points=tuple(points),
+    )
+
+
+def run_synthetic_lm_hierarchical_candidate_reducer_sweep(
+    config: SyntheticLMConfig | None = None,
+    settings: Tuple[Tuple[int, int, int], ...] = (
+        (16, 16, 2),
+        (16, 16, 4),
+        (32, 16, 4),
+        (32, 16, 8),
+    ),
+    bits: int = 4,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+    write_cost: float = 0.15,
+) -> SyntheticLMHierarchicalCandidateReducerResult:
+    """Evaluate group-summary candidate reduction before exact content exposure."""
+
+    reducer_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+        candidate_score_source="topic_phase",
+    )
+    clean_settings = tuple(
+        dict.fromkeys(
+            (
+                min(max(1, int(rows)), reducer_config.candidate_pool_size),
+                max(1, int(group_size)),
+                max(1, int(selected_groups)),
+            )
+            for rows, group_size, selected_groups in settings
+        )
+    )
+    if len(clean_settings) == 0:
+        raise ValueError("settings must not be empty")
+
+    points = []
+    base_top_k = reducer_config.topic_top_k
+    full_score_cells = reducer_config.candidate_pool_size * reducer_config.dense_banks
+    if reducer_config.candidate_score_source in {"dense_topic_sum", "dense_topic_cache"}:
+        full_score_cells *= 2
+
+    for rows, group_size, selected_groups in clean_settings:
+        train_trace = make_hierarchical_candidate_reducer_demand_trace(
+            config=reducer_config,
+            reducer_rows=rows,
+            group_size=group_size,
+            selected_groups=selected_groups,
+            seed=train_seed,
+            base_top_k=base_top_k,
+        )
+        eval_trace = make_hierarchical_candidate_reducer_demand_trace(
+            config=reducer_config,
+            reducer_rows=rows,
+            group_size=group_size,
+            selected_groups=selected_groups,
+            seed=eval_seed,
+            base_top_k=base_top_k,
+        )
+        phase_lut = train_synthetic_lm_phased_demand_gate_lut(
+            demand_trace=train_trace.demand_trace,
+            fact_count=reducer_config.fact_count,
+            candidate_rows=reducer_config.candidate_pool_size,
+            bits=bits,
+            seed=train_seed + 8192,
+            write_cost=write_cost,
+        )
+        phase_point = evaluate_synthetic_lm_phased_demand_gate(
+            lut=phase_lut,
+            demand_trace=eval_trace.demand_trace,
+            fact_count=reducer_config.fact_count,
+            candidate_rows=reducer_config.candidate_pool_size,
+            bits=bits,
+            seed=eval_seed + 8192,
+            policy=f"learned_hier_phase_rank_lut_c{write_cost:0.2f}",
+        )
+        hit_retention = (
+            eval_trace.reduced_topic_hit_rate / eval_trace.base_topic_hit_rate
+            if eval_trace.base_topic_hit_rate > 0.0
+            else 0.0
+        )
+        score_reduction = 1.0 - (
+            eval_trace.score_cells_per_topic_event / float(full_score_cells)
+        )
+        points.append(
+            SyntheticLMHierarchicalCandidateReducerPoint(
+                reducer_rows=rows,
+                group_size=group_size,
+                selected_groups=selected_groups,
+                candidate_rows_scored=min(
+                    reducer_config.candidate_pool_size,
+                    group_size * selected_groups,
+                ),
+                total_groups=eval_trace.total_groups,
+                content_rows=eval_trace.content_rows,
+                candidate_score_source=eval_trace.candidate_score_source,
+                base_topic_hit_rate=eval_trace.base_topic_hit_rate,
+                reduced_topic_hit_rate=eval_trace.reduced_topic_hit_rate,
+                hit_retention_rate=hit_retention,
+                mean_demand_fraction=phase_point.mean_demand_fraction,
+                group_score_cells_per_topic_event=(
+                    eval_trace.group_score_cells_per_topic_event
+                ),
+                fine_score_cells_per_topic_event=(
+                    eval_trace.fine_score_cells_per_topic_event
+                ),
+                score_cells_per_topic_event=eval_trace.score_cells_per_topic_event,
+                score_cells_per_event=eval_trace.score_cells_per_event,
+                score_cell_reduction_rate=score_reduction,
+                phase_lut_state_bytes=phase_lut.state_bytes,
+                phase_lut_write_state_count=phase_lut.write_state_count,
+                phase_channel_writes_per_event=(
+                    phase_point.gate_channel_writes_per_token_tick
+                    * eval_trace.content_rows
+                ),
+                phase_demand_exact_rate=phase_point.demand_exact_rate,
+                phase_demand_mean_abs_error=phase_point.demand_mean_abs_error,
+            )
+        )
+
+    return SyntheticLMHierarchicalCandidateReducerResult(
         fact_count=reducer_config.fact_count,
         candidate_pool_size=reducer_config.candidate_pool_size,
         base_top_k=base_top_k,

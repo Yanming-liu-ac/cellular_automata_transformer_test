@@ -170,6 +170,15 @@ cost is candidate scoring: this first reducer still reads 2,048 low-bit score
 cells per topic event, so the next reducer needs hierarchical or bank-local
 top-k selection rather than scoring every candidate row every topic step.
 
+The group-summary reducer is the first answer to that cost. With 32 summaries
+over 16-row groups, top-16 with two selected groups reads 128 summary cells plus
+128 fine-score cells per topic event, or 256 total. It keeps 85.3% of top-64
+topic-hit quality and costs 28.0 content-gate channel writes per mixed event.
+Top-32 with four selected groups reads 384 score cells per topic event, keeps
+93.6% of top-64 quality, and costs 57.4 content-gate writes/event. This reduces
+candidate-score reads by 81%-88% before exact exposure. The unmodeled hardware
+question is how cheaply each group max summary can be maintained during updates.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

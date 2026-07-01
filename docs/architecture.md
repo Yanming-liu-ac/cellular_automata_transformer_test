@@ -261,6 +261,14 @@ Top-32 keeps 91.7% while costing 58.1 writes/event. This makes the next
 hardware block clear: a hierarchical candidate reducer should produce those
 top-16 or top-32 rows without reading every candidate score.
 
+The group-summary version does exactly that in the current diagnostic. Candidate
+rows are partitioned into 16-row groups; each group exposes a local max-score
+summary; only selected groups are fine-scored. Top-16 with two groups reads 256
+score cells/topic and keeps 85.3% of top-64 quality. Top-32 with four groups
+reads 384 score cells/topic and keeps 93.6%. This suggests a two-stage output
+lane: local group summaries first, then exact row exposure only for the reduced
+set.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

@@ -263,6 +263,16 @@ cases. Channel writes per mixed event are 16.1, 28.8, 58.1, and 115.4 for 8,
 energy/quality point, but the current reducer still scores all 512 candidates
 with 2,048 low-bit score reads per topic event.
 
+A hierarchical reducer removes most of that scoring traffic in the model. It
+groups the 512 candidate rows into 32 local groups of 16 rows, reads one
+max-score summary per group, then fine-scores only candidates inside selected
+groups. With top-16 demand and two selected groups, topic hit is 52.2%, or
+85.3% of the top-64 baseline, while score reads fall from 2,048 to 256 per topic
+event. With top-32 demand and four selected groups, topic hit is 57.2%, or 93.6%
+of top-64, while score reads are 384 per topic event. The content gate remains
+100.0% exact. This is the first evidence that candidate reduction can be
+hierarchical rather than full-pool.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
