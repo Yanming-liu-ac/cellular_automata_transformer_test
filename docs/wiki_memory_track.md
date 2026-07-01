@@ -478,6 +478,17 @@ for 45.41-48.93% of claims, and estimated provenance touch rises to
 parsing can be handled conservatively with tiny local tables, but a parser-miss
 guard or confidence counter is needed to reduce unnecessary strict repair.
 
+The first parser-miss guard tradeoff makes that next step concrete. It compares
+the existing 16B 3D parser-noise LUT, a conservative 32B one-bit guard after
+that LUT, and a 64B 4D LUT that adds parser-miss bucket as a fourth input. The
+safe guard preserves the safety gates but barely moves the mean metrics:
+over-strict falls from 27.08% to 26.86% and touch stays at 8.92 cells/event.
+The 64B miss-aware LUT is the better hardware tradeoff so far: mean accuracy
+rises from 68.82% to 71.34%, mean over-strict falls to 24.17%, mean touch drops
+to 8.84 cells/event, and mean strict recall remains 98.05%. Under-strict rises
+slightly from 4.10% to 4.49%, so this is not a free win; it is a useful
+state/quality knob for parser-noisy compiled wiki pages.
+
 ## Kill Criteria
 
 This track is not useful if:

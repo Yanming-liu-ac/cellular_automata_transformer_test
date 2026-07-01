@@ -1393,6 +1393,43 @@ class CAWikiCellTextTraceNoiseResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellTextTraceGuardPoint:
+    """Evaluation point for parser-noise guard tradeoffs."""
+
+    variant: str
+    eval_seed: int
+    classifier_lut_bytes: float
+    guard_lut_bytes: float
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    strict_rate: float
+    estimated_touch_per_event: float
+    downgraded_strict_claims: int
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellTextTraceGuardResult:
+    """Parser-noise guard tradeoff for text-source CA Wiki Cell."""
+
+    claim_count: int
+    train_claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    parser_misread_rate: float
+    parser_drop_rate: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    variants: Tuple[str, ...]
+    points: Tuple[CAWikiCellTextTraceGuardPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -7915,5 +7952,339 @@ def run_ca_wiki_cell_text_trace_noise_sweep(
         eval_seeds=clean_eval_seeds,
         importance_modes=modes,
         entries=tuple(entries),
+        points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_text_trace_guard_sweep(
+    *,
+    claim_count: int = 1024,
+    train_claim_count: int = 4096,
+    query_events: int = 4096,
+    update_events: int = 2048,
+    compile_events: int = 512,
+    parser_misread_rate: float = 0.06,
+    parser_drop_rate: float = 0.03,
+    train_seeds: Tuple[int, ...] = (5001, 5101, 5201),
+    eval_seeds: Tuple[int, ...] = (5301, 5401, 5501, 5601),
+    under_importance_weight: float = 4.0,
+    over_importance_weight: float = 0.75,
+    miss_lut_under_importance_weight: float = 5.5,
+    safe_guard_min_count: int = 20,
+    safe_guard_max_strict_fraction: float = 0.10,
+    min_accuracy: float = 0.68,
+    min_strict_recall: float = 0.97,
+    max_under_strict_rate: float = 0.055,
+) -> CAWikiCellTextTraceGuardResult:
+    """Compare parser-miss guard options under text parser noise."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    if not 0.0 <= parser_misread_rate <= 1.0:
+        raise ValueError("parser_misread_rate must be in [0, 1]")
+    if not 0.0 <= parser_drop_rate <= 1.0:
+        raise ValueError("parser_drop_rate must be in [0, 1]")
+    if under_importance_weight < 0.0:
+        raise ValueError("under_importance_weight must be non-negative")
+    if over_importance_weight < 0.0:
+        raise ValueError("over_importance_weight must be non-negative")
+    if miss_lut_under_importance_weight < 0.0:
+        raise ValueError("miss_lut_under_importance_weight must be non-negative")
+    if safe_guard_min_count < 0:
+        raise ValueError("safe_guard_min_count must be non-negative")
+    if not 0.0 <= safe_guard_max_strict_fraction <= 1.0:
+        raise ValueError("safe_guard_max_strict_fraction must be in [0, 1]")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts3 = np.zeros((bucket_count, bucket_count, bucket_count, mode_count), dtype=np.int64)
+    counts4 = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+    train_traces = []
+    train_event_scale = train_claim_count / float(claim_count)
+    train_query_events = int(round(query_events * train_event_scale))
+    train_update_events = int(round(update_events * train_event_scale))
+    train_compile_events = int(round(compile_events * train_event_scale))
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        trace = _ca_wiki_text_noisy_parser_trace_labels(
+            features,
+            seed + 71,
+            train_query_events,
+            train_update_events,
+            train_compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+        )
+        train_traces.append(trace)
+        labels = trace[0]
+        error_bucket = _ca_wiki_count_bucket(trace[8])
+        contradiction_bucket = _ca_wiki_count_bucket(trace[9])
+        stale_bucket = _ca_wiki_count_bucket(trace[10])
+        miss_bucket = _ca_wiki_count_bucket(trace[11])
+        for buckets, label in zip(
+            zip(error_bucket, contradiction_bucket, stale_bucket, miss_bucket),
+            labels,
+        ):
+            counts3[int(buckets[0]), int(buckets[1]), int(buckets[2]), int(label)] += 1
+            counts4[
+                int(buckets[0]),
+                int(buckets[1]),
+                int(buckets[2]),
+                int(buckets[3]),
+                int(label),
+            ] += 1
+
+    def choose_lut(counts: np.ndarray, under_weight: float) -> np.ndarray:
+        lut = np.zeros(counts.shape[:-1], dtype=np.int64)
+        for index in np.ndindex(lut.shape):
+            bucket_counts = counts[index]
+            training_count = int(np.sum(bucket_counts))
+            losses = []
+            for predicted in range(mode_count):
+                loss = 0.0
+                for actual, count in enumerate(bucket_counts):
+                    if predicted < actual:
+                        loss += (actual - predicted) * under_weight * count
+                    elif predicted > actual:
+                        loss += (predicted - actual) * over_importance_weight * count
+                losses.append(loss)
+            if training_count:
+                chosen_index = int(np.argmin(losses))
+            else:
+                fallback_score = 2 * index[0] + index[1] + index[2]
+                chosen_index = 2 if fallback_score >= 4 else 1 if fallback_score >= 2 else 0
+            lut[index] = chosen_index
+        return lut
+
+    lut3 = choose_lut(counts3, under_importance_weight)
+    lut4 = choose_lut(counts4, miss_lut_under_importance_weight)
+    guard_counts = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+    for trace in train_traces:
+        labels = trace[0]
+        error_bucket = _ca_wiki_count_bucket(trace[8])
+        contradiction_bucket = _ca_wiki_count_bucket(trace[9])
+        stale_bucket = _ca_wiki_count_bucket(trace[10])
+        miss_bucket = _ca_wiki_count_bucket(trace[11])
+        for buckets, label in zip(
+            zip(error_bucket, contradiction_bucket, stale_bucket, miss_bucket),
+            labels,
+        ):
+            base_prediction = lut3[int(buckets[0]), int(buckets[1]), int(buckets[2])]
+            if base_prediction == 2:
+                guard_counts[
+                    int(buckets[0]),
+                    int(buckets[1]),
+                    int(buckets[2]),
+                    int(buckets[3]),
+                    int(label),
+                ] += 1
+    downgrade_guard = np.zeros((bucket_count, bucket_count, bucket_count, bucket_count), dtype=np.bool_)
+    for index in np.ndindex(downgrade_guard.shape):
+        bucket_counts = guard_counts[index]
+        total = int(np.sum(bucket_counts))
+        strict_fraction = bucket_counts[2] / float(total) if total else 1.0
+        downgrade_guard[index] = (
+            total >= safe_guard_min_count
+            and strict_fraction <= safe_guard_max_strict_fraction
+        )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    def make_point(
+        variant: str,
+        seed: int,
+        teacher: np.ndarray,
+        predicted: np.ndarray,
+        classifier_lut_bytes: float,
+        guard_lut_bytes: float,
+        downgraded: int,
+    ) -> CAWikiCellTextTraceGuardPoint:
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(
+            mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count)
+        )
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        return CAWikiCellTextTraceGuardPoint(
+            variant=variant,
+            eval_seed=seed,
+            classifier_lut_bytes=classifier_lut_bytes,
+            guard_lut_bytes=guard_lut_bytes,
+            accuracy=accuracy,
+            strict_precision=strict_precision,
+            strict_recall=strict_recall,
+            over_strict_rate=over_strict / float(claim_count),
+            under_strict_rate=under_strict_rate,
+            strict_rate=mode_rates[2],
+            estimated_touch_per_event=estimated_touch,
+            downgraded_strict_claims=downgraded,
+            target_met=(
+                accuracy >= min_accuracy
+                and strict_recall >= min_strict_recall
+                and under_strict_rate <= max_under_strict_rate
+            ),
+        )
+
+    classifier3_bytes = bucket_count**3 * max(1, int(np.ceil(np.log2(mode_count)))) / 8.0
+    classifier4_bytes = bucket_count**4 * max(1, int(np.ceil(np.log2(mode_count)))) / 8.0
+    guard_lut_bytes = bucket_count**4 / 8.0
+    eval_points: List[CAWikiCellTextTraceGuardPoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        trace = _ca_wiki_text_noisy_parser_trace_labels(
+            features,
+            seed + 71,
+            query_events,
+            update_events,
+            compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+        )
+        teacher = trace[0]
+        error_bucket = _ca_wiki_count_bucket(trace[8])
+        contradiction_bucket = _ca_wiki_count_bucket(trace[9])
+        stale_bucket = _ca_wiki_count_bucket(trace[10])
+        miss_bucket = _ca_wiki_count_bucket(trace[11])
+        base_predicted = np.array(
+            [
+                lut3[int(error_value), int(contradiction_value), int(stale_value)]
+                for error_value, contradiction_value, stale_value in zip(
+                    error_bucket,
+                    contradiction_bucket,
+                    stale_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        eval_points.append(
+            make_point(
+                "baseline_3d",
+                seed,
+                teacher,
+                base_predicted,
+                classifier3_bytes,
+                0.0,
+                0,
+            )
+        )
+        safe_predicted = base_predicted.copy()
+        downgrade_mask = np.array(
+            [
+                safe_predicted[index] == 2
+                and downgrade_guard[
+                    int(error_bucket[index]),
+                    int(contradiction_bucket[index]),
+                    int(stale_bucket[index]),
+                    int(miss_bucket[index]),
+                ]
+                for index in range(claim_count)
+            ],
+            dtype=np.bool_,
+        )
+        safe_predicted[downgrade_mask] = 1
+        eval_points.append(
+            make_point(
+                "safe_miss_guard",
+                seed,
+                teacher,
+                safe_predicted,
+                classifier3_bytes,
+                guard_lut_bytes,
+                int(np.sum(downgrade_mask)),
+            )
+        )
+        miss_lut_predicted = np.array(
+            [
+                lut4[
+                    int(error_value),
+                    int(contradiction_value),
+                    int(stale_value),
+                    int(miss_value),
+                ]
+                for error_value, contradiction_value, stale_value, miss_value in zip(
+                    error_bucket,
+                    contradiction_bucket,
+                    stale_bucket,
+                    miss_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        downgraded = int(np.sum((base_predicted == 2) & (miss_lut_predicted < 2)))
+        eval_points.append(
+            make_point(
+                "miss_lut4d",
+                seed,
+                teacher,
+                miss_lut_predicted,
+                classifier4_bytes,
+                0.0,
+                downgraded,
+            )
+        )
+
+    return CAWikiCellTextTraceGuardResult(
+        claim_count=claim_count,
+        train_claim_count=train_claim_count,
+        query_events=query_events,
+        update_events=update_events,
+        compile_events=compile_events,
+        parser_misread_rate=parser_misread_rate,
+        parser_drop_rate=parser_drop_rate,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
+        variants=("baseline_3d", "safe_miss_guard", "miss_lut4d"),
         points=tuple(eval_points),
     )

@@ -96,6 +96,7 @@ python experiments/ca_wiki_cell_trace_metadata_importance_demo.py
 python experiments/ca_wiki_cell_compiled_trace_importance_demo.py
 python experiments/ca_wiki_cell_text_trace_importance_demo.py
 python experiments/ca_wiki_cell_text_trace_noise_demo.py
+python experiments/ca_wiki_cell_text_trace_guard_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -162,6 +163,8 @@ The first experiments compare:
   markdown summaries generate those local audit counters;
 - parser-noise audits for the text-source controller, separating clean teacher
   labels from noisy parser-observed local counters;
+- parser-miss guard tradeoff sweeps comparing the 16B baseline, a 32B guard,
+  and a 64B miss-aware LUT under the same noisy text trace;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

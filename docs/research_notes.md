@@ -616,6 +616,15 @@ over-strict. This is a good negative/positive split: the architecture can bias
 against missing important pages under parser noise, but it needs a confidence
 or parser-miss feature before it can avoid excess repair traffic.
 
+The first parser-miss guard audit compares that feature in two forms. A
+conservative post-LUT guard is too weak: it protects the gates but barely
+reduces traffic. A 64B 4D LUT that includes the miss bucket is more useful:
+mean over-strict falls from 27.08% to 24.17%, mean touch falls from 8.92 to
+8.84 cells/event, and strict recall stays around 98%. The cost is a small
+increase in under-strict rate, from 4.10% to 4.49%. This is the right kind of
+knob for hardware: spend 48 extra classifier bytes when parser noise is high,
+otherwise keep the 16B baseline.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

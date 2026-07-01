@@ -1481,6 +1481,22 @@ cells/event. The next hardware feature to justify is not a larger importance
 LUT; it is a tiny parser-miss or confidence counter that can suppress false
 strict repair decisions.
 
+The first guard tradeoff measures that counter. Three controller options are
+now in the parser-noise audit:
+
+- 16B baseline 3D LUT over observed retrieval-error, contradiction, and stale
+  buckets;
+- 16B baseline plus a 32B one-bit 4D safe downgrade guard;
+- 64B 4D LUT that adds parser-miss bucket directly.
+
+The safe guard keeps the same safety profile but only lowers mean over-strict
+from 27.08% to 26.86%. The 64B miss-aware LUT is more meaningful: mean
+over-strict falls to 24.17%, mean strict recall is 98.05%, mean under-strict is
+4.49%, and mean provenance traffic falls from 8.92 to 8.84 touched cells/event.
+The hardware implication is simple: the first parser-confidence feature is
+worth at most tens of bytes of control SRAM in this toy setup, not a dense
+model path.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

@@ -632,6 +632,14 @@ over-strict repair, about 27%. The next roadmap item is therefore specific:
 add a parser-miss/confidence feature or a two-stage guard that lowers
 over-strict traffic without increasing under-strict risk.
 
+That guard comparison now exists. The conservative 32B post-LUT guard is too
+weak to matter much, but a 64B 4D LUT with parser-miss bucket lowers mean
+over-strict to 24.17% and keeps mean strict recall near 98%. It slightly raises
+under-strict risk, so the next roadmap item is not merely a larger table. It is
+to test richer parser confidence on multi-field snippets or real markdown
+pages, then decide whether the extra feature should be a fourth LUT dimension,
+a separate confidence gate, or a compiler-side repair trigger.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
