@@ -90,6 +90,7 @@ python experiments/ca_wiki_cell_dual_mode_repair_demo.py
 python experiments/ca_wiki_cell_summary_lane_demo.py
 python experiments/ca_wiki_cell_subtile_repair_demo.py
 python experiments/ca_wiki_cell_learned_subtile_repair_demo.py
+python experiments/ca_wiki_cell_metadata_importance_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -144,6 +145,8 @@ The first experiments compare:
   whole-claim repair traffic behind the summary lane;
 - learned source-subtile provenance controllers that map page importance to
   probe count and repair scope;
+- metadata-derived CA Wiki Cell importance controllers that map low-bit
+  trust/citation/recency/query buckets to provenance repair modes;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

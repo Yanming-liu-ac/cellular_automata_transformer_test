@@ -1092,6 +1092,52 @@ class CAWikiCellLearnedSubtileResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellMetadataImportanceLUTEntry:
+    """Low-bit metadata bucket mapped to a page-importance mode."""
+
+    trust_bucket: int
+    citation_bucket: int
+    recency_bucket: int
+    query_bucket: int
+    chosen_importance: str
+    training_count: int
+
+
+@dataclass(frozen=True)
+class CAWikiCellMetadataImportancePoint:
+    """Evaluation point for metadata-derived provenance importance."""
+
+    eval_seed: int
+    claim_count: int
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    loose_rate: float
+    normal_rate: float
+    strict_rate: float
+    estimated_touch_per_event: float
+    estimated_policy_lut_bytes: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellMetadataImportanceResult:
+    """Metadata -> importance -> provenance repair controller diagnostic."""
+
+    claim_count: int
+    metadata_bits_per_claim: int
+    classifier_lut_bytes: float
+    repair_lut_bytes: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    entries: Tuple[CAWikiCellMetadataImportanceLUTEntry, ...]
+    points: Tuple[CAWikiCellMetadataImportancePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -5705,6 +5751,207 @@ def run_ca_wiki_cell_learned_subtile_repair_sweep(
         importance_targets=clean_targets,
         candidate_count=len(candidates),
         lut_state_bytes=lut_state_bytes,
+        entries=tuple(entries),
+        points=tuple(eval_points),
+    )
+
+
+def _ca_wiki_metadata_features(
+    claim_count: int,
+    seed: int,
+) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    trust = rng.choice(np.array([0, 1, 2, 3]), size=claim_count, p=[0.20, 0.35, 0.30, 0.15])
+    citations = rng.choice(
+        np.array([0, 1, 2, 3]),
+        size=claim_count,
+        p=[0.30, 0.35, 0.25, 0.10],
+    )
+    recency = rng.choice(np.array([0, 1, 2, 3]), size=claim_count, p=[0.25, 0.35, 0.25, 0.15])
+    queries = rng.choice(np.array([0, 1, 2, 3]), size=claim_count, p=[0.45, 0.30, 0.18, 0.07])
+    return np.stack((trust, citations, recency, queries), axis=1).astype(np.int64)
+
+
+def _ca_wiki_metadata_teacher(features: np.ndarray) -> np.ndarray:
+    labels = np.zeros(features.shape[0], dtype=np.int64)
+    trust = features[:, 0]
+    citations = features[:, 1]
+    recency = features[:, 2]
+    queries = features[:, 3]
+    score = 2 * trust + citations + recency + queries
+    strict = ((trust >= 3) & ((citations >= 2) | (queries >= 2))) | (score >= 9)
+    normal = (~strict) & ((score >= 6) | (queries >= 3) | ((recency >= 3) & (citations >= 2)))
+    labels[normal] = 1
+    labels[strict] = 2
+    return labels
+
+
+def _ca_wiki_metadata_key_teacher(
+    trust_bucket: int,
+    citation_bucket: int,
+    recency_bucket: int,
+    query_bucket: int,
+) -> int:
+    features = np.array(
+        [[trust_bucket, citation_bucket, recency_bucket, query_bucket]],
+        dtype=np.int64,
+    )
+    return int(_ca_wiki_metadata_teacher(features)[0])
+
+
+def run_ca_wiki_cell_metadata_importance_sweep(
+    *,
+    claim_count: int = 512,
+    train_claim_count: int = 4096,
+    train_seeds: Tuple[int, ...] = (3001, 3101),
+    eval_seeds: Tuple[int, ...] = (3201, 3301, 3401),
+    min_accuracy: float = 0.90,
+    min_strict_recall: float = 0.90,
+    max_under_strict_rate: float = 0.05,
+) -> CAWikiCellMetadataImportanceResult:
+    """Learn low-bit wiki metadata -> importance mode for provenance repair."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts = np.zeros((bucket_count, bucket_count, bucket_count, bucket_count, mode_count), dtype=np.int64)
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        labels = _ca_wiki_metadata_teacher(features)
+        for feature, label in zip(features, labels):
+            counts[
+                int(feature[0]),
+                int(feature[1]),
+                int(feature[2]),
+                int(feature[3]),
+                int(label),
+            ] += 1
+
+    lut = np.zeros((bucket_count, bucket_count, bucket_count, bucket_count), dtype=np.int64)
+    entries: List[CAWikiCellMetadataImportanceLUTEntry] = []
+    for trust_bucket in range(bucket_count):
+        for citation_bucket in range(bucket_count):
+            for recency_bucket in range(bucket_count):
+                for query_bucket in range(bucket_count):
+                    bucket_counts = counts[
+                        trust_bucket,
+                        citation_bucket,
+                        recency_bucket,
+                        query_bucket,
+                    ]
+                    training_count = int(np.sum(bucket_counts))
+                    if training_count:
+                        chosen_index = int(np.argmax(bucket_counts))
+                    else:
+                        chosen_index = _ca_wiki_metadata_key_teacher(
+                            trust_bucket,
+                            citation_bucket,
+                            recency_bucket,
+                            query_bucket,
+                        )
+                    lut[trust_bucket, citation_bucket, recency_bucket, query_bucket] = chosen_index
+                    entries.append(
+                        CAWikiCellMetadataImportanceLUTEntry(
+                            trust_bucket=trust_bucket,
+                            citation_bucket=citation_bucket,
+                            recency_bucket=recency_bucket,
+                            query_bucket=query_bucket,
+                            chosen_importance=modes[chosen_index],
+                            training_count=training_count,
+                        )
+                    )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    classifier_bits = bucket_count**4 * max(1, int(np.ceil(np.log2(mode_count))))
+    classifier_lut_bytes = classifier_bits / 8.0
+    metadata_bits_per_claim = 8
+    eval_points: List[CAWikiCellMetadataImportancePoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        teacher = _ca_wiki_metadata_teacher(features)
+        predicted = np.array(
+            [
+                lut[int(feature[0]), int(feature[1]), int(feature[2]), int(feature[3])]
+                for feature in features
+            ],
+            dtype=np.int64,
+        )
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count))
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        eval_points.append(
+            CAWikiCellMetadataImportancePoint(
+                eval_seed=seed,
+                claim_count=claim_count,
+                accuracy=accuracy,
+                strict_precision=strict_precision,
+                strict_recall=strict_recall,
+                over_strict_rate=over_strict / float(claim_count),
+                under_strict_rate=under_strict_rate,
+                loose_rate=mode_rates[0],
+                normal_rate=mode_rates[1],
+                strict_rate=mode_rates[2],
+                estimated_touch_per_event=estimated_touch,
+                estimated_policy_lut_bytes=classifier_lut_bytes + provenance.lut_state_bytes,
+                target_met=(
+                    accuracy >= min_accuracy
+                    and strict_recall >= min_strict_recall
+                    and under_strict_rate <= max_under_strict_rate
+                ),
+            )
+        )
+
+    return CAWikiCellMetadataImportanceResult(
+        claim_count=claim_count,
+        metadata_bits_per_claim=metadata_bits_per_claim,
+        classifier_lut_bytes=classifier_lut_bytes,
+        repair_lut_bytes=provenance.lut_state_bytes,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
         entries=tuple(entries),
         points=tuple(eval_points),
     )

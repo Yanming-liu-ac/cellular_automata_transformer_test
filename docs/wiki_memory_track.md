@@ -403,6 +403,17 @@ hardware mode split: loose costs about 6.8-7.0 touch/event, normal costs about
 9.2-9.7, and strict costs about 9.9-10.2. This turns provenance freshness into
 a small local policy output rather than a globally fixed repair rule.
 
+The importance mode is now derived from local metadata in a synthetic proxy.
+Each claim gets four 2-bit buckets: trust, citation density, recency, and query
+frequency. A 64B classifier LUT maps the 256 metadata buckets to
+`loose/normal/strict`; the existing learned provenance LUT adds 1.125B. On
+three 512-claim held-out metadata streams, the proxy reaches 100.00%
+classification accuracy and 100.00% strict recall against the deterministic
+teacher rule, with estimated provenance touch around 8.49-8.58 cells/event.
+This is not a real wiki-data result, but it completes the CA control chain:
+local metadata -> importance mode -> provenance repair policy -> source
+freshness budget.
+
 ## Kill Criteria
 
 This track is not useful if:

@@ -558,6 +558,15 @@ controller has zero target failures. This is a concrete CA-chip control surface:
 importance metadata can directly select provenance freshness without changing
 the answer path.
 
+The metadata-derived importance proxy closes the current control loop. Four
+local 2-bit metadata fields, trust/citation/recency/query-frequency, index a
+64B classifier LUT that emits loose/normal/strict. The existing 1.125B repair
+LUT then maps that mode to the provenance repair policy. In the deterministic
+synthetic proxy the classifier reaches 100% held-out accuracy and 100% strict
+recall, with estimated touch around 8.5 cells/event. This should not be read as
+real wiki generalization; its value is architectural. It proves the CA Wiki Cell
+controller can be expressed as low-bit local metadata plus tiny policy tables.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

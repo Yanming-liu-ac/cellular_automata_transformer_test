@@ -585,6 +585,13 @@ source-freshness rows across train/eval seeds. The next roadmap step is to feed
 importance from real wiki metadata such as trust, citation density, recency, or
 query frequency instead of assigning the mode externally.
 
+The first metadata-derived version now exists as a synthetic proxy. Four 2-bit
+metadata buckets, trust/citation/recency/query-frequency, index a 64B LUT that
+predicts `loose/normal/strict`, then the 1.125B provenance LUT selects repair.
+The proxy gets 0/3 held-out failures and estimated provenance touch around
+8.5 cells/event. The next roadmap item is to replace the deterministic teacher
+with labels from an actual compiled wiki or retrieval/error trace.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

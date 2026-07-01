@@ -1304,6 +1304,21 @@ strict target <=15% stale: claim_error_repair, 9.85-10.19 touch/event, 0/4 failu
 This separates hardware policy state from wiki content state: a small metadata
 mode bit steers provenance freshness without touching the summary answer path.
 
+The metadata-derived importance proxy adds:
+
+```text
+metadata per claim: trust/citation/recency/query_freq = 8 bits
+metadata classifier LUT: 64B
+provenance repair LUT: 1.125B
+total policy LUT state: 65.125B
+held-out metadata streams: 0/3 target failures
+estimated provenance touch: 8.49-8.58 cells/event
+```
+
+This is still synthetic metadata, but it turns the CA Wiki Cell controller into
+the desired hardware shape: narrow per-claim metadata plus tiny LUTs, not a
+large learned dense controller.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:
