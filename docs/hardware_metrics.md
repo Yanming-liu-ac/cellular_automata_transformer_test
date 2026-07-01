@@ -145,6 +145,14 @@ with 0.178 writes/token/tick, only slightly below fixed refresh16. The hardware
 target therefore needs candidate pruning, hierarchical candidate routing, or a
 separate low-bit scorer path that avoids exposing every candidate row's content.
 
+The candidate-demand sparsity sweep gives a practical budget line. At 8
+candidate rows, the learned LUT writes 0.0287 channels/token/tick with 100.0%
+demanded exactness. At 16 rows, it writes 0.0489 with 97.6% demanded exactness.
+At 32 rows, writes rise to 0.0937, still about half of fixed refresh16. At 64
+rows, writes reach 0.1783, nearly the fixed-refresh cost. The output hardware
+therefore needs an early low-bit candidate reducer that keeps content-demanded
+rows near the 8-16 range for normal topic steps.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

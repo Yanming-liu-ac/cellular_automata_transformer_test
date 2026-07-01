@@ -234,6 +234,18 @@ fixed refresh16's 0.187. This does not invalidate the CA path; it says the next
 output-side rule must reduce candidate demand before content exposure, rather
 than waking all top-k candidate rows every topic step.
 
+A candidate-output sparsity sweep turns that warning into a design target. With
+512 fact rows and 768 mixed events, a 16-byte learned gate costs 0.0057,
+0.0287, 0.0489, 0.0937, and 0.1783 channel writes/token/tick when topic events
+demand 1, 8, 16, 32, and 64 candidate rows respectively. Demanded exactness is
+100.0%, 100.0%, 97.6%, 97.5%, and 95.0% on those points. The hand
+`demand_mismatch_ge1` upper bound keeps 100.0% demanded exactness, confirming
+that sparse candidate exposure is physically compatible with the CA rule. The
+learned gate's weaker 2-row and 4-row points show the next controller needs a
+candidate-phase or candidate-rank feature, not only generic demand, mismatch,
+route, and envelope buckets. Hardware target: reduce output content demand to
+about 8-16 rows before asserting the content-demand bit.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

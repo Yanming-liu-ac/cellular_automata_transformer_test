@@ -239,6 +239,13 @@ channels/token/tick. This makes candidate pruning part of the architecture, not
 an optional optimization: the output lane should narrow demand before the
 content lane exposes persistent state to the carrier.
 
+A candidate-demand sparsity sweep makes that architectural boundary concrete.
+If topic steps demand only 8 candidate rows, the learned content gate writes
+about 0.0287 channels/token/tick and keeps demanded content exact. At 16 rows it
+writes about 0.0489 with 97.6% demanded exactness. At 64 rows it writes about
+0.1783, almost fixed refresh. The output path should therefore be split into a
+cheap candidate reducer followed by a smaller exact content exposure stage.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

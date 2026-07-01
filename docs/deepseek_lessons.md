@@ -352,6 +352,12 @@ about 0.178 writes/token/tick for 95.0% demanded exactness. DeepSeek-style
 sparsity has to be copied at the output side too. HARC-CA needs a candidate
 selection rule that makes output demand sparse before content is exposed.
 
+The candidate sparsity sweep suggests the right scale: 8-16 demanded candidate
+rows keep learned content-gate writes around 0.029-0.049, while 64 demanded rows
+nearly erases the write advantage. That matches the DeepSeek lesson at the
+systems level: routing and compression must happen before expensive state is
+materialized.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

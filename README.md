@@ -59,6 +59,7 @@ python experiments/learned_admission_demo.py
 python experiments/candidate_scorer_demo.py
 python experiments/candidate_indexer_demo.py
 python experiments/synthetic_lm_demo.py
+python experiments/synthetic_candidate_demand_sweep_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -85,6 +86,8 @@ The first experiments compare:
   exact-memory lookup events;
 - synthetic mixed exact+candidate demand gates that expose the output-side write
   pressure of candidate shortlist scoring;
+- candidate-output demand sparsity sweeps showing that content exposure needs
+  shortlist pruning before waking candidate rows;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

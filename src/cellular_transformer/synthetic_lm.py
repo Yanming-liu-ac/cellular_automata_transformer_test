@@ -174,6 +174,39 @@ class SyntheticLMDemandGateResult:
     points: Tuple[DemandContentGatePoint, ...]
 
 
+@dataclass(frozen=True)
+class SyntheticLMCandidateDemandSweepPoint:
+    """One candidate-output demand sparsity point."""
+
+    candidate_rows: int
+    content_rows: int
+    mean_demand_fraction: float
+    fixed_refresh_writes_per_token_tick: float
+    fixed_refresh_demand_exact_rate: float
+    demand_mismatch_writes_per_token_tick: float
+    demand_mismatch_demand_exact_rate: float
+    learned_writes_per_token_tick: float
+    learned_demand_exact_rate: float
+    learned_demand_mean_abs_error: float
+    lut_state_bytes: float
+    lut_write_state_count: int
+
+
+@dataclass(frozen=True)
+class SyntheticLMCandidateDemandSweepResult:
+    """Candidate-output demand sparsity sweep for the synthetic LM."""
+
+    fact_count: int
+    topic_events: int
+    query_events: int
+    total_events: int
+    bits: int
+    train_seed: int
+    eval_seed: int
+    write_cost: float
+    points: Tuple[SyntheticLMCandidateDemandSweepPoint, ...]
+
+
 def make_fact_pairs(config: SyntheticLMConfig, seed: int) -> List[Tuple[int, int]]:
     """Create deterministic key/value facts within the vocabulary."""
 
@@ -703,5 +736,88 @@ def run_synthetic_lm_demand_gate_sweep(
         lut_state_bytes=lut.state_bytes,
         lut_write_state_count=lut.write_state_count,
         lut=lut,
+        points=tuple(points),
+    )
+
+
+def run_synthetic_lm_candidate_demand_sparsity_sweep(
+    config: SyntheticLMConfig | None = None,
+    candidate_rows: Tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64),
+    bits: int = 4,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+    write_cost: float = 0.15,
+) -> SyntheticLMCandidateDemandSweepResult:
+    """Measure how candidate-output demand density affects content-gate writes."""
+
+    gate_config = config or SyntheticLMConfig(
+        fact_count=512,
+        topic_events=512,
+        query_events=256,
+        dense_width=512,
+        primary_buckets=512,
+        overflow_buckets=128,
+    )
+    row_counts = tuple(
+        dict.fromkeys(
+            min(int(rows), gate_config.candidate_pool_size)
+            for rows in candidate_rows
+            if int(rows) > 0
+        )
+    )
+    if len(row_counts) == 0:
+        raise ValueError("candidate_rows must contain at least one positive value")
+
+    points = []
+    for rows in row_counts:
+        result = run_synthetic_lm_demand_gate_sweep(
+            config=gate_config,
+            demand_trace="mixed_candidate_topk",
+            candidate_rows=rows,
+            policies=("fixed_refresh16", "demand_mismatch_ge1"),
+            bits=bits,
+            train_seed=train_seed,
+            eval_seed=eval_seed,
+            write_cost=write_cost,
+        )
+        fixed_refresh = next(
+            point for point in result.points if point.policy == "fixed_refresh16"
+        )
+        demand_mismatch = next(
+            point for point in result.points if point.policy == "demand_mismatch_ge1"
+        )
+        learned = result.points[-1]
+        points.append(
+            SyntheticLMCandidateDemandSweepPoint(
+                candidate_rows=result.candidate_rows,
+                content_rows=result.content_rows,
+                mean_demand_fraction=learned.mean_demand_fraction,
+                fixed_refresh_writes_per_token_tick=(
+                    fixed_refresh.gate_channel_writes_per_token_tick
+                ),
+                fixed_refresh_demand_exact_rate=fixed_refresh.demand_exact_rate,
+                demand_mismatch_writes_per_token_tick=(
+                    demand_mismatch.gate_channel_writes_per_token_tick
+                ),
+                demand_mismatch_demand_exact_rate=demand_mismatch.demand_exact_rate,
+                learned_writes_per_token_tick=(
+                    learned.gate_channel_writes_per_token_tick
+                ),
+                learned_demand_exact_rate=learned.demand_exact_rate,
+                learned_demand_mean_abs_error=learned.demand_mean_abs_error,
+                lut_state_bytes=result.lut_state_bytes,
+                lut_write_state_count=result.lut_write_state_count,
+            )
+        )
+
+    return SyntheticLMCandidateDemandSweepResult(
+        fact_count=gate_config.fact_count,
+        topic_events=gate_config.topic_events,
+        query_events=gate_config.query_events,
+        total_events=gate_config.topic_events + gate_config.query_events,
+        bits=bits,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        write_cost=write_cost,
         points=tuple(points),
     )

@@ -357,10 +357,15 @@ Implement:
 - extend the rare-directory trace-gate result into the dual-path synthetic LM.
   Exact-memory demand now works; mixed exact+candidate demand shows candidate
   output rows dominate write traffic.
-- prune candidate-output demand before content exposure. The current mixed
-  trace wakes 64 candidate rows on topic events and costs about 0.178
-  writes/token/tick, so the next rule should route or rank candidates before
-  asserting the content-demand bit.
+- prune candidate-output demand before content exposure. A candidate-row sweep
+  shows the useful target is roughly 8-16 demanded candidate rows per topic
+  event: 8 rows cost about 0.029 writes/token/tick, 16 rows cost about 0.049,
+  while 64 rows costs about 0.178.
+- add candidate-phase or candidate-rank features to the demand gate. The hand
+  `demand_mismatch_ge1` upper bound is exact at low candidate counts, but the
+  learned 16-byte LUT sometimes misses sparse 2-row/4-row candidate demand.
+  The next LUT should distinguish exact-query demand, candidate demand, and
+  rank/phase.
 
 First trainable target:
 
