@@ -775,6 +775,7 @@ class CAWikiCellPolicy:
     read_sources: int
     scan_all_sources: bool = False
     update_repair_ticks: int = 0
+    update_repair_period: int = 1
     error_repair_ticks: int = 0
     local_radius: int = 1
     error_threshold: int = 1
@@ -787,6 +788,8 @@ class CAWikiCellPolicy:
             raise ValueError("read_sources must be positive")
         if self.update_repair_ticks < 0:
             raise ValueError("update_repair_ticks must be non-negative")
+        if self.update_repair_period <= 0:
+            raise ValueError("update_repair_period must be positive")
         if self.error_repair_ticks < 0:
             raise ValueError("error_repair_ticks must be non-negative")
         if self.local_radius <= 0:
@@ -806,6 +809,7 @@ class CAWikiCellPoint:
     scan_all_sources: bool
     local_radius: int
     update_repair_ticks: int
+    update_repair_period: int
     error_repair_ticks: int
     error_threshold: int
     queries: int
@@ -834,6 +838,64 @@ class CAWikiCellSweepResult:
     config: CAWikiCellConfig
     seed: int
     points: Tuple[CAWikiCellPoint, ...]
+
+
+@dataclass(frozen=True)
+class CAWikiCellRepairLUTEntry:
+    """Learned repair-schedule choice for one wiki-cell workload bucket."""
+
+    sources_per_claim: int
+    update_events: int
+    chosen_policy: str
+    chosen_policy_index: int
+    chosen_read_sources: int
+    chosen_local_radius: int
+    chosen_update_repair_ticks: int
+    chosen_update_repair_period: int
+    chosen_error_repair_ticks: int
+    training_points: int
+    training_cost: float
+
+
+@dataclass(frozen=True)
+class CAWikiCellLearnedRepairPoint:
+    """Evaluation point for the learned CA wiki-cell repair LUT."""
+
+    eval_seed: int
+    sources_per_claim: int
+    update_events: int
+    chosen_policy: str
+    chosen_read_sources: int
+    chosen_local_radius: int
+    chosen_update_repair_ticks: int
+    chosen_update_repair_period: int
+    chosen_error_repair_ticks: int
+    recall: float
+    recent_recall: float
+    stale_source_rate: float
+    consistent_claim_rate: float
+    cells_read_per_query: float
+    cells_touched_per_event: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellLearnedRepairResult:
+    """Tiny LUT choosing local repair schedules for CA Wiki Cell v0."""
+
+    claim_count: int
+    query_events: int
+    source_options: Tuple[int, ...]
+    update_event_options: Tuple[int, ...]
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    target_recall: float
+    target_recent_recall: float
+    max_stale_source_rate: float
+    candidate_count: int
+    lut_state_bytes: float
+    entries: Tuple[CAWikiCellRepairLUTEntry, ...]
+    points: Tuple[CAWikiCellLearnedRepairPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -4287,6 +4349,7 @@ def run_ca_wiki_cell_sweep(
             if event:
                 claim = int(update_claims[update_index])
                 source = int(update_sources[update_index])
+                current_update_index = update_index
                 truth_revisions[claim] += 1
                 truth_values[claim] = (
                     truth_values[claim] + int(value_deltas[update_index])
@@ -4299,7 +4362,8 @@ def run_ca_wiki_cell_sweep(
                 recent_claims.append(claim)
                 if len(recent_claims) > 64:
                     del recent_claims[: len(recent_claims) - 64]
-                run_repair_ticks(claim, policy.update_repair_ticks)
+                if current_update_index % policy.update_repair_period == 0:
+                    run_repair_ticks(claim, policy.update_repair_ticks)
                 continue
 
             use_recent = (
@@ -4380,6 +4444,7 @@ def run_ca_wiki_cell_sweep(
                 scan_all_sources=policy.scan_all_sources,
                 local_radius=policy.local_radius,
                 update_repair_ticks=policy.update_repair_ticks,
+                update_repair_period=policy.update_repair_period,
                 error_repair_ticks=policy.error_repair_ticks,
                 error_threshold=policy.error_threshold,
                 queries=cfg.query_events,
@@ -4405,3 +4470,267 @@ def run_ca_wiki_cell_sweep(
         )
 
     return CAWikiCellSweepResult(config=cfg, seed=seed, points=tuple(points))
+
+
+def _ca_wiki_cell_repair_candidates(config: CAWikiCellConfig) -> Tuple[CAWikiCellPolicy, ...]:
+    """Generate hardware-small repair schedules for one wiki-cell geometry."""
+
+    tile_radius = min(4, config.sources_per_claim - 1)
+    narrow_radius = 2 if config.sources_per_claim >= 8 else 1
+    radii = tuple(dict.fromkeys((narrow_radius, tile_radius)))
+    policies: List[CAWikiCellPolicy] = [
+        CAWikiCellPolicy(
+            name="sample_no_repair",
+            read_sources=config.read_sources,
+        ),
+        CAWikiCellPolicy(
+            name="flat_scan",
+            read_sources=config.sources_per_claim,
+            scan_all_sources=True,
+        ),
+    ]
+    seen = {
+        (
+            policy.read_sources,
+            policy.scan_all_sources,
+            policy.update_repair_ticks,
+            policy.update_repair_period,
+            policy.error_repair_ticks,
+            policy.local_radius,
+            policy.error_threshold,
+        )
+        for policy in policies
+    }
+    for radius in radii:
+        for update_ticks in (0, 1, 2):
+            for update_period in (1, 2, 4):
+                if update_ticks == 0 and update_period != 1:
+                    continue
+                for error_ticks in (0, 1):
+                    if update_ticks == 0 and error_ticks == 0:
+                        continue
+                    key = (
+                        config.read_sources,
+                        False,
+                        update_ticks,
+                        update_period,
+                        error_ticks,
+                        radius,
+                        1,
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    policies.append(
+                        CAWikiCellPolicy(
+                            name=(
+                                f"ca_r{radius}_u{update_ticks}"
+                                f"p{update_period}_e{error_ticks}"
+                            ),
+                            read_sources=config.read_sources,
+                            update_repair_ticks=update_ticks,
+                            update_repair_period=update_period,
+                            error_repair_ticks=error_ticks,
+                            local_radius=radius,
+                            error_threshold=1,
+                        )
+                    )
+    return tuple(policies)
+
+
+def _ca_wiki_cell_point_cost(
+    point: CAWikiCellPoint,
+    *,
+    target_recall: float,
+    target_recent_recall: float,
+    max_stale_source_rate: float,
+    query_read_weight: float,
+    miss_penalty_weight: float,
+    stale_penalty_weight: float,
+) -> float:
+    recall_gap = max(0.0, target_recall - point.recall)
+    recent_gap = max(0.0, target_recent_recall - point.recent_recall)
+    stale_gap = max(0.0, point.stale_source_rate - max_stale_source_rate)
+    return (
+        point.cells_touched_per_event
+        + query_read_weight * point.cells_read_per_query
+        + miss_penalty_weight * (recall_gap + recent_gap)
+        + stale_penalty_weight * stale_gap
+    )
+
+
+def run_ca_wiki_cell_learned_repair_sweep(
+    *,
+    claim_count: int = 128,
+    query_events: int = 1024,
+    source_options: Tuple[int, ...] = (4, 8, 16),
+    update_event_options: Tuple[int, ...] = (128, 256),
+    read_sources: int = 2,
+    target_recall: float = 0.90,
+    target_recent_recall: float = 0.85,
+    max_stale_source_rate: float = 0.10,
+    train_seeds: Tuple[int, ...] = (2101, 2201),
+    eval_seeds: Tuple[int, ...] = (2301, 2401),
+    query_read_weight: float = 0.25,
+    miss_penalty_weight: float = 100.0,
+    stale_penalty_weight: float = 100.0,
+) -> CAWikiCellLearnedRepairResult:
+    """Train a tiny LUT that chooses CA wiki-cell repair schedules.
+
+    The LUT is indexed by two hardware-visible workload buckets in this
+    diagnostic: fan-in (`sources_per_claim`) and update pressure
+    (`update_events`). Its output is just a candidate repair-policy id.
+    """
+
+    clean_sources = tuple(dict.fromkeys(int(value) for value in source_options))
+    clean_updates = tuple(dict.fromkeys(int(value) for value in update_event_options))
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_sources) == 0:
+        raise ValueError("source_options must not be empty")
+    if len(clean_updates) == 0:
+        raise ValueError("update_event_options must not be empty")
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if read_sources <= 0:
+        raise ValueError("read_sources must be positive")
+    if not 0.0 <= target_recall <= 1.0:
+        raise ValueError("target_recall must be in [0, 1]")
+    if not 0.0 <= target_recent_recall <= 1.0:
+        raise ValueError("target_recent_recall must be in [0, 1]")
+    if not 0.0 <= max_stale_source_rate <= 1.0:
+        raise ValueError("max_stale_source_rate must be in [0, 1]")
+    if query_read_weight < 0.0:
+        raise ValueError("query_read_weight must be non-negative")
+    if miss_penalty_weight < 0.0:
+        raise ValueError("miss_penalty_weight must be non-negative")
+    if stale_penalty_weight < 0.0:
+        raise ValueError("stale_penalty_weight must be non-negative")
+
+    entries: List[CAWikiCellRepairLUTEntry] = []
+    eval_points: List[CAWikiCellLearnedRepairPoint] = []
+    max_candidate_count = 0
+    chosen_by_bucket: dict[tuple[int, int], tuple[int, CAWikiCellPolicy]] = {}
+
+    for sources_per_claim in clean_sources:
+        if read_sources > sources_per_claim:
+            raise ValueError("read_sources must fit every source option")
+        for update_events in clean_updates:
+            config = CAWikiCellConfig(
+                claim_count=claim_count,
+                sources_per_claim=sources_per_claim,
+                query_events=query_events,
+                update_events=update_events,
+                read_sources=read_sources,
+            )
+            candidates = _ca_wiki_cell_repair_candidates(config)
+            max_candidate_count = max(max_candidate_count, len(candidates))
+            aggregate_costs = np.zeros(len(candidates), dtype=np.float64)
+            aggregate_touch = np.zeros(len(candidates), dtype=np.float64)
+            aggregate_recall = np.zeros(len(candidates), dtype=np.float64)
+            training_points = 0
+            for seed in clean_train_seeds:
+                sweep = run_ca_wiki_cell_sweep(config, candidates, seed=seed)
+                by_policy = {point.policy: point for point in sweep.points}
+                for index, policy in enumerate(candidates):
+                    point = by_policy[policy.name]
+                    aggregate_costs[index] += _ca_wiki_cell_point_cost(
+                        point,
+                        target_recall=target_recall,
+                        target_recent_recall=target_recent_recall,
+                        max_stale_source_rate=max_stale_source_rate,
+                        query_read_weight=query_read_weight,
+                        miss_penalty_weight=miss_penalty_weight,
+                        stale_penalty_weight=stale_penalty_weight,
+                    )
+                    aggregate_touch[index] += point.cells_touched_per_event
+                    aggregate_recall[index] += point.recall
+                training_points += 1
+            mean_costs = aggregate_costs / float(training_points)
+            mean_touch = aggregate_touch / float(training_points)
+            mean_recall = aggregate_recall / float(training_points)
+            best_index = min(
+                range(len(candidates)),
+                key=lambda index: (
+                    mean_costs[index],
+                    mean_touch[index],
+                    -mean_recall[index],
+                    candidates[index].scan_all_sources,
+                    candidates[index].update_repair_ticks,
+                    candidates[index].error_repair_ticks,
+                ),
+            )
+            chosen = candidates[best_index]
+            chosen_by_bucket[(sources_per_claim, update_events)] = (best_index, chosen)
+            entries.append(
+                CAWikiCellRepairLUTEntry(
+                    sources_per_claim=sources_per_claim,
+                    update_events=update_events,
+                    chosen_policy=chosen.name,
+                    chosen_policy_index=best_index,
+                    chosen_read_sources=chosen.read_sources,
+                    chosen_local_radius=chosen.local_radius,
+                    chosen_update_repair_ticks=chosen.update_repair_ticks,
+                    chosen_update_repair_period=chosen.update_repair_period,
+                    chosen_error_repair_ticks=chosen.error_repair_ticks,
+                    training_points=training_points,
+                    training_cost=float(mean_costs[best_index]),
+                )
+            )
+
+    all_eval_seeds = tuple(dict.fromkeys(clean_train_seeds + clean_eval_seeds))
+    for sources_per_claim in clean_sources:
+        for update_events in clean_updates:
+            config = CAWikiCellConfig(
+                claim_count=claim_count,
+                sources_per_claim=sources_per_claim,
+                query_events=query_events,
+                update_events=update_events,
+                read_sources=read_sources,
+            )
+            _, chosen = chosen_by_bucket[(sources_per_claim, update_events)]
+            for seed in all_eval_seeds:
+                sweep = run_ca_wiki_cell_sweep(config, (chosen,), seed=seed)
+                point = sweep.points[0]
+                eval_points.append(
+                    CAWikiCellLearnedRepairPoint(
+                        eval_seed=seed,
+                        sources_per_claim=sources_per_claim,
+                        update_events=update_events,
+                        chosen_policy=chosen.name,
+                        chosen_read_sources=chosen.read_sources,
+                        chosen_local_radius=chosen.local_radius,
+                        chosen_update_repair_ticks=chosen.update_repair_ticks,
+                        chosen_update_repair_period=chosen.update_repair_period,
+                        chosen_error_repair_ticks=chosen.error_repair_ticks,
+                        recall=point.recall,
+                        recent_recall=point.recent_recall,
+                        stale_source_rate=point.stale_source_rate,
+                        consistent_claim_rate=point.consistent_claim_rate,
+                        cells_read_per_query=point.cells_read_per_query,
+                        cells_touched_per_event=point.cells_touched_per_event,
+                        target_met=(
+                            point.recall >= target_recall
+                            and point.recent_recall >= target_recent_recall
+                            and point.stale_source_rate <= max_stale_source_rate
+                        ),
+                    )
+                )
+
+    policy_bits = max(1, int(np.ceil(np.log2(max(1, max_candidate_count)))))
+    lut_bits = len(clean_sources) * len(clean_updates) * policy_bits
+    return CAWikiCellLearnedRepairResult(
+        claim_count=claim_count,
+        query_events=query_events,
+        source_options=clean_sources,
+        update_event_options=clean_updates,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        target_recall=target_recall,
+        target_recent_recall=target_recent_recall,
+        max_stale_source_rate=max_stale_source_rate,
+        candidate_count=max_candidate_count,
+        lut_state_bytes=lut_bits / 8.0,
+        entries=tuple(entries),
+        points=tuple(eval_points),
+    )

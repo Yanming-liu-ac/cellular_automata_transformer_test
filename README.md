@@ -85,6 +85,7 @@ python experiments/wiki_memory_learned_guard_audit_demo.py
 python experiments/wiki_memory_learned_guard_noise_matrix_demo.py
 python experiments/wiki_memory_learned_guard_random_noise_demo.py
 python experiments/ca_wiki_cell_demo.py
+python experiments/ca_wiki_cell_learned_repair_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -129,6 +130,8 @@ The first experiments compare:
   summary refresh and error-book repair;
 - CA Wiki Cell v0 diagnostics that store multi-source claims as low-bit page,
   link, and error-book cells with local update pulses;
+- learned CA Wiki Cell repair-schedule LUTs that trade local maintenance
+  traffic against recall and source-cell freshness;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

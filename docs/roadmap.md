@@ -540,6 +540,17 @@ path should learn repair scheduling and local pulse radius, not just retrieval
 fanout. Query latency already has the right CA shape; maintenance traffic is
 the next bottleneck.
 
+The first learned version of that scheduler is now a 3.75B LUT over six
+fan-in/update-pressure buckets. It chooses from 28 low-bit local schedules. On
+the eight-source, 256-update bucket it learns periodic update repair
+(`ca_r4_u1p2_e1`) instead of repairing after every update, holding held-out
+recall near 92% with 2.00 source reads/query and about 15 cells/event. The
+fixed full-repair policy still wins strict quality, but costs 16.00 cells/event.
+The next CA Wiki Cell milestone is therefore a two-target controller: strict
+mode for high-confidence memory and budget mode for cheap mutable wiki refresh.
+The 16-source bucket also shows that a single source tile is too wide; the next
+geometry should add source subtiles or a second-level claim summary.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

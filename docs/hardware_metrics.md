@@ -1218,6 +1218,24 @@ traffic." It is: CA gives the lower-latency sparse query path and explicit
 local consistency repair, but the next controller must learn when repair pulses
 are worth their maintenance traffic.
 
+The first repair-schedule controller is a 3.75B LUT over six fan-in/update
+pressure buckets. It chooses from 28 local schedules encoded by radius,
+update-repair ticks, update-repair period, and error-book repair ticks. Under a
+90% recall / 85% recent-recall / 10% stale-source target:
+
+```text
+4 sources, 128 updates:  ca_r3_u1p4_e1, about 4.0 touch/event
+4 sources, 256 updates:  ca_r3_u1p4_e1, about 5.3-5.4 touch/event
+8 sources, 128 updates:  ca_r4_u0p1_e1, about 9.2-9.5 touch/event
+8 sources, 256 updates:  ca_r4_u1p2_e1, about 14.8-15.2 touch/event
+16 sources, 128 updates: ca_r4_u1p4_e1, about 30.3-32.4 touch/event
+16 sources, 256 updates: ca_r4_u1p1_e1, about 55.1-56.7 touch/event
+```
+
+The learned table misses 2 of 24 evaluated rows at the chosen targets. That is
+now a hardware metric, not a hidden caveat: fan-in wider than the local repair
+radius quickly turns maintenance traffic into the dominant cost.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

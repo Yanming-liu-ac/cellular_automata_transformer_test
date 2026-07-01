@@ -502,6 +502,21 @@ precisely because it is not an unqualified win: the query critical path looks
 very CA-friendly, while the next research target is learned repair scheduling
 to reduce maintenance traffic.
 
+That learned repair scheduler now exists as a small LUT diagnostic. The
+candidate bank has 28 local schedules composed from radius, update-repair
+ticks, update-repair period, and error-book repair ticks. The LUT is indexed by
+fan-in and update pressure, so the current six-entry table uses only 3.75B.
+Under the 90% recall / 85% recent-recall / 10% stale-source target, it learns
+lazy or periodic repair instead of always repairing on every update. The
+eight-source, 256-update bucket chooses `ca_r4_u1p2_e1`: radius 4, one
+update-repair tick every two updates, and one error-book repair tick on sparse
+query failure or disagreement. On held-out seeds it keeps query reads at
+2.00 source cells/query, reaches about 91.9-92.2% recall, and costs about
+14.8-15.2 cells/event, compared with 16.00 cells/event for fixed
+`tile_update_ca`. Two of 24 evaluation rows miss the target, both near the
+boundary. This is the right kind of failure: it turns "repair scheduling" into
+a measured local-control problem instead of a vague chip claim.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

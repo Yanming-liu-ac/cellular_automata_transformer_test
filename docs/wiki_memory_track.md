@@ -331,6 +331,25 @@ reaches 96.00%. The honest conclusion is that CA is already a better shape for
 low-latency mutable reads, but repair scheduling must be learned before claiming
 a total traffic win.
 
+The first learned repair scheduler turns that conclusion into a tiny LUT. The
+candidate bank contains 28 low-bit schedules over source read count, local
+radius, update-repair ticks, update-repair period, and error-book repair ticks.
+The LUT is indexed by fan-in and update-pressure buckets: four, eight, and
+16 sources/claim crossed with 128 and 256 updates. With targets of at least
+90.00% overall recall, 85.00% recent recall, and at most 10.00% stale source
+cells, the table is 3.75B. The learned choices are conservative for hard
+buckets and lazy for easy ones: eight-source/128-update chooses pure
+error-book repair (`ca_r4_u0p1_e1`), while eight-source/256-update chooses
+periodic repair (`ca_r4_u1p2_e1`) and keeps query reads at 2.00 cells/query
+with about 92% recall and about 14.8-15.2 cells/event on held-out seeds. That
+is lower maintenance traffic than the fixed 16.00 cells/event `tile_update_ca`
+policy, but it is a quality-budgeted tradeoff rather than a strict replacement.
+The held-out evaluation has 2 failures out of 24 rows: one four-source row
+slightly exceeds the stale-source target, and one 16-source/128-update row
+falls just below the recall/recent targets. This marks the next boundary:
+large fan-in needs a second-level source tile or a learned radius/tick policy
+with stronger local evidence.
+
 ## Kill Criteria
 
 This track is not useful if:
