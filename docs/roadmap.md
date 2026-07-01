@@ -306,9 +306,9 @@ Next retrieval work:
 - train a delayed-promotion gate against the retire128c3 budget so one-hit rare
   tokens, hot-token retirement, and sidecar update pressure are optimized
   jointly rather than by hand thresholds.
-- add adversarial repeated-key tests beyond the current 8-collider Bloom-slot
-  stress, because c2 already fails the robust visibility target under chosen
-  hot-token deletions.
+- train the directory/fanout objective on the repeated-key 8-collider stress:
+  retire128c3 protects 100% rare-token sidecar visibility, but repaired coverage
+  is still capped at about 95.3% by read placement and fanout.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

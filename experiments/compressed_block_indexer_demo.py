@@ -1074,6 +1074,7 @@ def main() -> None:
     headers = [
         "bpe",
         "cbits",
+        "rare_occ",
         "coll/rare",
         "state",
         "collide",
@@ -1094,6 +1095,7 @@ def main() -> None:
         row = [
             str(point.bits_per_entry),
             str(point.counter_bits),
+            str(point.rare_occurrences_per_token),
             str(point.colliders_per_rare),
             f"{point.sidecar_state_bytes / 1024:0.1f}KB",
             str(point.collider_tokens),
@@ -1111,8 +1113,9 @@ def main() -> None:
     print()
     print("Counting Bloom collision interpretation:")
     print("- 1-bit counters are not robust: adversarial hot deletes wipe rare-token visibility.")
-    print("- 2-bit counters improve normal streams but lose visibility under multi-collider Bloom deletes.")
-    print("- 3-bit counters survive the 8-collider stress here and are the current sidecar budget target.")
+    print("- 2-bit counters improve normal streams but lose visibility under repeated-key multi-collider deletes.")
+    print("- 3-bit counters survive the repeated-key 8-collider stress and are the current sidecar budget target.")
+    print("- Any remaining repeated-key coverage loss is now a fanout/directory target, not a sidecar deletion target.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

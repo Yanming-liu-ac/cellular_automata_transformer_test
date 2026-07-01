@@ -646,23 +646,28 @@ it produces a small rare-token visibility loss, so it should remain an
 aggressive candidate.
 
 The adversarial-collision sweep chooses hot tokens that share Bloom slots with
-rare tokens before retiring them. It now varies the number of hot colliders per
-rare token:
+rare tokens before retiring them. It now varies both the number of rare-token
+occurrences and the number of hot colliders per rare token:
 
 ```text
-colliders/rare=1  counter=1  mean_overlap=1.59  visible_rare=1.6%    false_HCA=0.8%  coverage=99.2%
-colliders/rare=1  counter=2  mean_overlap=1.59  visible_rare=98.4%   false_HCA=0.0%  coverage=100.0%
-colliders/rare=1  counter=3  mean_overlap=1.59  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
-colliders/rare=8  counter=1  mean_overlap=8.95  visible_rare=0.0%    false_HCA=5.5%  coverage=94.5%
-colliders/rare=8  counter=2  mean_overlap=8.95  visible_rare=96.9%   false_HCA=0.0%  coverage=100.0%
-colliders/rare=8  counter=3  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
-colliders/rare=8  counter=4  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+rare_occ=1  colliders/rare=1  counter=1  mean_overlap=1.59  visible_rare=0.8%    false_HCA=0.8%  coverage=99.2%
+rare_occ=1  colliders/rare=1  counter=2  mean_overlap=1.59  visible_rare=97.7%   false_HCA=0.0%  coverage=100.0%
+rare_occ=1  colliders/rare=1  counter=3  mean_overlap=1.59  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+rare_occ=1  colliders/rare=8  counter=1  mean_overlap=8.95  visible_rare=0.0%    false_HCA=6.2%  coverage=93.8%
+rare_occ=1  colliders/rare=8  counter=2  mean_overlap=8.95  visible_rare=62.5%   false_HCA=3.9%  coverage=96.1%
+rare_occ=1  colliders/rare=8  counter=3  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=100.0%
+rare_occ=3  colliders/rare=1  counter=2  mean_overlap=1.60  visible_rare=98.4%   false_HCA=0.0%  coverage=94.5%
+rare_occ=3  colliders/rare=8  counter=1  mean_overlap=8.95  visible_rare=0.0%    false_HCA=7.8%  coverage=88.0%
+rare_occ=3  colliders/rare=8  counter=2  mean_overlap=8.95  visible_rare=62.5%   false_HCA=3.1%  coverage=92.2%
+rare_occ=3  colliders/rare=8  counter=3  mean_overlap=8.95  visible_rare=100.0%  false_HCA=0.0%  coverage=95.3%
 ```
 
 This demotes c2 from "robust baseline" to "normal-stream compression point."
 The current robust sidecar target is `8 bits/entry, 3-bit counters`: it keeps
-adversarial visible rare-token rate at 100% through the 8-collider stress while
-cutting sidecar state from about 44.9KB to about 35.9KB.
+adversarial visible rare-token rate at 100% through the repeated-key
+8-collider stress while cutting sidecar state from about 44.9KB to about
+35.9KB. The remaining 95.3% repeated-key coverage at c3/c4 is no longer a
+sidecar deletion problem; it points to the directory/fanout read budget.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 
