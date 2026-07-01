@@ -1545,13 +1545,18 @@ summary-core coverage, source-core coverage, and source/summary agreement:
 baseline_4d:     64B controller, 27.49% mean over-strict, 9.37 touch/event, 0/4 failures
 coverage_lut5d: 256B controller, 26.93% mean over-strict, 9.35 touch/event, 0/4 failures
 split_guard7d:  2.06KB controller, 25.73% mean over-strict, 9.34 touch/event, 0/4 failures
+factor_vote56b: 120B controller, 24.58% mean over-strict, 9.35 touch/event, 0/4 failures
+factor_vote80b: 144B controller, 23.83% mean over-strict, 9.32 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
 The direct 7D LUT is not the right default despite being larger. The safer
-hardware primitive is a small conservative classifier plus a sparse confidence
-guard that only downgrades strict repair when the split confidence buckets have
-enough supporting training examples.
+hardware primitive is a small conservative classifier plus a confidence guard
+that only downgrades strict repair when local confidence buckets have enough
+supporting training examples. The first factorized version is better than the
+full 7D guard on this synthetic paragraph workload: `factor_vote80b` uses only
+144B total control state, keeps strict recall at 98.32%, and lowers mean
+over-strict to 23.83%.
 
 ## Tile/Floorplan Metrics
 

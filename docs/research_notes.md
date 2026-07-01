@@ -667,6 +667,18 @@ passes 4/4 held-out rows, lowers mean over-strict to 25.73%, and lowers touch
 to 9.34 cells/event. This is a more defensible hardware pattern than simply
 adding dimensions to the main classifier.
 
+The first factorized version improves that result. Instead of storing the whole
+7D guard, it stores several small one-bit projection tables and downgrades
+strict repair only when enough projections vote for a safe downgrade.
+`factor_vote56b` uses 56B of guard state plus the 64B baseline classifier and
+passes all four held-out rows with 24.58% mean over-strict. `factor_vote80b`
+uses two 4D and two 3D projected guards, for 80B guard state and 144B total
+controller state. It also passes 4/4, raises mean accuracy to 75.02%, keeps
+strict recall at 98.32% with 1.15% under-strict, and lowers mean over-strict to
+23.83%. This is the strongest evidence so far that a CA/wiki controller should
+use factorized local confidence rules rather than a monolithic high-dimensional
+table.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

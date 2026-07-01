@@ -27,6 +27,12 @@ recover much of the lost quality:
 
 https://arxiv.org/abs/2605.07068
 
+WikiKV frames the same workload as a storage problem: LLM-curated hierarchical
+knowledge bases are query-intensive, continuously evolving, and need a storage
+model that understands paths, schema evolution, and consistency:
+
+https://arxiv.org/abs/2606.14275
+
 `Memory as Metabolism` reports that a cluster of personal wiki-style memory
 architectures appeared around April 2026, including a Karpathy design proposal,
 and frames long-term memory as a system that must triage, decay, contextualize,
@@ -546,6 +552,17 @@ after the 64B baseline: total controller state is 2.06KB, held-out failures are
 9.37 to 9.34 cells/event. The lesson is that split confidence is real, but it
 should gate a proven conservative policy rather than replace it with a sparse
 7D classifier.
+
+The factorized-guard follow-up compresses that 7D guard rather than expanding
+the main classifier. Two projected vote-table designs now pass the same four
+held-out traces. `factor_vote56b` uses a 64B baseline classifier plus 56B of
+one-bit projection guards, reaches 74.37% mean accuracy, 98.52% strict recall,
+1.05% under-strict, and 24.58% over-strict. `factor_vote80b` uses 80B of guard
+state and is the current best paragraph controller: 144B total control state,
+75.02% mean accuracy, 98.32% strict recall, 1.15% under-strict, 23.83%
+over-strict, and 9.32 touched cells/event, with 0/4 held-out failures. This is
+the first result where the more hardware-natural factorization beats the full
+2.06KB 7D guard on both state size and over-repair traffic.
 
 ## Kill Criteria
 

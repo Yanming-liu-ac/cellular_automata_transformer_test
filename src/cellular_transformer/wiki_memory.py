@@ -1649,6 +1649,10 @@ class CAWikiCellParagraphSplitConfidenceResult:
     points: Tuple[CAWikiCellParagraphSplitConfidencePoint, ...]
 
 
+CAWikiCellParagraphFactorizedGuardPoint = CAWikiCellParagraphSplitConfidencePoint
+CAWikiCellParagraphFactorizedGuardResult = CAWikiCellParagraphSplitConfidenceResult
+
+
 @dataclass(frozen=True)
 class _RouteResult:
     found: bool
@@ -10280,6 +10284,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     split_lut_under_importance_weight: float = 12.0,
     split_guard_min_count: int = 8,
     split_guard_max_strict_fraction: float = 0.10,
+    factor_guard56_min_count: int = 4,
+    factor_guard56_max_strict_fraction: float = 0.20,
+    factor_guard80_min_count: int = 4,
+    factor_guard80_max_strict_fraction: float = 0.15,
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
@@ -10319,6 +10327,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("split_guard_min_count must be non-negative")
     if not 0.0 <= split_guard_max_strict_fraction <= 1.0:
         raise ValueError("split_guard_max_strict_fraction must be in [0, 1]")
+    if factor_guard56_min_count < 0:
+        raise ValueError("factor_guard56_min_count must be non-negative")
+    if not 0.0 <= factor_guard56_max_strict_fraction <= 1.0:
+        raise ValueError("factor_guard56_max_strict_fraction must be in [0, 1]")
+    if factor_guard80_min_count < 0:
+        raise ValueError("factor_guard80_min_count must be non-negative")
+    if not 0.0 <= factor_guard80_max_strict_fraction <= 1.0:
+        raise ValueError("factor_guard80_max_strict_fraction must be in [0, 1]")
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10367,6 +10383,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     train_query_events = int(round(query_events * train_event_scale))
     train_update_events = int(round(update_events * train_event_scale))
     train_compile_events = int(round(compile_events * train_event_scale))
+    train_split_buckets: List[Tuple[np.ndarray, np.ndarray]] = []
     for seed in clean_train_seeds:
         features = _ca_wiki_metadata_features(train_claim_count, seed)
         trace = _ca_wiki_paragraph_text_trace_labels(
@@ -10392,6 +10409,19 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         summary_core_bucket = _ca_wiki_weighted_signal_bucket(trace[13])
         source_core_bucket = _ca_wiki_weighted_signal_bucket(trace[14])
         agreement_bucket = _ca_wiki_weighted_signal_bucket(trace[15])
+        split_buckets = np.stack(
+            (
+                weighted_error_bucket,
+                core_conflict_bucket,
+                weighted_stale_bucket,
+                parser_miss_bucket,
+                summary_core_bucket,
+                source_core_bucket,
+                agreement_bucket,
+            ),
+            axis=1,
+        ).astype(np.int64)
+        train_split_buckets.append((split_buckets, labels))
         for buckets, label in zip(
             zip(
                 weighted_error_bucket,
@@ -10504,6 +10534,82 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             and strict_fraction <= split_guard_max_strict_fraction
         )
 
+    def make_factorized_guard(
+        projection: Tuple[int, ...],
+        min_count: int,
+        max_strict_fraction: float,
+        *,
+        base_strict_only: bool,
+    ) -> np.ndarray:
+        counts = np.zeros(
+            (bucket_count,) * len(projection) + (mode_count,),
+            dtype=np.int64,
+        )
+        for bucket_rows, labels in train_split_buckets:
+            for row, label in zip(bucket_rows, labels):
+                if base_strict_only and lut4[
+                    int(row[0]),
+                    int(row[1]),
+                    int(row[2]),
+                    int(row[3]),
+                ] != 2:
+                    continue
+                counts[
+                    tuple(int(row[index]) for index in projection) + (int(label),)
+                ] += 1
+        guard = np.zeros((bucket_count,) * len(projection), dtype=np.bool_)
+        for index in np.ndindex(guard.shape):
+            bucket_counts = counts[index]
+            total = int(np.sum(bucket_counts))
+            strict_fraction = bucket_counts[2] / float(total) if total else 1.0
+            guard[index] = (
+                total >= min_count and strict_fraction <= max_strict_fraction
+            )
+        return guard
+
+    factor_guard_specs = (
+        (
+            "factor_vote56b",
+            ((0, 1, 2, 3), (4, 5, 6), (0, 4, 6), (2, 5, 6)),
+            3,
+            factor_guard56_min_count,
+            factor_guard56_max_strict_fraction,
+            False,
+        ),
+        (
+            "factor_vote80b",
+            ((0, 2, 4, 6), (1, 3, 5, 6), (0, 1, 4), (2, 5, 6)),
+            2,
+            factor_guard80_min_count,
+            factor_guard80_max_strict_fraction,
+            True,
+        ),
+    )
+    factor_guard_variants = []
+    for (
+        variant,
+        projections,
+        vote_threshold,
+        min_count,
+        max_strict_fraction,
+        base_strict_only,
+    ) in factor_guard_specs:
+        guards = tuple(
+            make_factorized_guard(
+                tuple(projection),
+                min_count,
+                max_strict_fraction,
+                base_strict_only=base_strict_only,
+            )
+            for projection in projections
+        )
+        guard_bytes = sum(
+            bucket_count ** len(projection) / 8.0 for projection in projections
+        )
+        factor_guard_variants.append(
+            (variant, projections, vote_threshold, guards, guard_bytes)
+        )
+
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
     mode_touch = {}
     for mode in modes:
@@ -10603,6 +10709,18 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         summary_core_bucket = _ca_wiki_weighted_signal_bucket(trace[13])
         source_core_bucket = _ca_wiki_weighted_signal_bucket(trace[14])
         agreement_bucket = _ca_wiki_weighted_signal_bucket(trace[15])
+        split_buckets = np.stack(
+            (
+                weighted_error_bucket,
+                core_conflict_bucket,
+                weighted_stale_bucket,
+                parser_miss_bucket,
+                summary_core_bucket,
+                source_core_bucket,
+                agreement_bucket,
+            ),
+            axis=1,
+        ).astype(np.int64)
         base_predicted = np.array(
             [
                 lut4[
@@ -10696,6 +10814,36 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum(downgrade_mask)),
             )
         )
+        for (
+            variant,
+            projections,
+            vote_threshold,
+            factor_guards,
+            factor_guard_bytes,
+        ) in factor_guard_variants:
+            downgrade_votes = np.zeros(claim_count, dtype=np.int64)
+            for projection, factor_guard in zip(projections, factor_guards):
+                downgrade_votes += factor_guard[
+                    tuple(split_buckets[:, index] for index in projection)
+                ].astype(np.int64)
+            factor_predicted = base_predicted.copy()
+            factor_downgrade_mask = (factor_predicted == 2) & (
+                downgrade_votes >= vote_threshold
+            )
+            factor_predicted[factor_downgrade_mask] = 1
+            eval_points.append(
+                make_point(
+                    variant,
+                    seed,
+                    teacher,
+                    factor_predicted,
+                    trace,
+                    classifier4_bytes,
+                    factor_guard_bytes,
+                    14,
+                    int(np.sum(factor_downgrade_mask)),
+                )
+            )
         split_lut_predicted = np.array(
             [
                 lut7[
@@ -10753,7 +10901,17 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "baseline_4d",
             "coverage_lut5d",
             "split_guard7d",
+            "factor_vote56b",
+            "factor_vote80b",
             "split_lut7d",
         ),
         points=tuple(eval_points),
     )
+
+
+def run_ca_wiki_cell_paragraph_factorized_guard_sweep(
+    **kwargs: object,
+) -> CAWikiCellParagraphFactorizedGuardResult:
+    """Run the paragraph confidence sweep with factorized guard variants."""
+
+    return run_ca_wiki_cell_paragraph_split_confidence_sweep(**kwargs)
