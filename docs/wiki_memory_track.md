@@ -267,6 +267,18 @@ blocks with sparse false-enable still 0.00%. The next control variable is no
 longer just sharing radius; it is a robust local guard over win threshold,
 sharing radius, and loss decay/tolerance.
 
+The held-out loss-tolerance audit isolates the 512-page/radius-1 learned choice
+and compares strict `loss=0` against tolerant `loss=1` on seeds 1201, 1301,
+1401, and 1501. The strict gate has one dense-on failure: seed 1501 at 75%
+dense drops to 0.00% shared dense coverage on a 99/1 dense wins/losses trace.
+The tolerant gate repairs that row to 100.00%, raises mean dense-on coverage
+from 87.50% to 100.00%, keeps 25% dense off, and keeps max sparse shared
+false-enable at 0.00%. A high-update-noise check on seed 1501 with revision
+updates at 80% and cluster updates at 60% keeps both `loss=0` and `loss=1` at
+100.00% dense-on coverage with 0.00% sparse false-enable. This is still not a
+full stability proof, but it turns the previous failure into a named regression
+test.
+
 ## Kill Criteria
 
 This track is not useful if:

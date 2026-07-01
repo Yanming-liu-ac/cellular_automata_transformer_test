@@ -445,6 +445,16 @@ at 0.00%. This is a better CA-chip shape than a global heuristic, but it still
 needs a wider seed/noise audit and a learned decay rule before it can be called
 stable.
 
+A first regression-style audit now exists for that failure mode. It fixes the
+learned 512-page/radius-1 geometry and compares `loss=0` with `loss=1` across
+seeds 1201, 1301, 1401, and 1501. The strict gate has one dense-on failure and
+87.50% mean dense-on coverage; the tolerant gate has zero dense-on failures,
+100.00% mean dense-on coverage, zero off-region enables, and 0.00% max sparse
+shared false-enable. The same script checks seed1501 under high update noise
+with revision updates at 80% and cluster updates at 60%; both gates stay at
+100.00% dense-on coverage and 0.00% sparse false-enable. The result is narrow,
+but it gives the track a concrete regression test before adding loss decay.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

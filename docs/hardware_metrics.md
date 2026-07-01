@@ -324,6 +324,17 @@ trips the guard because `loss <= 1` restores 100% learned dense coverage with
 0.00% sparse false-enable. The next hardware state should test a learned
 loss-decay field and a larger held-out seed/noise audit.
 
+The first loss-tolerance audit fixes the 512-page/radius-1 geometry and tests
+seeds 1201, 1301, 1401, and 1501. Strict `loss=0` has one dense-on failure,
+87.50% mean dense-on coverage, zero off-region enables, and 0.00% max sparse
+shared false-enable. Tolerant `loss=1` has zero dense-on failures, 100.00% mean
+dense-on coverage, zero off-region enables, and the same 0.00% max sparse
+false-enable. In a seed1501 high-update-noise case with revision updates at 80%
+and cluster updates at 60%, both gates keep 100.00% dense-on coverage and
+0.00% sparse false-enable. The hardware implication is that one extra low-bit
+comparison state can remove the observed brittle gate without increasing
+measured false-enable on this audit.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

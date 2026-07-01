@@ -488,6 +488,15 @@ restores 100% learned dense coverage while sparse false-enable remains 0.00%.
 The next step is to expand the held-out seed/noise audit and then learn the win
 threshold jointly with loss decay, not just a fixed loss tolerance.
 
+The first expanded audit is now a fixed 512-page/radius-1 regression test over
+seeds 1201, 1301, 1401, and 1501. Strict `loss=0` has one dense-on failure and
+87.50% mean dense-on coverage; tolerant `loss=1` has zero dense-on failures,
+100.00% mean dense-on coverage, zero off-region enables, and 0.00% max sparse
+shared false-enable. A seed1501 high-update-noise case with revision 80% and
+cluster 60% also keeps 100.00% dense-on coverage and 0.00% sparse false-enable.
+The next audit should widen the seed set and randomize noisy update regimes
+rather than only checking one named stress point.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
