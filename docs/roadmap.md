@@ -212,8 +212,11 @@ Unified efficiency profile:
   707.8KB of on-chip state.
 - The compact128 CSA/HCA profile raises local traffic to about
   52.28KB/event but lowers on-chip state to about 451.8KB.
-- The current rare128 CSA/HCA profile keeps local traffic about 52.28KB/event
+- The previous rare128 CSA/HCA profile keeps local traffic about 52.28KB/event
   and lowers on-chip state further to about 354.6KB.
+- The current joint128 profile adds learned probe/fanout control metadata to
+  rare128. It keeps local traffic about 52.28KB/event and raises on-chip state
+  only to about 356.9KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -221,9 +224,9 @@ Tile/floorplan profile:
 
 - The first chip mapping proxy uses 64 cells/tile, 16KB local SRAM/tile, and 32
   local bytes/cycle/tile.
-- With the current rare128 CSA/HCA-aware state, a 32-tile fabric now fits at
-  about 69.3% SRAM utilization and requires 23 16KB state tiles.
-- A 64-tile fabric stores the same state in about 34.6% of local SRAM.
+- With the current joint128 CSA/HCA-aware state, a 32-tile fabric now fits at
+  about 69.7% SRAM utilization and requires 23 16KB state tiles.
+- A 64-tile fabric stores the same state in about 34.9% of local SRAM.
 - At a 1M synthetic events/s target, aggregate local bandwidth utilization is
   about 5.2% on 32 tiles and about 2.6% on 64 tiles under the proxy assumptions.
 - This defines a budget for learned rules and richer output heads; it is not

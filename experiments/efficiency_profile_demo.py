@@ -14,6 +14,7 @@ from cellular_transformer.cellular_moe import CellularMoE, CellularMoEConfig
 from cellular_transformer.efficiency import (
     compact_csa_hca_context_budget,
     compare_to_transformer_kv,
+    joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
     wide_csa_hca_context_budget,
 )
@@ -49,7 +50,8 @@ def main() -> None:
     print()
     wide_context_budget = wide_csa_hca_context_budget()
     compact_context_budget = compact_csa_hca_context_budget()
-    context_budget = rare_directory_csa_hca_context_budget()
+    rare_context_budget = rare_directory_csa_hca_context_budget()
+    context_budget = joint_control_csa_hca_context_budget()
     headers = [
         "profile",
         "moe_ticks",
@@ -70,7 +72,8 @@ def main() -> None:
         ("legacy", None),
         ("wide64", wide_context_budget),
         ("compact128", compact_context_budget),
-        ("rare128", context_budget),
+        ("rare128", rare_context_budget),
+        ("joint128", context_budget),
     ):
         for moe_ticks in (1, 2, 4, 8):
             rows.append((label, moe_ticks, maybe_context))
@@ -109,7 +112,7 @@ def main() -> None:
         context_summary=context_budget,
     )
     harc = comparison.harc
-    print("Detailed rare-directory CSA/HCA-aware profile:")
+    print("Detailed joint-control rare-directory CSA/HCA-aware profile:")
     print(f"  exact_query_fraction={harc.exact_query_fraction:0.3f}")
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
@@ -121,8 +124,10 @@ def main() -> None:
     print(f"  hca_summary_state={format_bytes(harc.hca_summary_state_bytes)}")
     print(f"  csa_block_summary_state={format_bytes(harc.csa_block_summary_state_bytes)}")
     print(f"  csa_directory_state={format_bytes(harc.csa_directory_state_bytes)}")
+    print(f"  control_lut_state={format_bytes(harc.control_lut_state_bytes)}")
     print(f"  hca_summary_read_bytes/event={format_bytes(harc.hca_summary_read_bytes_per_event)}")
     print(f"  hca_summary_update_bytes/event={format_bytes(harc.hca_summary_update_bytes_per_event)}")
+    print(f"  control_lut_read_bytes/event={format_bytes(harc.control_lut_read_bytes_per_event)}")
     print(f"  csa_block_score_bytes/event={format_bytes(harc.csa_block_score_bytes_per_event)}")
     print(f"  csa_directory_read_bytes/event={format_bytes(harc.csa_directory_read_bytes_per_event)}")
     print(f"  csa_token_read_bytes/event={format_bytes(harc.csa_token_read_bytes_per_event)}")
@@ -135,6 +140,7 @@ def main() -> None:
     print("- wide64 is the earlier 512KB block-summary baseline.")
     print("- compact128 uses 256KB block summaries plus a 12KB lazy-epoch HCA summary.")
     print("- rare128 uses 128KB block summaries plus a small exact rare-token directory.")
+    print("- joint128 adds learned probe/fanout control metadata to rare128.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")
 

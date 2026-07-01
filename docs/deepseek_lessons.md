@@ -462,6 +462,10 @@ bank-spread, and saturation count to skip rare-directory probes for strong hot
 tokens, cutting reference directory traffic from 3.25B/query to 0.50B/query
 while retaining about 97.7% repeated-name coverage. The CA chip should therefore
 treat HCA uncertainty as a routing signal for exact sparse memory.
+When this control plane is folded into the unified event profile, the current
+joint128 budget still uses about 52.28KB/event and about 356.9KB of on-chip
+state. That is the right direction for a CA-first chip: learned routing improves
+recall behavior without turning into a large dense state or a global read path.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

@@ -86,6 +86,7 @@ from .efficiency import (
     HarcEventEfficiency,
     compare_to_transformer_kv,
     current_csa_hca_context_budget,
+    joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
     wide_csa_hca_context_budget,
 )
@@ -200,6 +201,7 @@ __all__ = [
     "propagation_distances",
     "compare_to_transformer_kv",
     "current_csa_hca_context_budget",
+    "joint_control_csa_hca_context_budget",
     "rare_directory_csa_hca_context_budget",
     "wide_csa_hca_context_budget",
     "compare_output_heads",

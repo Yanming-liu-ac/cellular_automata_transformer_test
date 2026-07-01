@@ -540,6 +540,16 @@ about 99.0% coverage at 6.45B/query. The remaining 0.8% false-HCA rate is a
 real recall/traffic knob for the probe LUT, and should be jointly trained with
 fanout and HCA threshold next.
 
+The thirty-fourth sweep closed the accounting loop by promoting the joint
+control state into the unified event profile. The current `joint128` budget keeps
+the rare128 block-summary and exact-directory geometry, adds the 42B fanout LUT,
+40B probe LUT, and about 2.25KB of per-row spread metadata, and accounts for
+about 0.17B/event of control-LUT reads. Local traffic stays about 52.28KB/event,
+while on-chip state rises only from 354.6KB to about 356.9KB. In the 32-tile
+floorplan proxy, state utilization moves from 69.3% to about 69.7%, still
+requiring 23 state tiles. This means learned probe/fanout control fits inside
+the existing CA-chip budget instead of invalidating it.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
