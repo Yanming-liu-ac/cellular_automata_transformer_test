@@ -293,10 +293,11 @@ by counting local fact slots. The tag alone is not sufficient: at 25% dense
 pages it would enable the small tile and reduce recall to 97.71%. With the
 local 128-query / 64-update paired online guard, recall remains 99.02%; at 50%
 and 75% dense pages the same tag enables the dense path and keeps the 72.94%
-and 65.62% flat-read reductions. The guard requires a 2-point gain and zero
-dense losses in the paired probe window, so it acts like a small canary
-workload or online agreement counter rather than a global oracle. This
-separates the hardware roles cleanly: density tag wakes the alternative
+and 65.62% flat-read reductions. The guard uses two 4-bit saturating counters
+per 16-page guard block, so the 2,048-page sweep adds only 128B of counter
+state. The hand rule is `c_win >= 3` and `c_loss == 0`, making the guard a
+small canary workload or online agreement counter rather than a global oracle.
+This separates the hardware roles cleanly: density tag wakes the alternative
 geometry, quality guard commits it.
 
 ## Retrieval-Lane Metrics

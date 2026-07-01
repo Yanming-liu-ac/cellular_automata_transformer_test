@@ -454,14 +454,15 @@ tags generated during normal summary refresh.
 The refresh-derived density tag version now exists. Two-bit tags from summary
 refresh identify sparse tag-1 and dense tag-3 regions, but tag-only switching
 can still regress recall on small dense regions. The current policy is therefore
-tag plus paired online guard. The current NumPy guard uses a 128-query /
-64-update probe window, presents the same queries to baseline and dense-tile
-routes, requires at least a 2-point recall gain, and blocks any dense loss. It
-rejects the 25% dense small-region case, where the probe has 0 wins and 0
-losses, and enables the 50% and 75% dense cases, where it sees 20 and 42 dense
-wins with zero losses. The next step is to make the counters persistent per
-density-tagged block and then learn the tag/guard threshold instead of
-hand-setting it.
+tag plus low-bit paired online guard. The current NumPy guard uses a
+128-query / 64-update probe window, presents the same queries to baseline and
+dense-tile routes, and stores dense wins/losses in two 4-bit saturating
+counters per 16-page guard block. The hand rule is `c_win >= 3` and
+`c_loss == 0`, adding 128B of counter state for 2,048 pages. It rejects the
+25% dense small-region case, where the counter stays `0/0`, and enables the
+50% and 75% dense cases, where 20 and 42 raw dense wins saturate to
+`15/0`. The next step is to feed those counters from a true mixed-region event
+stream and then learn the tag/guard threshold instead of hand-setting it.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

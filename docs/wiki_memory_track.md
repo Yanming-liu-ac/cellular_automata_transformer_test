@@ -225,14 +225,16 @@ that can be emitted during normal summary refresh. With 2-bit tags and an
 regions get tag 3. That is enough to identify dense regions, but not enough to
 choose geometry by itself: at 25% dense pages, density-only thresholding enables
 four-page tiles and drops recall from 99.02% to 97.71%. The guard is now a
-paired online counter: during a 128-query / 64-update probe window it presents
-the same queries to the baseline and dense-tile routes, requires at least a
-2-point dense recall gain, and rejects any dense loss where baseline hits but
-dense misses. At 25% dense pages the dense route has no wins or losses and is
-rejected, keeping 99.02% recall. At 50% and 75% dense pages the probe sees
-20 and 42 dense wins with zero losses, so the same tag plus guard enables dense
-tiles and recovers 99.22% and 99.32% recall while cutting flat reads by 72.94%
-and 65.62%.
+low-bit paired online counter: during a 128-query / 64-update probe window it
+presents the same queries to the baseline and dense-tile routes, saturates
+dense wins and dense losses into 4-bit counters, and enables dense tiles only
+when `c_win >= 3` and `c_loss == 0`. At 25% dense pages the counter stays
+`0/0` and is rejected, keeping 99.02% recall. At 50% and 75% dense pages the
+raw probe sees 20 and 42 dense wins with zero losses; both saturate to
+`c_win=15, c_loss=0`, so the same tag plus guard enables dense tiles and
+recovers 99.22% and 99.32% recall while cutting flat reads by 72.94% and
+65.62%. The counter state is only 128B for 2,048 pages when stored per
+16-page guard block.
 
 ## Kill Criteria
 

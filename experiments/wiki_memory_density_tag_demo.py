@@ -30,7 +30,11 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         f"tag_bits={result.density_tag_bits}, "
         f"region_dir={result.region_directory_cells_per_query} cells/query, "
         f"probe={result.quality_probe_queries}q/{result.quality_probe_updates}u/"
-        f"{100.0 * result.quality_probe_min_gain:0.1f}%"
+        f"{100.0 * result.quality_probe_min_gain:0.1f}%, "
+        f"guard_counter={result.guard_counter_bits}b/"
+        f"{result.guard_counter_block_pages}p/"
+        f"need{result.guard_required_win_count}, "
+        f"counter_state={format_bytes(result.guard_counter_state_bytes)}"
     )
     headers = [
         "dense%",
@@ -43,6 +47,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         "p_dense",
         "p_win",
         "p_loss",
+        "c_win",
+        "c_loss",
         "base",
         "tag_acc",
         "guard",
@@ -70,6 +76,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
             fmt_pct(point.dense_probe_dense_recall),
             f"{point.dense_probe_dense_wins}",
             f"{point.dense_probe_dense_losses}",
+            f"{point.dense_probe_win_counter}",
+            f"{point.dense_probe_loss_counter}",
             fmt_pct(point.baseline_overall_recall),
             fmt_pct(point.tag_only_overall_recall),
             fmt_pct(point.guarded_overall_recall),
@@ -88,8 +96,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
     print("Interpretation:")
     print("- s_tag and d_tag are low-bit tags from refresh-visible fact density.")
     print("- tag_on applies dense tiles from the density threshold alone.")
-    print("- guard_on requires local probe recall gain and zero dense-tile losses.")
-    print("- p_base/p_dense and p_win/p_loss show dense-region online guard counters.")
+    print("- guard_on uses low-bit saturated counters: c_win >= need and c_loss == 0.")
+    print("- p_base/p_dense and p_win/p_loss show raw dense-region paired-probe evidence.")
     print("- tag_cut and guard_cut compare read traffic with flat scan.")
 
 

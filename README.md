@@ -129,8 +129,8 @@ The first experiments compare:
   local tiles and restore recall under 32 facts/page pressure;
 - density-aware routing-tile sweeps that enable small tiles only when a local
   rolling probe shows enough recall gain to justify the extra state;
-- refresh-derived density-tag sweeps showing why low-bit density tags need an
-  online agreement guard before switching routing geometry;
+- refresh-derived density-tag sweeps showing why low-bit density tags need a
+  low-bit online agreement guard before switching routing geometry;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;
