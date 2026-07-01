@@ -454,6 +454,19 @@ the strongest evidence so far that the CA-first chip target should start as a
 mutable compiled-wiki maintenance fabric rather than a full decoder
 replacement.
 
+The text-source trace audit replaces the integer claim values with controlled
+source snippets and compiled markdown summaries. Raw source cells now contain
+status text fields, source edits rewrite those snippets, and the compiled
+summary is a markdown sentence that can lag the raw sources. A lightweight
+parser extracts the status field and feeds the same three local counters:
+retrieval errors, contradiction probes, and stale-source probes. The chip-side
+controller is unchanged: three 2-bit buckets index a 16.00B LUT, then the
+1.125B provenance repair table selects the local repair policy. On four
+held-out text traces, accuracy is 86.62-87.89%, strict recall is
+99.46-100.00%, under-strict rate is 4.39-5.37%, and estimated provenance touch
+is 8.39-8.42 cells/event. This is still not open-ended language understanding,
+but it moves the evidence from numeric facts to compiled textual wiki cells.
+
 ## Kill Criteria
 
 This track is not useful if:

@@ -1459,6 +1459,17 @@ cells/event. The relevant chip interpretation is that the CA fabric stores and
 updates the counters beside the claim cell; global model weights are not needed
 to decide when a compiled wiki page needs stricter provenance repair.
 
+The text-source version keeps the same hardware-facing budget while changing
+the label source. Raw source cells are controlled text snippets, compiled claim
+summaries are markdown lines, and a lightweight parser feeds the same three
+2-bit local audit counters. The classifier LUT remains 16.00B and the total
+controller LUT state remains 17.125B. On four 1024-claim held-out text traces,
+strict recall is 99.46-100.00%, under-strict rate is 4.39-5.37%, and estimated
+provenance traffic is 8.39-8.42 touched cells/event. This does not yet price
+the parser or text compiler hardware/software path; it prices the CA-side
+state and policy decision once text edits have been compiled into local audit
+counters.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

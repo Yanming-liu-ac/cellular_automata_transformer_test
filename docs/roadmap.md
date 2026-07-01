@@ -617,6 +617,14 @@ The next roadmap item is to connect this diagnostic to real compiled markdown
 pages or generated source snippets, so contradictions and stale summaries come
 from text-level edits instead of synthetic integer facts.
 
+The first text-level version now exists for controlled snippets. Raw source
+cells are short status sentences, compiled summaries are markdown lines, and a
+lightweight parser produces the same local audit counters. The controller still
+uses a 16B LUT and passes 4/4 held-out traces with strict recall at or above
+99.46%. The next roadmap item is to replace controlled status fields with
+generated multi-field snippets or real markdown pages, then test whether the
+same low-bit counters survive parser noise and ambiguous edits.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
