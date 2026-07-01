@@ -423,6 +423,79 @@ class CsaHcaRareDirectoryAdaptivePolicyResult:
 
 
 @dataclass(frozen=True)
+class LowBitRareDirectoryFanoutLUT:
+    """Low-bit LUT for rare-directory read fanout.
+
+    The LUT is indexed by metadata visible to a CA memory tile: stored directory
+    entry count, coarse block-span class, and overlap with the CSA-selected
+    blocks. Values are fanout counts, not scores.
+    """
+
+    fanouts: Tuple[int, ...]
+    max_entries: int = 6
+    span_thresholds: Tuple[int, ...] = (64, 128, 256)
+    max_overlap_bucket: int = 3
+    fanout_bits: int = 3
+
+    def __post_init__(self) -> None:
+        if self.max_entries < 0:
+            raise ValueError("max_entries must be non-negative")
+        if self.max_overlap_bucket < 0:
+            raise ValueError("max_overlap_bucket must be non-negative")
+        if self.fanout_bits not in (2, 3, 4, 8):
+            raise ValueError("fanout_bits must be one of 2, 3, 4, 8")
+        if any(int(threshold) < 0 for threshold in self.span_thresholds):
+            raise ValueError("span thresholds must be non-negative")
+        expected = (self.max_entries + 1) * (len(self.span_thresholds) + 1) * (
+            self.max_overlap_bucket + 1
+        )
+        if len(self.fanouts) != expected:
+            raise ValueError("fanout table length does not match metadata dimensions")
+        max_value = (1 << self.fanout_bits) - 1
+        for fanout in self.fanouts:
+            if not 0 <= int(fanout) <= max_value:
+                raise ValueError("fanout outside fanout_bits range")
+            if int(fanout) > self.max_entries:
+                raise ValueError("fanout cannot exceed max_entries")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.fanouts) * self.fanout_bits / 8
+
+    def predict(self, directory_blocks: np.ndarray, base_selected: np.ndarray) -> int:
+        index = _rare_fanout_lut_index(
+            directory_blocks=directory_blocks,
+            base_selected=base_selected,
+            max_entries=self.max_entries,
+            span_thresholds=self.span_thresholds,
+            max_overlap_bucket=self.max_overlap_bucket,
+        )
+        entry_count = min(len(directory_blocks), self.max_entries)
+        return min(int(self.fanouts[index]), entry_count)
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryLearnedFanoutResult:
+    """Trained fanout-LUT evaluation for the rare-token directory."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_guard: bool
+    directory_blocks_per_token: int
+    coverage_target: float
+    train_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    lut: LowBitRareDirectoryFanoutLUT
+    points: Tuple[CsaHcaRareDirectoryAdaptivePolicyPoint, ...]
+
+
+@dataclass(frozen=True)
 class HcaSummaryQualityPoint:
     """One global-summary width in the HCA-like quality sweep."""
 
@@ -1673,6 +1746,281 @@ def run_csa_hca_rare_directory_adaptive_policy_sweep(
     )
 
 
+def train_rare_directory_fanout_lut(
+    train_scenarios: Tuple[str, ...] = (
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 8,
+    directory_guard: bool = True,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    seed: int = 19,
+) -> Tuple[LowBitRareDirectoryFanoutLUT, int]:
+    """Train a low-bit fanout LUT from self-supervised coverage labels."""
+
+    if len(train_scenarios) == 0:
+        raise ValueError("train_scenarios must not be empty")
+    if hca_threshold <= 0:
+        raise ValueError("hca_threshold must be positive")
+    if directory_blocks_per_token < 0:
+        raise ValueError("directory_blocks_per_token must be non-negative")
+    if min_read_blocks_per_token < 0:
+        raise ValueError("min_read_blocks_per_token must be non-negative")
+    if not 0.0 <= coverage_target <= 1.0:
+        raise ValueError("coverage_target must be in [0, 1]")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+    table_size = (directory_blocks_per_token + 1) * (len(span_thresholds) + 1) * (
+        max_overlap_bucket + 1
+    )
+    coverage_sums = np.zeros((table_size, directory_blocks_per_token + 1), dtype=np.float64)
+    sample_counts = np.zeros(table_size, dtype=np.int32)
+
+    for scenario_index, scenario in enumerate(train_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+
+        for token in query_tokens:
+            token = int(token)
+            directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+            if len(directory_blocks) == 0:
+                continue
+            route_hca = global_summary.estimate(token) >= hca_threshold
+            if directory_guard:
+                route_hca = False
+            if route_hca:
+                continue
+
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            block_counts = exact_counts.get(token)
+            if block_counts is None:
+                continue
+
+            feature = _rare_fanout_lut_index(
+                directory_blocks=directory_blocks,
+                base_selected=base_selected,
+                max_entries=directory_blocks_per_token,
+                span_thresholds=span_thresholds,
+                max_overlap_bucket=max_overlap_bucket,
+            )
+            sample_counts[feature] += 1
+            entry_count = min(len(directory_blocks), directory_blocks_per_token)
+            last_coverage = 0.0
+            for read_limit in range(entry_count + 1):
+                selected = np.union1d(base_selected, directory_blocks[:read_limit])
+                last_coverage = _occurrence_coverage(selected, block_counts)
+                coverage_sums[feature, read_limit] += last_coverage
+            for read_limit in range(entry_count + 1, directory_blocks_per_token + 1):
+                coverage_sums[feature, read_limit] += last_coverage
+
+    fanouts = []
+    training_samples = int(np.sum(sample_counts))
+    for feature in range(table_size):
+        entry_count, _, _ = _decode_rare_fanout_lut_index(
+            feature,
+            span_bucket_count=len(span_thresholds) + 1,
+            overlap_bucket_count=max_overlap_bucket + 1,
+        )
+        max_read = min(entry_count, directory_blocks_per_token)
+        min_read = min(max_read, min_read_blocks_per_token)
+        if sample_counts[feature] == 0:
+            fanouts.append(min_read)
+            continue
+
+        avg_coverage = coverage_sums[feature] / sample_counts[feature]
+        chosen = max_read
+        for read_limit in range(min_read, max_read + 1):
+            if avg_coverage[read_limit] >= coverage_target:
+                chosen = read_limit
+                break
+        fanouts.append(chosen)
+
+    return (
+        LowBitRareDirectoryFanoutLUT(
+            fanouts=tuple(int(value) for value in fanouts),
+            max_entries=directory_blocks_per_token,
+            span_thresholds=span_thresholds,
+            max_overlap_bucket=max_overlap_bucket,
+        ),
+        training_samples,
+    )
+
+
+def run_csa_hca_rare_directory_learned_fanout_sweep(
+    train_scenarios: Tuple[str, ...] = (
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 8,
+    directory_guard: bool = True,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 19,
+    eval_seed: int = 37,
+) -> CsaHcaRareDirectoryLearnedFanoutResult:
+    """Train and evaluate a low-bit fanout LUT for rare-directory reads."""
+
+    lut, training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=directory_guard,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        directory_state_bytes = sum(len(blocks) for blocks in directory.values()) * directory_entry_bytes
+        points.append(
+            _evaluate_rare_directory_lut_fanout_point(
+                policy="learned_lut",
+                scenario=scenario,
+                config=config,
+                index=index,
+                global_summary=global_summary,
+                exact_counts=exact_counts,
+                directory=directory,
+                directory_blocks_per_token=directory_blocks_per_token,
+                directory_entry_bytes=directory_entry_bytes,
+                directory_state_bytes=directory_state_bytes,
+                hca_threshold=hca_threshold,
+                directory_guard=directory_guard,
+                lut=lut,
+                min_read_blocks_per_token=min_read_blocks_per_token,
+                recent_blocks=_recent_blocks(config.blocks, config.tail_blocks),
+                query_tokens=query_tokens,
+            )
+        )
+
+    return CsaHcaRareDirectoryLearnedFanoutResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_guard=directory_guard,
+        directory_blocks_per_token=directory_blocks_per_token,
+        coverage_target=coverage_target,
+        train_scenarios=train_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=training_samples,
+        lut=lut,
+        points=tuple(points),
+    )
+
+
 def run_hca_summary_quality_sweep(
     global_widths: Tuple[int, ...] = (512, 1024, 2048, 4096),
     threshold: int = 8,
@@ -2346,6 +2694,163 @@ def _evaluate_rare_directory_adaptive_policy_point(
         token_reads_per_query=token_reads_per_query,
         token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
     )
+
+
+def _evaluate_rare_directory_lut_fanout_point(
+    policy: str,
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    directory_guard: bool,
+    lut: LowBitRareDirectoryFanoutLUT,
+    min_read_blocks_per_token: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+) -> CsaHcaRareDirectoryAdaptivePolicyPoint:
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    repaired_hits = 0
+    repaired_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+    directory_hit_queries = 0
+    directory_entries_seen = 0
+    directory_blocks_read = 0
+    expanded_read_queries = 0
+    min_read_blocks_per_token = min(max(0, int(min_read_blocks_per_token)), directory_blocks_per_token)
+
+    for token in query_tokens:
+        token = int(token)
+        global_estimate = global_summary.estimate(token)
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
+        route_hca = global_estimate >= hca_threshold
+        if directory_guard and directory_blocks_per_token > 0:
+            directory_read_bytes += directory_entry_bytes
+            if directory_hit:
+                route_hca = False
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            selected = recent_blocks
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            read_limit = lut.predict(directory_blocks, base_selected)
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
+            if directory_blocks_per_token > 0 and (directory_guard or lut.max_entries > 0):
+                if directory_guard:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        0,
+                        len(readable_directory_blocks) - 1,
+                    )
+                else:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        1,
+                        len(readable_directory_blocks),
+                    )
+            if directory_hit:
+                directory_hit_queries += 1
+                directory_entries_seen += len(directory_blocks)
+                directory_blocks_read += len(readable_directory_blocks)
+                expanded_read_queries += int(len(readable_directory_blocks) > min_read_blocks_per_token)
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+        repaired_hits += _block_hit(selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    directory_hit_denominator = directory_hit_queries if directory_hit_queries else 1
+    token_reads_per_query = token_reads / query_denominator
+    spread_metadata_state_bytes = len(directory) * 2 / 8
+
+    return CsaHcaRareDirectoryAdaptivePolicyPoint(
+        policy=policy,
+        scenario=scenario,
+        hca_threshold=hca_threshold,
+        directory_guard=directory_guard,
+        directory_blocks_per_token=directory_blocks_per_token,
+        base_read_blocks_per_token=min_read_blocks_per_token,
+        expanded_read_blocks_per_token=lut.max_entries,
+        spread_threshold_blocks=0,
+        fanout_metadata_state_bytes=lut.state_bytes + spread_metadata_state_bytes,
+        directory_state_bytes=directory_state_bytes,
+        avg_directory_entries_per_hit=directory_entries_seen / directory_hit_denominator,
+        avg_directory_read_blocks_per_hit=directory_blocks_read / directory_hit_denominator,
+        expanded_read_rate=expanded_read_queries / directory_hit_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
+
+
+def _rare_fanout_lut_index(
+    directory_blocks: np.ndarray,
+    base_selected: np.ndarray,
+    max_entries: int,
+    span_thresholds: Tuple[int, ...],
+    max_overlap_bucket: int,
+) -> int:
+    entry_count = min(len(directory_blocks), max(0, int(max_entries)))
+    span_bucket = _rare_directory_span_bucket(directory_blocks[:entry_count], span_thresholds)
+    if entry_count == 0:
+        overlap_bucket = 0
+    else:
+        base_set = {int(block) for block in base_selected}
+        overlap = sum(1 for block in directory_blocks[:entry_count] if int(block) in base_set)
+        overlap_bucket = min(overlap, max(0, int(max_overlap_bucket)))
+    span_bucket_count = len(span_thresholds) + 1
+    overlap_bucket_count = max(0, int(max_overlap_bucket)) + 1
+    return (entry_count * span_bucket_count + span_bucket) * overlap_bucket_count + overlap_bucket
+
+
+def _decode_rare_fanout_lut_index(
+    index: int,
+    span_bucket_count: int,
+    overlap_bucket_count: int,
+) -> Tuple[int, int, int]:
+    entry_count = int(index) // (span_bucket_count * overlap_bucket_count)
+    remainder = int(index) % (span_bucket_count * overlap_bucket_count)
+    span_bucket = remainder // overlap_bucket_count
+    overlap_bucket = remainder % overlap_bucket_count
+    return entry_count, span_bucket, overlap_bucket
+
+
+def _rare_directory_span_bucket(
+    directory_blocks: np.ndarray,
+    span_thresholds: Tuple[int, ...],
+) -> int:
+    if len(directory_blocks) <= 1:
+        return 0
+    span = int(np.max(directory_blocks)) - int(np.min(directory_blocks))
+    bucket = 0
+    for threshold in sorted(int(value) for value in span_thresholds):
+        if span >= threshold:
+            bucket += 1
+    return bucket
 
 
 def _adaptive_directory_read_limit(

@@ -411,6 +411,21 @@ in the current 64K-token context is enough to steer the read fanout table. The
 next version should learn the thresholds instead of hand-setting the 128-block
 span.
 
+The first trained fanout LUT replaces the hand threshold with self-supervised
+coverage labels. It uses entry-count, span-class, and CSA-overlap metadata. The
+LUT table itself is only 42B; including per-row spread metadata, the current
+stress runs account for about 2.3KB of fanout metadata:
+
+```text
+learned_lut  rare_burst     coverage=100.0%  dir read=3.25B/query   avg read=1.00 blocks/hit
+learned_lut  split_rare     coverage=99.7%   dir read=6.50B/query   avg read=2.00 blocks/hit
+learned_lut  repeated_name  coverage=98.4%   dir read=12.87B/query  avg read=3.96 blocks/hit
+```
+
+Compared with the hand `span2to5` point, the learned LUT keeps the same
+repeated-name coverage but cuts directory reads from 16.25B/query to
+12.87B/query by using CSA-overlap as an extra visible feature.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

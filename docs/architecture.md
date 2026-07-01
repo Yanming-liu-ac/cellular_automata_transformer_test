@@ -316,6 +316,14 @@ coverage to about 93.0% at 13.0B/query of directory reads, while
 trained router, but it proves the control signal can be compact directory
 metadata rather than a transformer-like dense attention pass.
 
+The next sweep trains that control signal. A 42B low-bit LUT indexed by
+directory entry count, span class, and CSA-overlap is trained from
+self-supervised coverage labels. With guarded threshold-8 routing it reaches
+about 98.4% repeated-name coverage at 12.87B/query, while split rare tokens stay
+at about 99.7% coverage with only 6.50B/query. This is the first concrete
+trainable control-plane block for the exact sparse lane: training changes a tiny
+metadata table, not a dense attention mechanism.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

@@ -14,6 +14,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
     run_csa_hca_rare_directory_adaptive_policy_sweep,
+    run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
@@ -455,6 +456,48 @@ def main() -> None:
     print("- The span2toN rules are hardware-style metadata proxies, not oracles.")
     print("- It keeps base fanout at 2 and expands only when stored rare blocks are widely spread.")
     print("- This is the first concrete target for replacing the hand fanout with a trained LUT.")
+    print()
+
+    learned_fanout = run_csa_hca_rare_directory_learned_fanout_sweep()
+    print("Learned low-bit rare-directory fanout LUT")
+    print(
+        f"training_samples={learned_fanout.training_samples}, "
+        f"target={fmt_pct(learned_fanout.coverage_target)}, "
+        f"lut_state={format_bytes(learned_fanout.lut.state_bytes)}, "
+        f"metadata_features=entry_count/span/CSA-overlap"
+    )
+    headers = [
+        "scenario",
+        "false_hca",
+        "coverage",
+        "avg_rd",
+        "exp_r",
+        "dir_rd",
+        "meta",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 126)
+    for point in learned_fanout.points:
+        if point.scenario not in ("zipf_reference", "rare_burst", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.scenario,
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.avg_directory_read_blocks_per_hit:0.2f}",
+            fmt_pct(point.expanded_read_rate),
+            format_bytes(point.directory_read_bytes_per_query),
+            format_bytes(point.fanout_metadata_state_bytes),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Learned fanout interpretation:")
+    print("- The LUT is trained from self-supervised coverage labels and uses no token identity.")
+    print("- CSA-overlap lets it spend fewer directory reads than the hand span2to5 rule.")
+    print("- This is the first trainable control-plane block for the rare exact-memory lane.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

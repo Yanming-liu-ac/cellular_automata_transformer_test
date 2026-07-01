@@ -517,6 +517,17 @@ stress, the guarded threshold-8 `span2to4` point reaches about 93.0% coverage at
 tokens, the same rule reads three blocks per hit and keeps 100.0% coverage. This
 turns fanout into a low-bit control problem instead of a fixed `dir_k` choice.
 
+The thirty-second sweep trains the fanout control table from self-supervised
+coverage labels. Training uses exact block counts to choose the smallest fanout
+that reaches the target coverage for a metadata bucket; inference uses only
+entry count, span class, and overlap with the CSA-selected blocks. The resulting
+112-entry 3-bit LUT is 42B. With guarded threshold-8 routing, it gets 100.0%
+coverage on rare-burst stress at 3.25B/query, 99.7% on split-rare stress at
+6.50B/query, and 98.4% on repeated-name stress at 12.87B/query. This matches
+the hand `span2to5` repeated-name coverage with materially lower directory
+traffic because the LUT can see when CSA already selected one of the rare
+blocks.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

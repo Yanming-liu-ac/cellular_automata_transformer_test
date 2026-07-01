@@ -121,6 +121,10 @@ Compressed block-index result:
   large context region. On repeated-name stress, guarded `span2to4` reaches
   about 93.0% coverage at 13.0B/query, `span2to5` reaches about 98.4% at
   16.25B/query, and full `span2to6` reaches 100.0% at 19.5B/query.
+- The first trained fanout LUT uses self-supervised coverage labels and visible
+  entry-count/span/CSA-overlap metadata. Its 112-entry 3-bit table is 42B. It
+  reaches about 98.4% repeated-name coverage at 12.87B/query, and about 99.7%
+  split-rare coverage at 6.50B/query.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -258,9 +262,9 @@ Next retrieval work:
 - replace the hand-set threshold-15 HCA gate, fixed `dir_k=6` directory fanout,
   and always-off guard with learned or metadata-driven admission/fanout/guard
   policies, then re-run the bursty rare-token and repeated-name stress tests.
-- train the current span-class fanout LUT from self-supervised labels and add
-  recency/query-context features so the 2->4/5/6 thresholds are learned rather
-  than hand-set.
+- add recency/query-context features to the trained fanout LUT and then train a
+  joint admission/fanout/guard policy so HCA threshold, exact-directory override,
+  and read budget are one hardware control table.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

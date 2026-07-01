@@ -450,6 +450,12 @@ routing, a 2->4 expansion reaches about 93.0% repeated-name coverage at
 coverage at 19.5B/query. The lesson for the CA chip is that exact sparse recall
 needs a learned control plane, but that control plane can be a few low-bit
 metadata classes rather than a dense attention module.
+The trained fanout LUT strengthens that point: a 42B table using entry-count,
+span, and CSA-overlap metadata reaches about 98.4% repeated-name coverage at
+12.87B/query, matching the hand 2->5 coverage with less directory traffic. This
+is close to the CSA/HCA design style we want: large behavior changes come from
+small learned routing tables attached to structured memory, not from making
+every token attend to every prior token.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about
