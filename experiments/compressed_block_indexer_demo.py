@@ -18,6 +18,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_joint_threshold_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
+    run_csa_hca_rare_directory_bloom_bank_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_sweep,
     run_csa_hca_rare_directory_policy_sweep,
@@ -798,6 +799,52 @@ def main() -> None:
     print("- Hash choice changes hot-token false positives enough to matter for HCA efficiency.")
     print("- The sidecar should choose or learn hash salts against hot-token queries, not only global FPR.")
     print("- The next layout test should compare modulo banking with hash-based bank assignment.")
+    print()
+
+    bank = run_csa_hca_rare_directory_bloom_bank_sweep()
+    print("Bloom sidecar bank-mapping sweep")
+    print(
+        f"salt_count={bank.salt_count}, "
+        f"bits_per_entry={bank.bits_per_entry}, "
+        f"k={bank.hash_count}, "
+        f"banks={bank.bank_count}"
+    )
+    headers = [
+        "mode",
+        "mean_hca",
+        "mean_hotfp",
+        "mean_conf",
+        "worst_hca",
+        "best_hca",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 94)
+    for mode in bank.bank_modes:
+        mode_points = [point for point in bank.points if point.bank_mode == mode]
+        mean_hca = sum(point.hca_query_rate for point in mode_points) / len(mode_points)
+        mean_hot_fp = (
+            sum(point.hot_sidecar_false_positive_rate for point in mode_points) / len(mode_points)
+        )
+        mean_conflict = (
+            sum(point.query_bank_conflict_rate for point in mode_points) / len(mode_points)
+        )
+        worst = min(mode_points, key=lambda point: point.hca_query_rate)
+        best = max(mode_points, key=lambda point: point.hca_query_rate)
+        row = [
+            mode,
+            fmt_pct(mean_hca),
+            fmt_pct(mean_hot_fp),
+            fmt_pct(mean_conflict),
+            fmt_pct(worst.hca_query_rate),
+            fmt_pct(best.hca_query_rate),
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Bloom bank interpretation:")
+    print("- Bank mapping does not change Bloom false positives, but it changes read-port pressure.")
+    print("- by_hash assigns each hash function to its own bank and removes same-query bank conflicts here.")
+    print("- This is the first clean SRAM-layout win for the sidecar path.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

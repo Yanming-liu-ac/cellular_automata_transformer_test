@@ -516,6 +516,10 @@ The hash-salt robustness sweep makes that even more concrete: the same sidecar
 geometry can be good or mediocre depending on which hot tokens collide with the
 rare-directory Bloom state. A CA chip needs compiler-selected or trained
 metadata layouts, not fixed hashes chosen outside the model loop.
+The bank-mapping sweep separates a layout problem from a model problem:
+`by_hash` banking removes same-query sidecar bank conflicts without changing the
+Bloom contents or routing labels. This is the CA version of a fused-kernel
+lesson: the data layout is part of the model system.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

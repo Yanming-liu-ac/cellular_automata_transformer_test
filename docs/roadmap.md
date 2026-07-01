@@ -155,6 +155,10 @@ Compressed block-index result:
   reference HCA routing averages 82.9%, ranges from 79.7% to 84.6%, and the
   worst salt has about 5.9% hot-token false positives. Salt choice must be a
   compiler/training knob, not a fixed constant.
+- Bank mapping is now separated from Bloom false positives. For the same
+  sidecar, `by_hash` banking removes same-query bank conflicts, while modulo and
+  hash-slot banking average about 36-38% query conflicts. This is a pure layout
+  improvement rather than a model-state change.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -292,9 +296,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- compare physical Bloom sidecar bank mappings and salt-selection objectives:
-  minimize hot-token false positives, bank conflicts, and update pressure
-  jointly.
+- add a salt-selection objective that minimizes hot-token false positives under
+  the `by_hash` bank layout, then measure update scheduling pressure per tile.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

@@ -389,6 +389,13 @@ to 84.6%. The worst salt has about 5.9% hot-token sidecar false positives. The
 CA compiler or training loop should therefore pick hash salts and bank mappings
 with the HCA hot path in the objective.
 
+Bank mapping gives a layout-side fix for one part of that problem. Keeping the
+same `8 bits/entry, k=3` Bloom sidecar and 16 salts, modulo banking has about
+36.3% average query bank conflict, while assigning each hash function to its own
+bank (`by_hash`) removes same-query bank conflicts without changing false
+positives or HCA routing. This is a CA-chip-friendly result: some efficiency
+comes from the memory fabric layout, not from adding model state.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

@@ -546,6 +546,21 @@ This turns hash choice into a first-class hardware/compiler knob. The sidecar
 should choose salts against the hot-token query distribution, not only against
 global Bloom false-positive rate.
 
+The first bank-mapping sweep compares the same `8 bits/entry, k=3, 8 banks`
+sidecar across 16 salts:
+
+```text
+modulo    mean HCA=82.9%  mean hot_fp=2.1%  mean q_bank_conflict=36.3%  HCA range=79.7%-84.6%
+by_hash   mean HCA=82.9%  mean hot_fp=2.1%  mean q_bank_conflict=0.0%   HCA range=79.7%-84.6%
+hash_slot mean HCA=82.9%  mean hot_fp=2.1%  mean q_bank_conflict=37.6%  HCA range=79.7%-84.6%
+```
+
+`by_hash` gives the first clean layout win: it assigns each Bloom hash function
+to its own bank, so the sidecar keeps the same false-positive behavior but
+removes same-query bank conflicts in this model. The physical caveat is that
+each hash function now needs a banked address path, but that is a local SRAM
+layout issue rather than a model-quality tradeoff.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

@@ -614,6 +614,13 @@ hot-token false positives; the worst salt drops HCA routing to 79.7% with 5.9%
 hot-token false positives and 53.4% query bank conflict. Hash choice and bank
 mapping therefore belong inside the control-plane optimization loop.
 
+The forty-first sweep isolates bank mapping from false positives. With the same
+Bloom geometry and salts, modulo banking averages 36.3% query bank conflict,
+hashing the slot to a bank averages 37.6%, and assigning hash functions to banks
+(`by_hash`) removes same-query bank conflicts in this model. HCA routing and
+hot-token false positives are unchanged because the bit array is unchanged. This
+is the first sidecar result that is purely a memory-layout win.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified
