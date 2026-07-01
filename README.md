@@ -74,6 +74,8 @@ The first experiments compare:
   grouped CA rules, including 1,000-tick unforced stability checks;
 - 1,000-tick content retention for shared mHC carrier versus persistent content
   lane and local refresh policies;
+- local content-to-carrier write gates that expose persistent content to the mHC
+  carrier only when low-bit mismatch warrants the write;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

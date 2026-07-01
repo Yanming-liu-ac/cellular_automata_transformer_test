@@ -89,10 +89,20 @@ about 5.3% of random 4-bit content exactly. Adding one persistent content lane
 keeps content retention at 100.0% and raises per-token state from 12 to
 16 bits, but the carrier still averages only about 5.7% exactness. Refreshing
 the carrier from the content lane improves carrier visibility at a direct local
-write cost: refresh64 is 0.045 writes/token/tick for 8.5% average carrier
-exactness, refresh16 is 0.186 writes/token/tick for 12.6%, and refresh8 is
-0.375 writes/token/tick for 19.3%. This makes content exposure a learned
+write cost: refresh64 is 0.045 writes/token/tick for 6.9% average carrier
+exactness, refresh16 is 0.186 writes/token/tick for 12.0%, and refresh8 is
+0.375 writes/token/tick for 19.1%. This makes content exposure a learned
 write-gating problem, not a fixed always-refresh rule.
+
+The first local write-gate point improves that budget. `mismatch_ge8` compares
+the persistent content lane with the mHC carrier and writes only when their
+4-bit difference is at least eight levels. It needs about 0.137 channel
+writes/token/tick, lower than refresh16, and lowers average carrier error from
+28.5% to 21.9%, while average exact carrier matches fall from 12.3% to 10.2%.
+The more aggressive `mismatch_ge6` point costs about 0.250 writes/token/tick
+and lowers average error to 15.6%; `mismatch_ge4` costs about 0.467 and lowers average error to
+10.0%. The budgeted top-error rows should be tracked only as upper bounds
+because global top-error selection is not a natural local CA primitive.
 
 ## Retrieval-Lane Metrics
 

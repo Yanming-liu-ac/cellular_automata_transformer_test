@@ -159,12 +159,25 @@ content retention to 100.0% at 16 state bits/token, but the dynamic carrier
 still remembers only about 5.7% of exact content on average. Periodic refresh
 from the content lane into the carrier gives the expected traffic/visibility
 tradeoff: refresh64 costs about 0.045 low-bit channel writes/token/tick and
-raises average carrier exactness to 8.5%; refresh16 costs about 0.186 writes and
-raises it to 12.6%; refresh8 costs about 0.375 writes and raises it to 19.3%
-while reducing average carrier error to 17.0%. This is a constructive boundary:
+raises average carrier exactness to 6.9%; refresh16 costs about 0.186 writes and
+raises it to 12.0%; refresh8 costs about 0.375 writes and raises it to 19.1%
+while reducing average carrier error to 17.3%. This is a constructive boundary:
 HARC-CA needs a separate persistent content lane, and the trainable rule should
 learn when to expose that content to the route/local carrier rather than
 refreshing everything on a fixed schedule.
+
+The first content-to-carrier gate sweep tests that idea with local mismatch
+comparators. The `mismatch_ge8` gate writes only when the carrier content
+differs from the persistent content lane by at least eight 4-bit levels. It
+beats fixed refresh16 on the main hardware tradeoff: write traffic falls from
+about 0.186 to 0.137 low-bit channel writes/token/tick, and average carrier
+error drops from 28.5% to 21.9%, although average exact carrier matches fall
+from 12.3% to 10.2%. Lowering the threshold to `mismatch_ge6` spends more
+writes, about 0.250, but cuts average carrier error to 15.6%; `mismatch_ge4` reaches
+21.4% average exactness and 10.0% average error at about 0.467 writes. The
+budgeted top-error rows are useful upper bounds, but they use a global top-k
+selection in the simulator. The hardware candidate is therefore a local
+mismatch or learned local gate, not global budget sorting.
 
 ## First Retrieval Prototype
 

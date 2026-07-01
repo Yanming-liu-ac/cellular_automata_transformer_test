@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from cellular_transformer.propagation import (
+    run_content_gate_sweep,
     run_content_retention_sweep,
     run_dynamic_propagation_sweep,
     run_long_rollout_stability_sweep,
@@ -189,6 +190,47 @@ def main() -> None:
     print("- content_latch preserves token content exactly with one extra low-bit lane, but the carrier still forgets it.")
     print("- carrierF is phase-sensitive; carrierM reports average content visibility across the rollout.")
     print("- refresh policies trade local writes for keeping the dynamic carrier closer to the persistent content lane.")
+    print()
+
+    gate = run_content_gate_sweep()
+    print("1,000-tick content-to-carrier gate sweep")
+    print(f"bits={gate.bits}, ticks={gate.ticks}, topology={','.join(gate.topologies)}")
+    headers = [
+        "policy",
+        "state_b",
+        "wr/tok/t",
+        "gate_r",
+        "content",
+        "carrierF",
+        "carrierM",
+        "errF",
+        "errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{h:>16}" for h in headers))
+    print("-" * 202)
+    for point in gate.points:
+        row = [
+            point.policy,
+            str(point.state_bits_per_token),
+            f"{point.gate_channel_writes_per_token_tick:0.4f}",
+            fmt_pct(point.mean_gate_fraction),
+            fmt_pct(point.content_exact_retention_rate),
+            fmt_pct(point.carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.carrier_mean_abs_error),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            fmt_entropy(point.carrier_final_entropy_bits),
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>16}" for cell in row))
+
+    print()
+    print("Gate interpretation:")
+    print("- mismatch gates are local: they compare the persistent content lane with the carrier lane.")
+    print("- budget_top rows are upper bounds for a future learned gate with a hard write budget.")
+    print("- A useful gate should beat fixed_refresh16 on average carrier exactness at lower write traffic.")
 
 
 if __name__ == "__main__":

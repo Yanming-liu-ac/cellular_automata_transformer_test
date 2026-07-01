@@ -181,11 +181,21 @@ random 4-bit token content directly in the shared mHC carrier fails after
 lane keeps exact token content at 100.0% with 16 bits/token for the current
 `content | local | route | envelope` scaffold. The carrier still forgets unless
 the content lane writes back into it. Fixed refresh improves carrier visibility
-but costs local writes: refresh64 gives about 8.5% average carrier exactness at
-0.045 channel writes/token/tick, refresh16 gives 12.6% at 0.186 writes, and
-refresh8 gives 19.3% at 0.375 writes. Therefore the architecture should not
+but costs local writes: refresh64 gives about 6.9% average carrier exactness at
+0.045 channel writes/token/tick, refresh16 gives 12.0% at 0.186 writes, and
+refresh8 gives 19.1% at 0.375 writes. Therefore the architecture should not
 blindly refresh every content cell. It needs a trained local gate that exposes
 persistent content to the carrier only when route/local computation needs it.
+
+The first gate diagnostic shows that this is feasible with a purely local
+comparator. A `mismatch_ge8` content-to-carrier gate writes when the low-bit
+carrier differs from the persistent content lane by at least eight levels. It
+uses less write traffic than fixed refresh16, about 0.137 versus 0.186 channel
+writes/token/tick, while improving average carrier error from 28.5% to 21.9%.
+Tighter thresholds buy more carrier fidelity at higher write cost. This turns
+the next architecture block into a tiny write-gate LUT: content-carrier
+mismatch, route activity, and local envelope state should decide whether the
+content lane writes into the mHC carrier on a given tick.
 
 ## Associative Retrieval
 

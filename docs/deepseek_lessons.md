@@ -314,6 +314,13 @@ upper bound and quickly spends local writes. The DeepSeek-style translation is
 to keep paths specialized: persistent content, fast route state, and stability
 metadata should be separate paths with learned gates between them.
 
+The first gate diagnostic makes that last clause concrete. A simple local
+`mismatch_ge8` comparator already beats fixed refresh16 on write traffic and
+carrier error, because it spends writes only where the carrier has drifted far
+from persistent content. This is the CA analog of path-aware gating: do not
+collapse all residual paths every tick; expose the persistent path to the active
+carrier only when the local state says it is useful.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

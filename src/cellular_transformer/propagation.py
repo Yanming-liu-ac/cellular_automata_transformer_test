@@ -151,6 +151,45 @@ class ContentRetentionResult:
     points: Tuple[ContentRetentionPoint, ...]
 
 
+@dataclass(frozen=True)
+class ContentGatePoint:
+    """Local content-to-carrier gate result."""
+
+    topology: str
+    policy: str
+    length: int
+    bits: int
+    ticks: int
+    seed: int
+    graph_nodes: int
+    graph_edges: int
+    state_bits_per_token: int
+    gate_token_writes: int
+    gate_channel_writes_per_token_tick: float
+    mean_gate_fraction: float
+    content_exact_retention_rate: float
+    carrier_exact_retention_rate: float
+    mean_carrier_exact_retention_rate: float
+    carrier_mean_abs_error: float
+    mean_carrier_mean_abs_error: float
+    carrier_final_entropy_bits: float
+    carrier_final_saturation_fraction: float
+    carrier_final_mean_level: float
+    checksum: int
+
+
+@dataclass(frozen=True)
+class ContentGateResult:
+    """Sweep of content-to-carrier gate policies."""
+
+    lengths: Tuple[int, ...]
+    topologies: Tuple[str, ...]
+    policies: Tuple[str, ...]
+    bits: int
+    ticks: int
+    points: Tuple[ContentGatePoint, ...]
+
+
 def _connect(edges: EdgeMap, a: Node, b: Node) -> None:
     edges.setdefault(a, []).append(b)
     edges.setdefault(b, []).append(a)
@@ -953,8 +992,8 @@ def run_content_retention_sweep(
     points = []
     for length_index, length in enumerate(clean_lengths):
         for topology_index, topology in enumerate(clean_topologies):
-            for policy_index, policy in enumerate(clean_policies):
-                point_seed = seed + 1009 * length_index + 131 * topology_index + 17 * policy_index
+            for policy in clean_policies:
+                point_seed = seed + 1009 * length_index + 131 * topology_index
                 points.append(
                     evaluate_content_retention(
                         length=length,
@@ -968,6 +1007,226 @@ def run_content_retention_sweep(
                 )
 
     return ContentRetentionResult(
+        lengths=clean_lengths,
+        topologies=clean_topologies,
+        policies=clean_policies,
+        bits=bits,
+        ticks=ticks,
+        points=tuple(points),
+    )
+
+
+def _content_gate_selection(
+    policy: str,
+    tick: int,
+    carrier: np.ndarray,
+    content_values: np.ndarray,
+    token_indices: np.ndarray,
+    max_value: int,
+) -> np.ndarray:
+    policy = str(policy).lower()
+    if policy == "none":
+        return np.empty(0, dtype=np.int32)
+
+    if policy.startswith("fixed_refresh"):
+        suffix = policy[len("fixed_refresh") :]
+        if not suffix:
+            raise ValueError("fixed_refresh policy must include an interval")
+        interval = int(suffix)
+        if interval <= 0:
+            raise ValueError("fixed_refresh interval must be positive")
+        if tick % interval == 0:
+            return token_indices
+        return np.empty(0, dtype=np.int32)
+
+    carrier_values = carrier[token_indices, 0].astype(np.int16)
+    content = content_values[token_indices].astype(np.int16)
+    error = np.abs(carrier_values - content)
+
+    if policy.startswith("mismatch_ge"):
+        threshold = int(policy[len("mismatch_ge") :])
+        if threshold <= 0:
+            raise ValueError("mismatch threshold must be positive")
+        return token_indices[error >= threshold]
+
+    if policy.startswith("budget_top") and policy.endswith("pct"):
+        percent = int(policy[len("budget_top") : -len("pct")])
+        if not 0 < percent <= 100:
+            raise ValueError("budget_top percent must be in (0, 100]")
+        positive = np.flatnonzero(error > 0)
+        if len(positive) == 0:
+            return np.empty(0, dtype=np.int32)
+        budget = max(1, int(round(len(token_indices) * percent / 100.0)))
+        if len(positive) <= budget:
+            return token_indices[positive]
+        selected = np.argpartition(error[positive], -budget)[-budget:]
+        return token_indices[np.sort(positive[selected])]
+
+    raise ValueError(
+        "content gate policy must be one of: none, fixed_refresh<N>, "
+        "mismatch_ge<N>, budget_top<PCT>pct"
+    )
+
+
+def evaluate_content_gate(
+    length: int,
+    topology: str,
+    policy: str,
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 0,
+) -> ContentGatePoint:
+    """Measure local content-to-carrier write gating over a stable mHC carrier."""
+
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    policy = str(policy).lower()
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    rng = np.random.default_rng(seed)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    gate_token_writes = 0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+    for tick in range(1, ticks + 1):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        selected = _content_gate_selection(
+            policy=policy,
+            tick=tick,
+            carrier=carrier,
+            content_values=content_values,
+            token_indices=token_indices,
+            max_value=max_value,
+        )
+        if len(selected) > 0:
+            _inject_content_into_carrier(carrier, content_values, selected)
+            gate_token_writes += int(len(selected))
+
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+    final_content = content_values[token_indices]
+    carrier_token_content = carrier[token_indices, 0]
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return ContentGatePoint(
+        topology=topology.lower(),
+        policy=policy,
+        length=length,
+        bits=bits,
+        ticks=ticks,
+        seed=seed,
+        graph_nodes=len(nodes),
+        graph_edges=edge_count(edges),
+        state_bits_per_token=4 * bits,
+        gate_token_writes=gate_token_writes,
+        gate_channel_writes_per_token_tick=3 * gate_token_writes / float(length * ticks),
+        mean_gate_fraction=gate_token_writes / float(length * ticks),
+        content_exact_retention_rate=float(np.mean(final_content == initial_token_content)),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        carrier_final_mean_level=float(np.mean(carrier)) / float(max_value),
+        checksum=int(checksum),
+    )
+
+
+def run_content_gate_sweep(
+    lengths: Tuple[int, ...] = (512,),
+    topologies: Tuple[str, ...] = ("harc",),
+    policies: Tuple[str, ...] = (
+        "none",
+        "fixed_refresh16",
+        "mismatch_ge12",
+        "mismatch_ge8",
+        "mismatch_ge6",
+        "mismatch_ge4",
+        "budget_top5pct",
+        "budget_top10pct",
+    ),
+    bits: int = 4,
+    ticks: int = 1000,
+    radius: int = 1,
+    seed: int = 307,
+) -> ContentGateResult:
+    """Sweep local and budgeted content-to-carrier gate policies."""
+
+    if len(lengths) == 0:
+        raise ValueError("lengths must not be empty")
+    clean_lengths = tuple(int(length) for length in lengths)
+    if any(length <= 0 for length in clean_lengths):
+        raise ValueError("lengths must be positive")
+    if len(topologies) == 0:
+        raise ValueError("topologies must not be empty")
+    clean_topologies = tuple(dict.fromkeys(str(topology).lower() for topology in topologies))
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+    clean_policies = tuple(dict.fromkeys(str(policy).lower() for policy in policies))
+
+    points = []
+    for length_index, length in enumerate(clean_lengths):
+        for topology_index, topology in enumerate(clean_topologies):
+            for policy in clean_policies:
+                point_seed = seed + 1009 * length_index + 131 * topology_index
+                points.append(
+                    evaluate_content_gate(
+                        length=length,
+                        topology=topology,
+                        policy=policy,
+                        bits=bits,
+                        ticks=ticks,
+                        radius=radius,
+                        seed=point_seed,
+                    )
+                )
+
+    return ContentGateResult(
         lengths=clean_lengths,
         topologies=clean_topologies,
         policies=clean_policies,

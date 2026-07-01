@@ -345,6 +345,9 @@ Implement:
   that a persistent content lane is necessary, but fixed refresh spends local
   writes inefficiently; the next rule should learn when the mHC carrier needs
   content exposure.
+- promote the local `mismatch_ge8` gate into a tiny learned write-gate LUT using
+  content-carrier mismatch, route activity, and envelope level as features; use
+  the budget_top rows only as an upper-bound target, not as hardware behavior.
 
 First trainable target:
 
