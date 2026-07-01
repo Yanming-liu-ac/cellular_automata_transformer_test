@@ -14,6 +14,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_block_state_sweep,
     run_csa_hca_policy_trial,
     run_csa_hca_rare_directory_adaptive_policy_sweep,
+    run_csa_hca_rare_directory_joint_policy_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_stress_sweep,
@@ -498,6 +499,49 @@ def main() -> None:
     print("- The LUT is trained from self-supervised coverage labels and uses no token identity.")
     print("- CSA-overlap lets it spend fewer directory reads than the hand span2to5 rule.")
     print("- This is the first trainable control-plane block for the rare exact-memory lane.")
+    print()
+
+    joint = run_csa_hca_rare_directory_joint_policy_sweep()
+    print("Joint HCA-confidence probe and fanout control")
+    print(
+        f"fanout_lut={format_bytes(joint.lut.state_bytes)}, "
+        f"probe_lut={format_bytes(joint.probe_lut.state_bytes)}, "
+        f"probe_positive_rate_threshold={fmt_pct(joint.probe_positive_rate_threshold)}"
+    )
+    headers = [
+        "policy",
+        "scenario",
+        "probe_r",
+        "hca_r",
+        "false_hca",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 126)
+    for point in joint.points:
+        if point.policy not in ("confidence_probe", "hca_probe", "always_probe"):
+            continue
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.policy,
+            point.scenario,
+            fmt_pct(point.directory_probe_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Joint-control interpretation:")
+    print("- HCA bank confidence can suppress directory probes for strong hot tokens.")
+    print("- confidence_probe keeps reference traffic near never_probe while retaining rare recall.")
+    print("- The remaining false-HCA cases are now an explicit probe-LUT recall/traffic tradeoff.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

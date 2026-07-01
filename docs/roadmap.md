@@ -125,6 +125,11 @@ Compressed block-index result:
   entry-count/span/CSA-overlap metadata. Its 112-entry 3-bit table is 42B. It
   reaches about 98.4% repeated-name coverage at 12.87B/query, and about 99.7%
   split-rare coverage at 6.50B/query.
+- The first joint probe/fanout control adds a 40B HCA-confidence LUT using HCA
+  estimate, bank spread, and saturation count. It skips reference hot-token
+  probes, keeping reference directory traffic at 0.50B/query instead of
+  3.25B/query, while keeping about 97.7% repeated-name coverage at
+  12.77B/query.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -263,8 +268,8 @@ Next retrieval work:
   and always-off guard with learned or metadata-driven admission/fanout/guard
   policies, then re-run the bursty rare-token and repeated-name stress tests.
 - add recency/query-context features to the trained fanout LUT and then train a
-  joint admission/fanout/guard policy so HCA threshold, exact-directory override,
-  and read budget are one hardware control table.
+  joint admission/probe/fanout policy so HCA threshold, exact-directory
+  override, and read budget are optimized as one hardware control table.
 
 ## Phase 2: Trainable Continuous HARC-CA
 

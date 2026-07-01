@@ -324,6 +324,15 @@ at about 99.7% coverage with only 6.50B/query. This is the first concrete
 trainable control-plane block for the exact sparse lane: training changes a tiny
 metadata table, not a dense attention mechanism.
 
+The first joint control sweep adds a second 40B HCA-confidence probe LUT. It
+uses the HCA bank counter pattern, not token identity, to decide whether an
+HCA-routed query needs a rare-directory probe. Strong reference hot tokens have
+all HCA banks saturated and no spread, so `confidence_probe` skips the directory
+and keeps reference traffic at 0.50B/query instead of 3.25B/query. On
+repeated-name stress it still probes about 74.2% of queries, gets about 97.7%
+coverage, and spends 12.77B/query. The remaining 0.8% false-HCA rate is now an
+explicit probe-LUT recall/traffic tradeoff rather than hidden behavior.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

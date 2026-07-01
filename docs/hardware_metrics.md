@@ -426,6 +426,24 @@ Compared with the hand `span2to5` point, the learned LUT keeps the same
 repeated-name coverage but cuts directory reads from 16.25B/query to
 12.87B/query by using CSA-overlap as an extra visible feature.
 
+The next control table learns when to issue the early rare-directory probe. It
+is a 40B HCA-confidence LUT indexed by HCA estimate, bank-counter spread, and
+saturation count:
+
+```text
+confidence_probe  reference      probe=0.0%   coverage=2.5%   dir read=0.50B/query
+hca_probe         reference      probe=84.7%  coverage=2.5%   dir read=3.25B/query
+confidence_probe  split_rare     probe=77.3%  coverage=99.0%  dir read=6.45B/query
+confidence_probe  repeated_name  probe=74.2%  coverage=97.7%  dir read=12.77B/query
+hca_probe         repeated_name  probe=75.0%  coverage=98.4%  dir read=12.87B/query
+```
+
+The important hardware result is the reference row: the confidence LUT removes
+the early probe for strong saturated HCA hits while preserving almost all rare
+recall. The remaining false-HCA rate is about 0.8% on split/repeated stress,
+which can be traded against probe traffic by changing the probe table training
+target.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

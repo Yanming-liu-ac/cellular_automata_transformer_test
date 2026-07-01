@@ -456,6 +456,12 @@ span, and CSA-overlap metadata reaches about 98.4% repeated-name coverage at
 is close to the CSA/HCA design style we want: large behavior changes come from
 small learned routing tables attached to structured memory, not from making
 every token attend to every prior token.
+The joint probe sweep adds another useful systems lesson: HCA can expose its own
+confidence through low-bit bank statistics. A 40B probe LUT uses estimate,
+bank-spread, and saturation count to skip rare-directory probes for strong hot
+tokens, cutting reference directory traffic from 3.25B/query to 0.50B/query
+while retaining about 97.7% repeated-name coverage. The CA chip should therefore
+treat HCA uncertainty as a routing signal for exact sparse memory.
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

@@ -528,6 +528,18 @@ the hand `span2to5` repeated-name coverage with materially lower directory
 traffic because the LUT can see when CSA already selected one of the rare
 blocks.
 
+The thirty-third sweep adds the first joint guard/probe/fanout diagnostic. A
+40B probe LUT reads only HCA bank-counter metadata: count-min estimate,
+counter spread across banks, and saturation count. It learns that strong
+reference hot tokens are saturated in all banks with zero spread, so they do not
+need a rare-directory probe. `confidence_probe` therefore keeps reference
+directory traffic at 0.50B/query, versus 3.25B/query for `hca_probe` or
+`always_probe`. On repeated-name stress it probes 74.2% of queries, keeps
+coverage at about 97.7%, and spends 12.77B/query. On split-rare stress it gets
+about 99.0% coverage at 6.45B/query. The remaining 0.8% false-HCA rate is a
+real recall/traffic knob for the probe LUT, and should be jointly trained with
+fanout and HCA threshold next.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

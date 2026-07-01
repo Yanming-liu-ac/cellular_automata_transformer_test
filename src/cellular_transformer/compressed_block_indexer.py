@@ -475,6 +475,42 @@ class LowBitRareDirectoryFanoutLUT:
 
 
 @dataclass(frozen=True)
+class LowBitRareDirectoryProbeLUT:
+    """Low-bit LUT deciding whether an HCA-routed token needs a directory probe."""
+
+    probes: Tuple[bool, ...]
+    max_counter: int = 15
+    spread_thresholds: Tuple[int, ...] = (1, 3, 7)
+    max_saturation_bucket: int = 4
+
+    def __post_init__(self) -> None:
+        if self.max_counter <= 0:
+            raise ValueError("max_counter must be positive")
+        if self.max_saturation_bucket < 0:
+            raise ValueError("max_saturation_bucket must be non-negative")
+        if any(int(threshold) < 0 for threshold in self.spread_thresholds):
+            raise ValueError("spread thresholds must be non-negative")
+        expected = (self.max_counter + 1) * (len(self.spread_thresholds) + 1) * (
+            self.max_saturation_bucket + 1
+        )
+        if len(self.probes) != expected:
+            raise ValueError("probe table length does not match metadata dimensions")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.probes) / 8
+
+    def probe(self, counter_values: Tuple[int, ...]) -> bool:
+        index = _hca_probe_lut_index(
+            counter_values=counter_values,
+            max_counter=self.max_counter,
+            spread_thresholds=self.spread_thresholds,
+            max_saturation_bucket=self.max_saturation_bucket,
+        )
+        return bool(self.probes[index])
+
+
+@dataclass(frozen=True)
 class CsaHcaRareDirectoryLearnedFanoutResult:
     """Trained fanout-LUT evaluation for the rare-token directory."""
 
@@ -493,6 +529,56 @@ class CsaHcaRareDirectoryLearnedFanoutResult:
     training_samples: int
     lut: LowBitRareDirectoryFanoutLUT
     points: Tuple[CsaHcaRareDirectoryAdaptivePolicyPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryJointPolicyPoint:
+    """One joint probe/admission/fanout policy on a rare-directory scenario."""
+
+    policy: str
+    scenario: str
+    hca_threshold: int
+    probe_mode: str
+    directory_blocks_per_token: int
+    probe_lut_state_bytes: float
+    fanout_lut_state_bytes: float
+    fanout_metadata_state_bytes: float
+    directory_state_bytes: float
+    directory_probe_rate: float
+    directory_hit_rate: float
+    avg_directory_entries_per_hit: float
+    avg_directory_read_blocks_per_hit: float
+    expanded_read_rate: float
+    hca_query_rate: float
+    csa_query_rate: float
+    rare_false_hca_rate: float
+    repaired_relevant_hit_rate: float
+    repaired_relevant_coverage: float
+    directory_read_bytes_per_query: float
+    token_reads_per_query: float
+    token_read_reduction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryJointPolicyResult:
+    """Joint rare-directory probe/admission/fanout control comparison."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    coverage_target: float
+    probe_positive_rate_threshold: float
+    train_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    lut: LowBitRareDirectoryFanoutLUT
+    probe_lut: LowBitRareDirectoryProbeLUT
+    points: Tuple[CsaHcaRareDirectoryJointPolicyPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -1891,6 +1977,113 @@ def train_rare_directory_fanout_lut(
     )
 
 
+def train_rare_directory_probe_lut(
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 8,
+    directory_blocks_per_token: int = 6,
+    probe_positive_rate_threshold: float = 0.25,
+    hca_spread_thresholds: Tuple[int, ...] = (1, 3, 7),
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    seed: int = 23,
+) -> Tuple[LowBitRareDirectoryProbeLUT, int]:
+    """Train a low-bit HCA-confidence LUT for selective directory probes."""
+
+    if len(train_scenarios) == 0:
+        raise ValueError("train_scenarios must not be empty")
+    if hca_threshold <= 0:
+        raise ValueError("hca_threshold must be positive")
+    if directory_blocks_per_token < 0:
+        raise ValueError("directory_blocks_per_token must be non-negative")
+    if not 0.0 <= probe_positive_rate_threshold <= 1.0:
+        raise ValueError("probe_positive_rate_threshold must be in [0, 1]")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+    max_counter = global_config.max_value
+    max_saturation_bucket = config.banks
+    table_size = (max_counter + 1) * (len(hca_spread_thresholds) + 1) * (
+        max_saturation_bucket + 1
+    )
+    positive = np.zeros(table_size, dtype=np.int32)
+    negative = np.zeros(table_size, dtype=np.int32)
+
+    for scenario_index, scenario in enumerate(train_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=seed + scenario_index * 997,
+        )
+        global_summary = LowBitDenseContext(global_config)
+        for token in stream:
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+
+        for token in query_tokens:
+            token = int(token)
+            counter_values = _dense_counter_values(global_summary, token)
+            if min(counter_values) < hca_threshold:
+                continue
+            feature = _hca_probe_lut_index(
+                counter_values=counter_values,
+                max_counter=max_counter,
+                spread_thresholds=hca_spread_thresholds,
+                max_saturation_bucket=max_saturation_bucket,
+            )
+            if token in directory:
+                positive[feature] += 1
+            else:
+                negative[feature] += 1
+
+    probes = []
+    for pos, neg in zip(positive, negative):
+        if pos == 0 and neg == 0:
+            probes.append(True)
+        else:
+            probes.append(_safe_divide(pos, pos + neg) >= probe_positive_rate_threshold)
+
+    return (
+        LowBitRareDirectoryProbeLUT(
+            probes=tuple(bool(value) for value in probes),
+            max_counter=max_counter,
+            spread_thresholds=hca_spread_thresholds,
+            max_saturation_bucket=max_saturation_bucket,
+        ),
+        int(np.sum(positive + negative)),
+    )
+
+
 def run_csa_hca_rare_directory_learned_fanout_sweep(
     train_scenarios: Tuple[str, ...] = (
         "rare_burst",
@@ -2017,6 +2210,165 @@ def run_csa_hca_rare_directory_learned_fanout_sweep(
         eval_scenarios=eval_scenarios,
         training_samples=training_samples,
         lut=lut,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_joint_policy_sweep(
+    train_scenarios: Tuple[str, ...] = (
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    policies: Tuple[Tuple[str, str], ...] = (
+        ("never_probe", "never"),
+        ("confidence_probe", "confidence"),
+        ("hca_probe", "hca_only"),
+        ("always_probe", "always"),
+    ),
+    hca_threshold: int = 8,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    probe_positive_rate_threshold: float = 0.25,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 19,
+    eval_seed: int = 37,
+) -> CsaHcaRareDirectoryJointPolicyResult:
+    """Evaluate joint rare-directory probe/admission/fanout policies."""
+
+    if len(policies) == 0:
+        raise ValueError("policies must not be empty")
+
+    lut, training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=True,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+    probe_train_scenarios = tuple(dict.fromkeys(("zipf_reference",) + train_scenarios))
+    probe_lut, probe_training_samples = train_rare_directory_probe_lut(
+        train_scenarios=probe_train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        probe_positive_rate_threshold=probe_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed + 4096,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        directory_state_bytes = sum(len(blocks) for blocks in directory.values()) * directory_entry_bytes
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+
+        for policy, probe_mode in policies:
+            points.append(
+                _evaluate_rare_directory_joint_policy_point(
+                    policy=policy,
+                    scenario=scenario,
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    directory_entry_bytes=directory_entry_bytes,
+                    directory_state_bytes=directory_state_bytes,
+                    hca_threshold=hca_threshold,
+                    probe_mode=probe_mode,
+                    lut=lut,
+                    probe_lut=probe_lut,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                )
+            )
+
+    return CsaHcaRareDirectoryJointPolicyResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        coverage_target=coverage_target,
+        probe_positive_rate_threshold=probe_positive_rate_threshold,
+        train_scenarios=train_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=training_samples + probe_training_samples,
+        lut=lut,
+        probe_lut=probe_lut,
         points=tuple(points),
     )
 
@@ -2807,6 +3159,141 @@ def _evaluate_rare_directory_lut_fanout_point(
     )
 
 
+def _evaluate_rare_directory_joint_policy_point(
+    policy: str,
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    probe_mode: str,
+    lut: LowBitRareDirectoryFanoutLUT,
+    probe_lut: LowBitRareDirectoryProbeLUT,
+    min_read_blocks_per_token: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+) -> CsaHcaRareDirectoryJointPolicyPoint:
+    probe_mode = probe_mode.lower()
+    if probe_mode not in {"never", "hca_only", "confidence", "always"}:
+        raise ValueError("probe_mode must be one of never, hca_only, confidence, always")
+
+    hca_queries = 0
+    csa_queries = 0
+    directory_probes = 0
+    directory_hits = 0
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    repaired_hits = 0
+    repaired_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+    directory_entries_seen = 0
+    directory_blocks_read = 0
+    expanded_read_queries = 0
+    min_read_blocks_per_token = min(max(0, int(min_read_blocks_per_token)), directory_blocks_per_token)
+
+    for token in query_tokens:
+        token = int(token)
+        counter_values = _dense_counter_values(global_summary, token)
+        global_estimate = min(counter_values)
+        route_hca = global_estimate >= hca_threshold
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
+        should_probe = (
+            directory_blocks_per_token > 0
+            and (
+                probe_mode == "always"
+                or (probe_mode == "hca_only" and route_hca)
+                or (probe_mode == "confidence" and route_hca and probe_lut.probe(counter_values))
+            )
+        )
+        if should_probe:
+            directory_probes += 1
+            directory_read_bytes += directory_entry_bytes
+            if directory_hit:
+                route_hca = False
+
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            selected = recent_blocks
+            hca_queries += 1
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            read_limit = lut.predict(directory_blocks, base_selected)
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
+            csa_queries += 1
+            if directory_blocks_per_token > 0 and lut.max_entries > 0:
+                if should_probe:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        0,
+                        len(readable_directory_blocks) - 1,
+                    )
+                else:
+                    directory_read_bytes += directory_entry_bytes * max(
+                        1,
+                        len(readable_directory_blocks),
+                    )
+            if directory_hit:
+                directory_hits += 1
+                directory_entries_seen += len(directory_blocks)
+                directory_blocks_read += len(readable_directory_blocks)
+                expanded_read_queries += int(len(readable_directory_blocks) > min_read_blocks_per_token)
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+        repaired_hits += _block_hit(selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    directory_hit_denominator = directory_hits if directory_hits else 1
+    token_reads_per_query = token_reads / query_denominator
+    spread_metadata_state_bytes = len(directory) * 2 / 8
+
+    return CsaHcaRareDirectoryJointPolicyPoint(
+        policy=policy,
+        scenario=scenario,
+        hca_threshold=hca_threshold,
+        probe_mode=probe_mode,
+        directory_blocks_per_token=directory_blocks_per_token,
+        probe_lut_state_bytes=probe_lut.state_bytes,
+        fanout_lut_state_bytes=lut.state_bytes,
+        fanout_metadata_state_bytes=lut.state_bytes + spread_metadata_state_bytes,
+        directory_state_bytes=directory_state_bytes,
+        directory_probe_rate=directory_probes / query_denominator,
+        directory_hit_rate=directory_hits / query_denominator,
+        avg_directory_entries_per_hit=directory_entries_seen / directory_hit_denominator,
+        avg_directory_read_blocks_per_hit=directory_blocks_read / directory_hit_denominator,
+        expanded_read_rate=expanded_read_queries / directory_hit_denominator,
+        hca_query_rate=hca_queries / query_denominator,
+        csa_query_rate=csa_queries / query_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
+
+
 def _rare_fanout_lut_index(
     directory_blocks: np.ndarray,
     base_selected: np.ndarray,
@@ -2825,6 +3312,39 @@ def _rare_fanout_lut_index(
     span_bucket_count = len(span_thresholds) + 1
     overlap_bucket_count = max(0, int(max_overlap_bucket)) + 1
     return (entry_count * span_bucket_count + span_bucket) * overlap_bucket_count + overlap_bucket
+
+
+def _hca_probe_lut_index(
+    counter_values: Tuple[int, ...],
+    max_counter: int,
+    spread_thresholds: Tuple[int, ...],
+    max_saturation_bucket: int,
+) -> int:
+    if len(counter_values) == 0:
+        estimate = 0
+        spread = 0
+        saturation = 0
+    else:
+        clipped = tuple(min(max(0, int(value)), int(max_counter)) for value in counter_values)
+        estimate = min(clipped)
+        spread = max(clipped) - estimate
+        saturation = sum(value == int(max_counter) for value in clipped)
+    spread_bucket = 0
+    for threshold in sorted(int(value) for value in spread_thresholds):
+        if spread >= threshold:
+            spread_bucket += 1
+    saturation_bucket = min(saturation, max(0, int(max_saturation_bucket)))
+    spread_bucket_count = len(spread_thresholds) + 1
+    saturation_bucket_count = max(0, int(max_saturation_bucket)) + 1
+    return (estimate * spread_bucket_count + spread_bucket) * saturation_bucket_count + saturation_bucket
+
+
+def _dense_counter_values(summary: LowBitDenseContext, token: int) -> Tuple[int, ...]:
+    slots = summary._slots(int(token))
+    return tuple(
+        int(summary.counters[bank, slot])
+        for bank, slot in enumerate(slots)
+    )
 
 
 def _decode_rare_fanout_lut_index(
