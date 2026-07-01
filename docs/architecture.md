@@ -382,6 +382,13 @@ coverage at 100.0% and repeated-name coverage at 98.4%. Increasing `k` reduces
 false positives but raises read traffic and bank conflicts, so the CA control
 plane now has a concrete layout knob instead of an abstract "presence bit."
 
+The first hash-salt robustness check shows why the sidecar cannot be treated as
+a passive data structure. For the `8 bits/entry, k=3, 8 banks` candidate, 16
+salts on the reference stream average 82.9% HCA routing, but range from 79.7%
+to 84.6%. The worst salt has about 5.9% hot-token sidecar false positives. The
+CA compiler or training loop should therefore pick hash salts and bank mappings
+with the HCA hot path in the objective.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

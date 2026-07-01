@@ -606,6 +606,14 @@ to `k=4` lowers false positives further but raises read traffic to 0.5B/query
 and creates many same-bank read conflicts. This is the first result that looks
 like a real CA-chip control SRAM rather than only an abstract routing label.
 
+The fortieth sweep checks whether that physical sidecar is robust to hash-salt
+choice. It is not automatically robust enough to ignore. With `8 bits/entry,
+k=3, 8 banks`, 16 salts average 82.9% reference HCA routing and 2.1% hot-token
+false positives. The best salt keeps HCA routing at 84.6% with only 0.2%
+hot-token false positives; the worst salt drops HCA routing to 79.7% with 5.9%
+hot-token false positives and 53.4% query bank conflict. Hash choice and bank
+mapping therefore belong inside the control-plane optimization loop.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

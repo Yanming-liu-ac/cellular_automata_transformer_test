@@ -533,6 +533,19 @@ split-rare coverage at 100.0%, and keeps repeated-name coverage at 98.4%. The
 next physical question is bank layout: `k=4` gives lower false positives but too
 many same-bank read conflicts under the simple modulo-bank model.
 
+A hash-salt robustness sweep tests the recommended `8 bits/entry, k=3, 8 banks`
+point across 16 salts on the reference stream:
+
+```text
+mean over salts: HCA=82.9%  hot_fp=2.1%
+worst salt:      fp_q=5.4%  hot_fp=5.9%  HCA=79.7%  q_bank_conflict=53.4%  reduction=181.7x
+best salt:       fp_q=0.4%  hot_fp=0.2%  HCA=84.6%  q_bank_conflict=14.6%  reduction=195.2x
+```
+
+This turns hash choice into a first-class hardware/compiler knob. The sidecar
+should choose salts against the hot-token query distribution, not only against
+global Bloom false-positive rate.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

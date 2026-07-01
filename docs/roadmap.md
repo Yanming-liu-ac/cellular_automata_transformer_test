@@ -151,6 +151,10 @@ Compressed block-index result:
   0.375B/query, measures about 1.1% sidecar false positives, keeps reference
   HCA routing at 84.2%, and keeps the rare stress coverage at 100.0% split-rare
   and 98.4% repeated-name.
+- Hash-salt robustness is now measured for that candidate. Across 16 salts,
+  reference HCA routing averages 82.9%, ranges from 79.7% to 84.6%, and the
+  worst salt has about 5.9% hot-token false positives. Salt choice must be a
+  compiler/training knob, not a fixed constant.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -288,8 +292,9 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- stress the physical Bloom sidecar with adversarial hot-token false positives,
-  alternative bank mappings, and shared per-tile update scheduling.
+- compare physical Bloom sidecar bank mappings and salt-selection objectives:
+  minimize hot-token false positives, bank conflicts, and update pressure
+  jointly.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

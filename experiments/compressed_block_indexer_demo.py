@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
+    run_csa_hca_rare_directory_bloom_salt_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_presence_sidecar_sweep,
     run_csa_hca_rare_directory_route_lut_sweep,
@@ -750,6 +751,53 @@ def main() -> None:
     print("- The 8 bits/entry, k=3 point keeps reference HCA routing near the ideal sidecar.")
     print("- More hash reads cut false positives but raise read traffic and bank conflicts.")
     print("- This turns the presence sidecar into an explicit SRAM/read-port design knob.")
+    print()
+
+    salt = run_csa_hca_rare_directory_bloom_salt_sweep()
+    print("Bloom sidecar hash-salt robustness sweep")
+    print(
+        f"salt_count={salt.salt_count}, "
+        f"bits_per_entry={salt.bits_per_entry}, "
+        f"k={salt.hash_count}, "
+        f"banks={salt.bank_count}"
+    )
+    mean_hca = sum(point.hca_query_rate for point in salt.points) / len(salt.points)
+    mean_hot_fp = sum(point.hot_sidecar_false_positive_rate for point in salt.points) / len(salt.points)
+    print(
+        f"mean_hca={fmt_pct(mean_hca)}, "
+        f"mean_hot_fp={fmt_pct(mean_hot_fp)}"
+    )
+    headers = [
+        "rank",
+        "salt",
+        "fp_q",
+        "hot_fp",
+        "hca_r",
+        "q_conf",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 110)
+    ranked = sorted(salt.points, key=lambda point: point.hca_query_rate)
+    selected_salts = ranked[:3] + ranked[-3:]
+    for rank, point in enumerate(selected_salts, start=1):
+        label = f"worst{rank}" if rank <= 3 else f"best{rank - 3}"
+        row = [
+            label,
+            f"{point.sidecar_salt}",
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            fmt_pct(point.hot_sidecar_false_positive_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.query_bank_conflict_rate),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Bloom salt interpretation:")
+    print("- Hash choice changes hot-token false positives enough to matter for HCA efficiency.")
+    print("- The sidecar should choose or learn hash salts against hot-token queries, not only global FPR.")
+    print("- The next layout test should compare modulo banking with hash-based bank assignment.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)
