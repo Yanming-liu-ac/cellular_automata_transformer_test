@@ -723,6 +723,20 @@ about 52.28KB/event and about 392.8KB on-chip state. The next policy target is
 not more SRAM; it is richer context metadata for deciding when zero-overlap is a
 real rare-token miss rather than harmless CSA disagreement.
 
+The fiftieth sweep tests the obvious delayed-promotion shortcut and rejects it.
+Keeping the robust `8 bits/entry, 3-bit counter` sidecar, a pure
+`count2_retire15` gate cuts normal update traffic from about 0.22B/token to
+about 0.03B/token, and `count3_retire15` cuts it to about 0.015B/token. But both
+break the exact sidecar contract: visible rare-token rate falls to 7%-9% for
+`count2` and about 0%-2% for `count3` across reference, split-rare, and
+repeated-name stress. In the repeated-key collision case, insert thresholds 1,
+2, and 3 all keep 100.0% sidecar visibility because the constructed rare token
+appears three times, but they save no meaningful update traffic; insert 4 fails
+immediately. The result is a useful negative: delayed promotion cannot be a
+plain count threshold. It needs extra local evidence, such as directory-probe
+feedback, short recency, source phase, or a tiny probation state, while keeping
+count1-style protection for one-hit rare facts.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

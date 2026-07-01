@@ -645,6 +645,26 @@ and rare-stress coverage as 4-bit counters, and cuts sidecar state from about
 it produces a small rare-token visibility loss, so it should remain an
 aggressive candidate.
 
+The delayed-promotion diagnostic keeps the robust `8 bits/entry, 3-bit counter`
+sidecar but raises the insert threshold:
+
+```text
+reference     count1_retire15  visible_rare=100.0%  update=0.21787B/token  HCA=84.0%
+reference     count2_retire15  visible_rare=7.3%    update=0.02671B/token  HCA=84.7%
+reference     count3_retire15  visible_rare=0.3%    update=0.01243B/token  HCA=84.7%
+split_rare    count1_retire15  visible_rare=100.0%  update=0.22156B/token  coverage=99.5%
+split_rare    count2_retire15  visible_rare=8.7%    update=0.02987B/token  coverage=99.5%
+split_rare    count3_retire15  visible_rare=1.8%    update=0.01543B/token  coverage=99.5%
+repeated_name count1_retire15  visible_rare=100.0%  update=0.22208B/token  coverage=99.1%
+repeated_name count2_retire15  visible_rare=8.5%    update=0.02946B/token  coverage=99.1%
+repeated_name count3_retire15  visible_rare=1.7%    update=0.01529B/token  coverage=99.1%
+```
+
+Naive delayed promotion cuts updates sharply, but it breaks the exact sidecar
+visibility contract by skipping one-hit rare facts. The coverage numbers remain
+high only because CSA/fanout still reads many blocks; that is not a valid exact
+sidecar replacement.
+
 The adversarial-collision sweep chooses hot tokens that share Bloom slots with
 rare tokens before retiring them. It now varies both the number of rare-token
 occurrences and the number of hot colliders per rare token:
@@ -668,6 +688,19 @@ adversarial visible rare-token rate at 100% through the repeated-key
 8-collider stress while cutting sidecar state from about 44.9KB to about
 35.9KB. The remaining 95.3% repeated-key coverage at c3/c4 is no longer a
 sidecar deletion problem; it points to the directory/fanout read budget.
+
+The same repeated-key stress also confirms why a pure count gate is not enough:
+
+```text
+insert=1  visible_rare=100.0%  coverage=95.3%  update=0.06152B/token
+insert=2  visible_rare=100.0%  coverage=95.3%  update=0.06152B/token
+insert=3  visible_rare=100.0%  coverage=95.3%  update=0.06152B/token
+insert=4  visible_rare=0.0%    coverage=88.0%  update=0.05859B/token
+```
+
+Because this constructed rare token appears exactly three times, thresholds up
+to three survive but save no meaningful update traffic; threshold four fails.
+The promotion gate therefore needs a richer local feature than count alone.
 
 The repeated-key fanout-budget sweep keeps the same `retire128c3` sidecar and
 the same low-bit fanout LUT, then varies the minimum directory reads and the

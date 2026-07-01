@@ -434,6 +434,15 @@ falls from about 44.9KB to about 26.9KB, and update traffic falls from about
 they lose roughly 1% rare-token visibility in this stress set, so they are an
 aggressive target rather than the current baseline.
 
+A pure delayed-promotion count threshold is not the answer. With the robust
+3-bit sidecar, `count2_retire15` and `count3_retire15` reduce update traffic by
+roughly an order of magnitude on normal streams, but visible rare-token rate
+falls to single digits because one-hit exact facts never enter the sidecar. In
+the repeated-key collision case, thresholds 1, 2, and 3 survive because the
+constructed rare token appears exactly three times, but they do not save update
+traffic there; threshold 4 fails outright. The promotion gate therefore needs
+additional local evidence rather than a bare count threshold.
+
 The adversarial-collision check tightens that conclusion. It chooses hot tokens
 that share Bloom slots with rare tokens before retiring them. Under this chosen
 collision pattern, 1-bit counters nearly erase rare-token visibility, 2-bit

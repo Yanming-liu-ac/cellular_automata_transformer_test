@@ -566,6 +566,13 @@ only from 6.50B/query to 6.53B/query while coverage reaches 100.0%. This is the
 right hardware pattern: make the robust case explicit, then verify that the hot
 reference path does not pay for it.
 
+The delayed-promotion diagnostic adds the matching negative lesson. A pure
+count gate is too blunt: `count2_retire15` and `count3_retire15` save update
+traffic, but they drop visible rare-token sidecar coverage to single digits on
+normal stress because one-hit facts never get admitted. That is exactly the kind
+of low-bit optimization DeepSeek-style engineering should reject. The next gate
+needs another local signal, not just a higher threshold.
+
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

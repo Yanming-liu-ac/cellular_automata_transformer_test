@@ -1106,6 +1106,43 @@ def main() -> None:
     print("- The current hardware budget should test c2 against adversarial collision before treating it as robust.")
     print()
 
+    delayed = run_csa_hca_rare_directory_bloom_retirement_compression_sweep(
+        bits_per_entries=(8,),
+        counter_bits_values=(3,),
+        insert_count_thresholds=(1, 2, 3),
+        eval_scenarios=("zipf_reference", "split_rare", "repeated_name"),
+    )
+    print("Counting Bloom delayed-promotion diagnostic")
+    headers = [
+        "scenario",
+        "policy",
+        "vis_rare",
+        "coverage",
+        "upd/tok",
+        "hca_r",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 112)
+    for point in delayed.points:
+        row = [
+            point.scenario,
+            point.policy,
+            fmt_pct(point.visible_active_rare_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.update_bytes_per_context_token:0.5f}",
+            fmt_pct(point.hca_query_rate),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Delayed-promotion interpretation:")
+    print("- Naive insert thresholds cut update traffic but break the exact sidecar visibility contract.")
+    print("- count2/count3 are not acceptable defaults even when CSA/fanout masks some coverage loss.")
+    print("- The next promotion gate needs extra local evidence, not just a higher count threshold.")
+    print()
+
     collision = run_csa_hca_rare_directory_bloom_retirement_collision_sweep()
     print("Counting Bloom adversarial-collision sweep")
     print(
@@ -1117,6 +1154,7 @@ def main() -> None:
     headers = [
         "bpe",
         "cbits",
+        "ins",
         "rare_occ",
         "coll/rare",
         "state",
@@ -1138,6 +1176,7 @@ def main() -> None:
         row = [
             str(point.bits_per_entry),
             str(point.counter_bits),
+            str(point.insert_count_threshold),
             str(point.rare_occurrences_per_token),
             str(point.colliders_per_rare),
             f"{point.sidecar_state_bytes / 1024:0.1f}KB",
@@ -1159,6 +1198,42 @@ def main() -> None:
     print("- 2-bit counters improve normal streams but lose visibility under repeated-key multi-collider deletes.")
     print("- 3-bit counters survive the repeated-key 8-collider stress and are the current sidecar budget target.")
     print("- Any remaining repeated-key coverage loss is now a fanout/directory target, not a sidecar deletion target.")
+    print()
+
+    promotion_collision = run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
+        bits_per_entries=(8,),
+        counter_bits_values=(3,),
+        insert_count_threshold_values=(1, 2, 3, 4),
+        rare_occurrences_per_token_values=(3,),
+        colliders_per_rare_values=(8,),
+    )
+    print("Repeated-key collision promotion diagnostic")
+    headers = [
+        "insert",
+        "visible",
+        "coverage",
+        "upd/tok",
+        "hca_r",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>12}" for header in headers))
+    print("-" * 82)
+    for point in promotion_collision.points:
+        row = [
+            str(point.insert_count_threshold),
+            fmt_pct(point.visible_active_rare_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.update_bytes_per_context_token:0.5f}",
+            fmt_pct(point.hca_query_rate),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>12}" for cell in row))
+
+    print()
+    print("Repeated-key promotion interpretation:")
+    print("- insert=1/2/3 survive this repeated-key collision because rare_occ=3.")
+    print("- insert=4 fails immediately; a pure count gate has no margin for rarer facts.")
+    print("- This reinforces count1 insertion plus robust retirement/compression as the safer baseline.")
     print()
 
     fanout_collision = run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(

@@ -304,9 +304,10 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- train a delayed-promotion gate against the retire128c3 budget so one-hit rare
-  tokens, hot-token retirement, and sidecar update pressure are optimized
-  jointly rather than by hand thresholds.
+- design a delayed-promotion gate with extra local evidence, because pure
+  count2/count3 promotion saves updates but breaks one-hit rare sidecar
+  visibility; candidate features are directory-probe feedback, short recency,
+  source phase, or a tiny probation state.
 - add recency/query-context features to the trained fanout LUT so the
   zero-overlap guard can distinguish true repeated-key/spread rare misses from
   harmless CSA disagreement; the current `retire128c3g3` budget proves the

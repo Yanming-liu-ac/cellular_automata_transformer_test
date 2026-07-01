@@ -1230,6 +1230,8 @@ class CsaHcaRareDirectoryBloomRetirementCollisionPoint:
     """Adversarial Bloom-collision point for retirement sidecar deletion."""
 
     scenario: str
+    insert_count_threshold: int
+    retire_count_threshold: int
     bits_per_entry: int
     hash_count: int
     counter_bits: int
@@ -1265,6 +1267,8 @@ class CsaHcaRareDirectoryBloomRetirementCollisionResult:
     hca_threshold: int
     directory_blocks_per_token: int
     rare_token_count: int
+    insert_count_threshold_values: Tuple[int, ...]
+    retire_count_threshold: int
     rare_occurrences_per_token_values: Tuple[int, ...]
     colliders_per_rare_values: Tuple[int, ...]
     bits_per_entries: Tuple[int, ...]
@@ -5234,6 +5238,7 @@ def run_csa_hca_rare_directory_bloom_retirement_compression_sweep(
 def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
     bits_per_entries: Tuple[int, ...] = (4, 6, 8),
     counter_bits_values: Tuple[int, ...] = (1, 2, 3, 4),
+    insert_count_threshold_values: Tuple[int, ...] = (1,),
     rare_occurrences_per_token_values: Tuple[int, ...] = (1, 3),
     colliders_per_rare_values: Tuple[int, ...] = (1, 2, 4, 8),
     rare_token_count: int = 128,
@@ -5298,6 +5303,15 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
         raise ValueError("rare_token_count must be positive")
     if retire_count_threshold <= 0:
         raise ValueError("retire_count_threshold must be positive")
+    if len(insert_count_threshold_values) == 0:
+        raise ValueError("insert_count_threshold_values must not be empty")
+    clean_insert_thresholds = tuple(
+        sorted({int(value) for value in insert_count_threshold_values})
+    )
+    if any(value <= 0 for value in clean_insert_thresholds):
+        raise ValueError("insert_count_threshold_values must be positive")
+    if any(value >= retire_count_threshold for value in clean_insert_thresholds):
+        raise ValueError("insert thresholds must stay below retire_count_threshold")
     if hash_count <= 0:
         raise ValueError("hash_count must be positive")
     if bank_count <= 0:
@@ -5394,56 +5408,59 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
                 recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
 
                 for counter_bits in clean_counter_bits:
-                    point = _evaluate_rare_directory_bloom_retirement_point(
-                        insert_count_threshold=1,
-                        retire_count_threshold=retire_count_threshold,
-                        scenario="adversarial_collision",
-                        config=config,
-                        index=index,
-                        global_summary=global_summary,
-                        exact_counts=exact_counts,
-                        directory=directory,
-                        directory_blocks_per_token=directory_blocks_per_token,
-                        directory_entry_bytes=directory_entry_bytes,
-                        hca_threshold=hca_threshold,
-                        route_lut=route_lut,
-                        fanout_lut=fanout_lut,
-                        min_read_blocks_per_token=min_read_blocks_per_token,
-                        recent_blocks=recent_blocks,
-                        query_tokens=query_tokens,
-                        stream=stream,
-                        bits_per_entry=bits_per_entry,
-                        hash_count=hash_count,
-                        counter_bits=counter_bits,
-                        bank_count=bank_count,
-                        bank_mode=bank_mode,
-                        sidecar_salt=sidecar_salt,
-                    )
-                    points.append(
-                        CsaHcaRareDirectoryBloomRetirementCollisionPoint(
-                            scenario=point.scenario,
+                    for insert_threshold in clean_insert_thresholds:
+                        point = _evaluate_rare_directory_bloom_retirement_point(
+                            insert_count_threshold=insert_threshold,
+                            retire_count_threshold=retire_count_threshold,
+                            scenario="adversarial_collision",
+                            config=config,
+                            index=index,
+                            global_summary=global_summary,
+                            exact_counts=exact_counts,
+                            directory=directory,
+                            directory_blocks_per_token=directory_blocks_per_token,
+                            directory_entry_bytes=directory_entry_bytes,
+                            hca_threshold=hca_threshold,
+                            route_lut=route_lut,
+                            fanout_lut=fanout_lut,
+                            min_read_blocks_per_token=min_read_blocks_per_token,
+                            recent_blocks=recent_blocks,
+                            query_tokens=query_tokens,
+                            stream=stream,
                             bits_per_entry=bits_per_entry,
                             hash_count=hash_count,
                             counter_bits=counter_bits,
                             bank_count=bank_count,
                             bank_mode=bank_mode,
                             sidecar_salt=sidecar_salt,
-                            rare_occurrences_per_token=rare_occurrences,
-                            colliders_per_rare=colliders_per_rare,
-                            rare_tokens=point.final_rare_tokens,
-                            collider_tokens=found_colliders,
-                            missing_colliders=missing_colliders,
-                            mean_slot_overlap=mean_overlap,
-                            sidecar_state_bytes=point.sidecar_state_bytes,
-                            visible_active_rare_rate=point.visible_active_rare_rate,
-                            hot_polluted_token_rate=point.hot_polluted_token_rate,
-                            update_bytes_per_context_token=point.update_bytes_per_context_token,
-                            hca_query_rate=point.hca_query_rate,
-                            rare_false_hca_rate=point.rare_false_hca_rate,
-                            repaired_relevant_coverage=point.repaired_relevant_coverage,
-                            token_read_reduction=point.token_read_reduction,
                         )
-                    )
+                        points.append(
+                            CsaHcaRareDirectoryBloomRetirementCollisionPoint(
+                                scenario=point.scenario,
+                                insert_count_threshold=insert_threshold,
+                                retire_count_threshold=retire_count_threshold,
+                                bits_per_entry=bits_per_entry,
+                                hash_count=hash_count,
+                                counter_bits=counter_bits,
+                                bank_count=bank_count,
+                                bank_mode=bank_mode,
+                                sidecar_salt=sidecar_salt,
+                                rare_occurrences_per_token=rare_occurrences,
+                                colliders_per_rare=colliders_per_rare,
+                                rare_tokens=point.final_rare_tokens,
+                                collider_tokens=found_colliders,
+                                missing_colliders=missing_colliders,
+                                mean_slot_overlap=mean_overlap,
+                                sidecar_state_bytes=point.sidecar_state_bytes,
+                                visible_active_rare_rate=point.visible_active_rare_rate,
+                                hot_polluted_token_rate=point.hot_polluted_token_rate,
+                                update_bytes_per_context_token=point.update_bytes_per_context_token,
+                                hca_query_rate=point.hca_query_rate,
+                                rare_false_hca_rate=point.rare_false_hca_rate,
+                                repaired_relevant_coverage=point.repaired_relevant_coverage,
+                                token_read_reduction=point.token_read_reduction,
+                            )
+                        )
 
     return CsaHcaRareDirectoryBloomRetirementCollisionResult(
         context_length=context_length,
@@ -5455,6 +5472,8 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
         hca_threshold=hca_threshold,
         directory_blocks_per_token=directory_blocks_per_token,
         rare_token_count=rare_token_count,
+        insert_count_threshold_values=clean_insert_thresholds,
+        retire_count_threshold=retire_count_threshold,
         rare_occurrences_per_token_values=clean_rare_occurrences,
         colliders_per_rare_values=clean_colliders,
         bits_per_entries=clean_bits,
