@@ -18,21 +18,8 @@ def fmt_pct(value: float) -> str:
     return f"{100.0 * value:6.2f}%"
 
 
-def print_wiki(result: WikiMemorySweepResult) -> None:
-    print("CA wiki-memory: mutable facts, page links, and triggered summaries")
-    print(
-        f"pages={result.page_count}, facts/page={result.facts_per_page}, "
-        f"links/page={result.links_per_page}, group={result.group_size}, "
-        f"select_groups={result.selected_groups}, select_pages={result.selected_pages}, "
-        f"summary={result.summary_banks}x{result.summary_width}x{result.summary_bits}-bit, "
-        f"events={result.query_events + result.update_events}, "
-        f"revision_rate={result.revision_update_rate:0.2f}, "
-        f"probe_rate={result.error_probe_query_rate:0.2f}, "
-        f"clusters={result.contradiction_clusters}x{result.cluster_sources}, "
-        f"cluster_update={result.cluster_update_rate:0.2f}, "
-        f"cluster_query={result.cluster_query_rate:0.2f}, "
-        f"state={format_bytes(result.state_bytes)}"
-    )
+def print_points(title: str, points) -> None:
+    print(title)
     headers = [
         "policy",
         "dirty",
@@ -66,7 +53,7 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
     ]
     print(" | ".join(f"{header:>10}" for header in headers))
     print("-" * 292)
-    for point in result.points:
+    for point in points:
         row = [
             point.policy,
             f"{point.dirty_threshold}",
@@ -99,11 +86,31 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
             fmt_pct(point.provenance_precision),
         ]
         print(" | ".join(f"{cell:>10}" for cell in row))
-
     print()
+
+
+def print_wiki(result: WikiMemorySweepResult) -> None:
+    print("CA wiki-memory: mutable facts, page links, and triggered summaries")
+    print(
+        f"pages={result.page_count}, facts/page={result.facts_per_page}, "
+        f"links/page={result.links_per_page}, group={result.group_size}, "
+        f"select_groups={result.selected_groups}, select_pages={result.selected_pages}, "
+        f"summary={result.summary_banks}x{result.summary_width}x{result.summary_bits}-bit, "
+        f"events={result.query_events + result.update_events}, "
+        f"revision_rate={result.revision_update_rate:0.2f}, "
+        f"probe_rate={result.error_probe_query_rate:0.2f}, "
+        f"clusters={result.contradiction_clusters}x{result.cluster_sources}, "
+        f"cluster_update={result.cluster_update_rate:0.2f}, "
+        f"cluster_query={result.cluster_query_rate:0.2f}, "
+        f"state={format_bytes(result.state_bytes)}"
+    )
+    print()
+    print_points("CA hierarchical group-route policies", result.points)
+    print_points("Flat/RAG page-summary scan baselines", result.flat_points)
     print("Interpretation:")
     print("- flat/q is a full exact scan over all page facts.")
     print("- read/q is group summary routing, page summary routing, then exact fact reads.")
+    print("- flat/RAG baselines scan every page summary before exact reads from selected pages.")
     print("- stale counts misses where the queried page was dirty when routing failed.")
     print("- value_m catches routed pages whose stored fact value is stale.")
     print("- errfix counts failed probes that would succeed immediately after repair.")

@@ -138,6 +138,7 @@ class WikiMemoryTrialPoint:
     """One wiki-memory policy measurement."""
 
     policy: str
+    route_mode: str
     dirty_threshold: int
     max_age: int
     refresh_on_update: bool
@@ -198,6 +199,7 @@ class WikiMemorySweepResult:
     cluster_query_rate: float
     state_bytes: float
     points: Tuple[WikiMemoryTrialPoint, ...]
+    flat_points: Tuple[WikiMemoryTrialPoint, ...]
 
 
 @dataclass(frozen=True)
@@ -491,6 +493,20 @@ class _SyntheticWikiMemory:
                 return _RouteResult(True, cells_read, selected_pages, page)
         return _RouteResult(False, cells_read, selected_pages, None)
 
+    def flat_route_key(self, key: int) -> _RouteResult:
+        page_array = np.arange(self.config.page_count, dtype=np.int32)
+        page_scores = self._score_pages(key, page_array)
+        page_local = self._top_indices(page_scores, self.config.selected_pages)
+        selected_pages = tuple(int(page_array[index]) for index in page_local)
+        cells_read = (
+            self.config.page_count * self.config.summary_banks
+            + len(selected_pages) * self.config.facts_per_page
+        )
+        for page in selected_pages:
+            if bool(np.any(self.fact_keys[page] == int(key))):
+                return _RouteResult(True, cells_read, selected_pages, page)
+        return _RouteResult(False, cells_read, selected_pages, None)
+
     def repair_pages(self, pages: Tuple[int, ...]) -> Tuple[int, int, int]:
         clean_pages = tuple(sorted(set(int(page) for page in pages)))
         if len(clean_pages) == 0:
@@ -621,8 +637,13 @@ class _SyntheticWikiMemory:
             return bool(np.any(self.dirty_pages[pages]))
         return bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
 
-    def answer_query(self, query: _WikiQuery) -> _AnswerResult:
-        routed = self.route_key(query.route_key)
+    def answer_query(self, query: _WikiQuery, route_mode: str = "hierarchical") -> _AnswerResult:
+        if route_mode == "hierarchical":
+            routed = self.route_key(query.route_key)
+        elif route_mode == "flat":
+            routed = self.flat_route_key(query.route_key)
+        else:
+            raise ValueError("route_mode must be hierarchical or flat")
         cells_read = routed.cells_read
         if not routed.found:
             return _AnswerResult(False, self._query_stale(query), False, cells_read, False)
@@ -653,7 +674,12 @@ class _SyntheticWikiMemory:
         return _AnswerResult(False, self._query_stale(query), False, cells_read, True)
 
 
-def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int) -> WikiMemoryTrialPoint:
+def _trial(
+    policy: WikiMemoryRefreshPolicy,
+    config: WikiMemoryConfig,
+    seed: int,
+    route_mode: str = "hierarchical",
+) -> WikiMemoryTrialPoint:
     wiki = _SyntheticWikiMemory(config, seed)
     event_types = np.array(["query"] * config.query_events + ["update"] * config.update_events)
     wiki.rng.shuffle(event_types)
@@ -720,7 +746,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
             )
         else:
             query = wiki.sample_query()
-        answer = wiki.answer_query(query)
+        answer = wiki.answer_query(query, route_mode=route_mode)
         queries += 1
         total_cells_read += answer.cells_read
         total_flat_cells_read += config.page_count * config.facts_per_page
@@ -752,7 +778,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
             groups_refreshed += repair_groups
             error_repairs += 1
             cluster_repair_events += int(cluster_repair)
-            repaired = wiki.answer_query(query)
+            repaired = wiki.answer_query(query, route_mode=route_mode)
             recovered = repaired.hit
             error_recoveries += int(recovered)
 
@@ -784,6 +810,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
     )
     return WikiMemoryTrialPoint(
         policy=policy.name,
+        route_mode=route_mode,
         dirty_threshold=policy.dirty_threshold,
         max_age=policy.max_age,
         refresh_on_update=policy.refresh_on_update,
@@ -847,12 +874,35 @@ def run_wiki_memory_sweep(
         WikiMemoryRefreshPolicy("trigger32_age64", dirty_threshold=32, max_age=64),
         WikiMemoryRefreshPolicy("stale_no_refresh", dirty_threshold=1_000_000, max_age=0),
     ),
+    flat_policies: Tuple[WikiMemoryRefreshPolicy, ...] = (
+        WikiMemoryRefreshPolicy(
+            "flat_exact_update",
+            dirty_threshold=1,
+            max_age=0,
+            refresh_on_update=True,
+        ),
+        WikiMemoryRefreshPolicy(
+            "flat_trigger16_clusterbook",
+            dirty_threshold=16,
+            max_age=16,
+            error_book_repair=True,
+            cluster_repair=True,
+        ),
+        WikiMemoryRefreshPolicy("flat_stale_no_refresh", dirty_threshold=1_000_000, max_age=0),
+    ),
     seed: int = 91,
 ) -> WikiMemorySweepResult:
     """Run a synthetic mutable wiki-memory policy sweep."""
 
     sweep_config = config or WikiMemoryConfig()
-    points = tuple(_trial(policy=policy, config=sweep_config, seed=seed) for policy in policies)
+    points = tuple(
+        _trial(policy=policy, config=sweep_config, seed=seed, route_mode="hierarchical")
+        for policy in policies
+    )
+    flat_points = tuple(
+        _trial(policy=policy, config=sweep_config, seed=seed, route_mode="flat")
+        for policy in flat_policies
+    )
     return WikiMemorySweepResult(
         page_count=sweep_config.page_count,
         facts_per_page=sweep_config.facts_per_page,
@@ -873,4 +923,5 @@ def run_wiki_memory_sweep(
         cluster_query_rate=sweep_config.cluster_query_rate,
         state_bytes=sweep_config.state_bytes,
         points=points,
+        flat_points=flat_points,
     )

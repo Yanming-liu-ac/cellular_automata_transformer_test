@@ -131,13 +131,22 @@ claim cluster consistent (`clu_ok=100.0%`) at about 14,914 cells/update, versus
 for a flat exact page-fact scan, a 65% read reduction. With no refresh, recall
 drops to 50.39% and stale misses rise to 49.61%.
 
+The flat/RAG-style page-summary baseline uses the same summaries and update
+policies, but scans every page summary before reading selected exact facts. It
+matches the exact-update and clusterbook accuracy points, but costs about 1,061
+cells/query. The hierarchical CA route therefore cuts query reads by about
+66.3% at the same write policy and accuracy. On this small four-facts/page
+benchmark, flat page-summary scan is even slightly more expensive than scanning
+all exact fact cells; the important point is that its read path grows with every
+page, while the CA route spends reads on group summaries plus selected groups.
+
 This is not yet a learned memory system, but it establishes the first measurable
 wiki-memory claim: local dirty/age summary refresh can keep mutable facts mostly
 queryable while avoiding full-wiki scans. The error-book repair path now has a
 real workload: page repair improves answer recall, while cluster repair enforces
-multi-source consistency across replicated claims. The next step is to compare
-this routed CA fabric with a flat vector/RAG-style retrieval proxy on the same
-synthetic wiki.
+multi-source consistency across replicated claims. The next step is to scale the
+page and fact counts and test whether the same hierarchy keeps its read
+advantage as the wiki grows.
 
 ## Kill Criteria
 

@@ -417,8 +417,10 @@ With truth/memory separated, `trigger16_age16` reaches 94.73% recall at about
 cells/update for exact update refresh. Page-local error-book repair raises
 recall to 97.66% and repeated failed-probe recall to 98.54% at about 14,739
 cells/update. Cluster repair reaches 100.0% checked multi-source consistency at
-about 14,914 cells/update. The next step is to compare the routed CA fabric with
-a flat vector/RAG-style retrieval proxy.
+about 14,914 cells/update. A flat/RAG-style all-page-summary scan matches those
+accuracy points but costs about 1,061 cells/query, while the CA hierarchical
+route costs about 356-357 cells/query. The next step is to scale page/fact
+counts and test whether that read advantage widens.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

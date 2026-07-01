@@ -324,11 +324,13 @@ failed-probe recall to 98.54% at about 14,739 cells/update. Adding cluster
 repair costs about 14,914 cells/update and forces 100.0% checked cluster
 consistency, versus 93.06% for page-local repair. Query work is about 356-357
 cells/query versus 1,024 for a flat exact fact scan, a 65% read reduction. The
-no-refresh control reaches only 50.39% recall and 49.61% stale misses. This is
-the strongest evidence so far that CA is naturally aligned with external mutable
-knowledge: local state can remain mostly stale, as long as dirty/version
+flat/RAG-style page-summary baseline reaches the same accuracy under the same
+refresh policies, but scans all page summaries and costs about 1,061 cells/query.
+The no-refresh control reaches only 50.39% recall and 49.61% stale misses. This
+is the strongest evidence so far that CA is naturally aligned with external
+mutable knowledge: local state can remain mostly stale, as long as dirty/version
 pressure, error-book probes, and cluster-local consolidation fire before route
-quality collapses.
+quality collapses; hierarchy then gives the read advantage over flat page scans.
 
 ## First Retrieval Prototype
 

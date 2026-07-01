@@ -217,11 +217,12 @@ Adding page-local error-book repair raises recall to 97.66% and repeated-probe
 recall to 98.54% at about 14,739 cells/update. Adding cluster repair costs about
 14,914 cells/update and raises checked multi-source cluster consistency to
 100.0%, versus 93.06% for page-local repair. Reads stay about 356-357
-cells/query, compared with 1,024 exact fact cells for a flat scan. The
-no-refresh control proves the failure mode: writes fall to about seven metadata
+cells/query, compared with 1,024 exact fact cells for a flat scan and about
+1,061 cells/query for a flat/RAG-style all-page-summary scan. The no-refresh
+control proves the failure mode: writes fall to about seven metadata
 cells/update, but stale misses climb to 49.61%. This makes stale miss rate,
-value-miss rate, error-probe recall, and cluster consistency the main safety
-metrics for any more aggressive write-saving policy.
+value-miss rate, error-probe recall, cluster consistency, and page-summary scan
+traffic the main safety metrics for any more aggressive write-saving policy.
 
 ## Retrieval-Lane Metrics
 
