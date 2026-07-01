@@ -198,6 +198,16 @@ below flat recall. The next architectural step is therefore not just a better
 fanout table; dense pages need stronger summaries or a page-internal second
 stage.
 
+The dense routing-tile sweep is the first fix for that boundary. Instead of
+keeping 16 pages per group, it uses four-page routing tiles and lets the learned
+fanout LUT read up to 48 tiles. On the 1,024-page, 32 facts/page case, recall
+returns from 59.38% to 99.80% while reads fall from the old learned route's
+2,581 cells/query to 1,697 cells/query; flat scan reads 4,378 cells/query. On
+2,048 pages and 32 facts/page, dense tiles reach 99.22% recall and 2,897
+cells/query versus flat's 95.12% recall and 8,474 cells/query. The cost is
+modest SRAM: about 96.6KB extra state at 1,024 pages, 192.6KB at 2,048 pages,
+plus a 1.69KB fanout LUT.
+
 ## Kill Criteria
 
 This track is not useful if:

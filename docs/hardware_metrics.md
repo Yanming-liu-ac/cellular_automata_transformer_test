@@ -267,6 +267,16 @@ pages need more than 32 groups for flat-level recall. The next hardware target
 is a denser page summary or a second-stage page-local index, not only a bigger
 fanout cap.
 
+Smaller routing tiles are the first dense-page repair. Moving from 16-page
+groups to four-page groups increases summary state by about 96.6KB at 1,024
+pages and 192.6KB at 2,048 pages, plus a 1.69KB LUT, but it restores dense
+recall without flat scans. At 1,024 pages and 32 facts/page, dense tiles read
+about 1,697 cells/query and match flat's 99.80% recall; flat reads about 4,378
+cells/query. At 2,048 pages and 32 facts/page, dense tiles read about 2,897
+cells/query and reach 99.22% recall, versus flat at 8,474 cells/query and
+95.12% recall. This is a better hardware move than simply raising fanout on
+16-page groups, because it improves the signal before the fanout decision.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

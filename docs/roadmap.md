@@ -437,6 +437,12 @@ pages and then hits the 32-group cap, and 32 facts/page needs stronger summaries
 or a page-internal second stage. The next step is to add that dense-page second
 stage rather than only increasing fanout.
 
+The first dense-page stage is now smaller routing tiles: four-page groups with a
+learned max48 fanout LUT. It fixes the 1,024-page, 32 facts/page case at
+99.80% recall and about 1,697 cells/query, and the 2,048-page, 32 facts/page
+case at 99.22% recall and about 2,897 cells/query. The next step is to make the
+tile size itself density-aware and then test mixed sparse/dense wiki regions.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

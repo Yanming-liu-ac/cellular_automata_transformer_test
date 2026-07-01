@@ -243,6 +243,8 @@ from .synthetic_lm import (
 )
 from .wiki_memory import (
     WikiMemoryConfig,
+    WikiMemoryDenseTilePoint,
+    WikiMemoryDenseTileResult,
     WikiMemoryDensityPoint,
     WikiMemoryDensityResult,
     WikiMemoryFanoutLUT,
@@ -255,6 +257,7 @@ from .wiki_memory import (
     WikiMemoryScalingResult,
     WikiMemorySweepResult,
     WikiMemoryTrialPoint,
+    run_wiki_memory_dense_tile_sweep,
     run_wiki_memory_density_sweep,
     run_wiki_memory_fanout_sweep,
     run_wiki_memory_learned_fanout_grid_sweep,
@@ -395,6 +398,8 @@ __all__ = [
     "TieredLookupResult",
     "TileConfig",
     "WikiMemoryConfig",
+    "WikiMemoryDenseTilePoint",
+    "WikiMemoryDenseTileResult",
     "WikiMemoryDensityPoint",
     "WikiMemoryDensityResult",
     "WikiMemoryFanoutLUT",
@@ -489,6 +494,7 @@ __all__ = [
     "run_synthetic_lm_candidate_reducer_sweep",
     "run_synthetic_lm_candidate_demand_sparsity_sweep",
     "run_synthetic_lm_demand_gate_sweep",
+    "run_wiki_memory_dense_tile_sweep",
     "run_wiki_memory_density_sweep",
     "run_wiki_memory_fanout_sweep",
     "run_wiki_memory_learned_fanout_grid_sweep",

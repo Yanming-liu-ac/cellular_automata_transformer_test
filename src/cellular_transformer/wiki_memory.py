@@ -436,6 +436,48 @@ class WikiMemoryLearnedFanoutGridResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryDenseTilePoint:
+    """One dense-page routing-tile comparison."""
+
+    page_count: int
+    facts_per_page: int
+    summary_width: int
+    baseline_group_size: int
+    dense_group_size: int
+    baseline_max_groups: int
+    dense_max_groups: int
+    baseline_overall_recall: float
+    dense_overall_recall: float
+    flat_overall_recall: float
+    baseline_cells_read_per_query: float
+    dense_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    dense_cells_written_per_update: float
+    baseline_state_bytes: float
+    dense_state_bytes: float
+    baseline_lut_state_bytes: float
+    dense_lut_state_bytes: float
+    dense_read_reduction_vs_flat: float
+    dense_read_reduction_vs_baseline: float
+    dense_state_increase_bytes: float
+    dense_training_examples: int
+
+
+@dataclass(frozen=True)
+class WikiMemoryDenseTileResult:
+    """Dense-page small-tile fanout comparison."""
+
+    policy: str
+    target_route_coverage: float
+    query_events: int
+    update_events: int
+    summary_banks: int
+    summary_width: int
+    summary_bits: int
+    points: Tuple[WikiMemoryDenseTilePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -1914,6 +1956,148 @@ def run_wiki_memory_learned_fanout_grid_sweep(
 
     first_config = _density_config(clean_counts[0], clean_facts[0], summary_width)
     return WikiMemoryLearnedFanoutGridResult(
+        policy=policy.name,
+        target_route_coverage=target_route_coverage,
+        query_events=first_config.query_events,
+        update_events=first_config.update_events,
+        summary_banks=first_config.summary_banks,
+        summary_width=first_config.summary_width,
+        summary_bits=first_config.summary_bits,
+        points=tuple(points),
+    )
+
+
+def run_wiki_memory_dense_tile_sweep(
+    page_counts: Tuple[int, ...] = (1024, 2048),
+    facts_per_page_values: Tuple[int, ...] = (16, 32),
+    summary_width: int = 256,
+    baseline_group_size: int = 16,
+    dense_group_size: int = 4,
+    baseline_max_groups: int = 32,
+    dense_max_groups: int = 48,
+    target_route_coverage: float = 1.0,
+    train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryDenseTileResult:
+    """Compare standard and dense routing tiles for high-density wiki pages."""
+
+    clean_counts = tuple(dict.fromkeys(int(value) for value in page_counts))
+    clean_facts = tuple(dict.fromkeys(int(value) for value in facts_per_page_values))
+    if len(clean_counts) == 0:
+        raise ValueError("page_counts must not be empty")
+    if len(clean_facts) == 0:
+        raise ValueError("facts_per_page_values must not be empty")
+    if baseline_group_size <= 0 or dense_group_size <= 0:
+        raise ValueError("group sizes must be positive")
+    if baseline_max_groups <= 0 or dense_max_groups <= 0:
+        raise ValueError("max group counts must be positive")
+
+    points = []
+    for page_count in clean_counts:
+        for facts_per_page in clean_facts:
+            base_config = _density_config(page_count, facts_per_page, summary_width)
+            baseline_config = replace(
+                base_config,
+                group_size=baseline_group_size,
+                selected_groups=4,
+                adaptive_max_groups=baseline_max_groups,
+                adaptive_score_margin=1,
+            )
+            dense_config = replace(
+                base_config,
+                group_size=dense_group_size,
+                selected_groups=4,
+                adaptive_max_groups=dense_max_groups,
+                adaptive_score_margin=1,
+            )
+
+            baseline_lut = train_wiki_memory_fanout_lut(
+                config=baseline_config,
+                policy=policy,
+                train_seeds=train_seeds,
+                base_groups=4,
+                max_groups=baseline_max_groups,
+                target_route_coverage=target_route_coverage,
+            )
+            dense_lut = train_wiki_memory_fanout_lut(
+                config=dense_config,
+                policy=policy,
+                train_seeds=train_seeds,
+                base_groups=4,
+                max_groups=dense_max_groups,
+                target_route_coverage=target_route_coverage,
+            )
+            baseline_point = _trial(
+                policy=policy,
+                config=baseline_config,
+                seed=seed,
+                route_mode="lut",
+                fanout_lut=baseline_lut,
+            )
+            dense_point = _trial(
+                policy=policy,
+                config=dense_config,
+                seed=seed,
+                route_mode="lut",
+                fanout_lut=dense_lut,
+            )
+            flat_point = _trial(
+                policy=policy,
+                config=baseline_config,
+                seed=seed,
+                route_mode="flat",
+            )
+            points.append(
+                WikiMemoryDenseTilePoint(
+                    page_count=page_count,
+                    facts_per_page=facts_per_page,
+                    summary_width=summary_width,
+                    baseline_group_size=baseline_group_size,
+                    dense_group_size=dense_group_size,
+                    baseline_max_groups=baseline_max_groups,
+                    dense_max_groups=dense_max_groups,
+                    baseline_overall_recall=baseline_point.overall_recall,
+                    dense_overall_recall=dense_point.overall_recall,
+                    flat_overall_recall=flat_point.overall_recall,
+                    baseline_cells_read_per_query=baseline_point.cells_read_per_query,
+                    dense_cells_read_per_query=dense_point.cells_read_per_query,
+                    flat_cells_read_per_query=flat_point.cells_read_per_query,
+                    dense_cells_written_per_update=dense_point.cells_written_per_update,
+                    baseline_state_bytes=baseline_config.state_bytes,
+                    dense_state_bytes=dense_config.state_bytes,
+                    baseline_lut_state_bytes=baseline_lut.state_bytes,
+                    dense_lut_state_bytes=dense_lut.state_bytes,
+                    dense_read_reduction_vs_flat=(
+                        1.0 - dense_point.cells_read_per_query / flat_point.cells_read_per_query
+                        if flat_point.cells_read_per_query > 0.0
+                        else 0.0
+                    ),
+                    dense_read_reduction_vs_baseline=(
+                        1.0
+                        - dense_point.cells_read_per_query
+                        / baseline_point.cells_read_per_query
+                        if baseline_point.cells_read_per_query > 0.0
+                        else 0.0
+                    ),
+                    dense_state_increase_bytes=(
+                        dense_config.state_bytes
+                        + dense_lut.state_bytes
+                        - baseline_config.state_bytes
+                        - baseline_lut.state_bytes
+                    ),
+                    dense_training_examples=dense_lut.training_examples,
+                )
+            )
+
+    first_config = _density_config(clean_counts[0], clean_facts[0], summary_width)
+    return WikiMemoryDenseTileResult(
         policy=policy.name,
         target_route_coverage=target_route_coverage,
         query_events=first_config.query_events,

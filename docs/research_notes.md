@@ -382,6 +382,16 @@ For 32 facts/page, learned fanout either becomes too expensive at small page
 count or cannot recover enough candidate pages at large page count. This is a
 useful failure: fanout control is not sufficient once page summaries saturate.
 
+The dense routing-tile sweep resolves most of that failure by changing the
+geometry rather than the score rule. Reducing group size from 16 pages to four
+pages gives each group summary less page mixture, and a learned max48 fanout LUT
+keeps the read path sparse. At 1,024 pages and 32 facts/page it recovers 99.80%
+recall at about 1,697 cells/query, versus 59.38% and 2,581 cells/query for the
+old learned max32 route. At 2,048 pages and 32 facts/page it reaches 99.22%
+recall at about 2,897 cells/query, while flat scan reaches 95.12% at about
+8,474 cells/query. The cost is roughly 96.6KB-192.6KB of extra summary state
+over the tested page counts, which is a plausible CA-chip trade.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
