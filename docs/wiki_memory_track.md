@@ -279,6 +279,16 @@ updates at 80% and cluster updates at 60% keeps both `loss=0` and `loss=1` at
 full stability proof, but it turns the previous failure into a named regression
 test.
 
+The follow-up noise-matrix audit keeps the same 512-page/radius-1 geometry but
+shrinks the rows to 25% dense off and 75% dense on so it can sweep update-noise
+regimes. Across seeds 1501 and 1601 under base, revision-80%, cluster-60%, and
+combined revision-80%/cluster-60% regimes, strict `loss=0` has two dense-on
+failures and 75.00% mean dense-on coverage. Tolerant `loss=1` repairs both,
+reaches 100.00% mean dense-on coverage, keeps off-region enables at zero, and
+keeps sparse shared false-enable at 0.00% for every audited row. The next audit
+should randomize more seeds and noise rates, but the current matrix supports
+the claim that a one-count loss tolerance is not merely overfitting one seed.
+
 ## Kill Criteria
 
 This track is not useful if:

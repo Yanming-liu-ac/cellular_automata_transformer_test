@@ -497,6 +497,15 @@ cluster 60% also keeps 100.00% dense-on coverage and 0.00% sparse false-enable.
 The next audit should widen the seed set and randomize noisy update regimes
 rather than only checking one named stress point.
 
+A first noise matrix now exists for that wider audit shape. It keeps the
+512-page/radius-1 geometry, checks 25% dense off and 75% dense on, and sweeps
+seeds 1501 and 1601 across base, revision-80%, cluster-60%, and combined
+revision-80%/cluster-60% regimes. Strict `loss=0` has two dense-on failures and
+75.00% mean dense-on coverage. Tolerant `loss=1` has zero dense-on failures,
+100.00% mean dense-on coverage, zero off-region enables, and 0.00% sparse
+shared false-enable. The remaining roadmap item is to turn this fixed matrix
+into a broader randomized seed/noise sweep.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

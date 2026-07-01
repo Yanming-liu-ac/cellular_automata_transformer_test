@@ -455,6 +455,15 @@ with revision updates at 80% and cluster updates at 60%; both gates stay at
 100.00% dense-on coverage and 0.00% sparse false-enable. The result is narrow,
 but it gives the track a concrete regression test before adding loss decay.
 
+The next audit step is a small noise matrix rather than another single stress
+point. It checks seeds 1501 and 1601 under base, revision-80%, cluster-60%, and
+combined high-noise regimes, using only 25% dense off and 75% dense on rows.
+Strict `loss=0` fails two dense-on rows and averages 75.00% dense-on coverage.
+Tolerant `loss=1` repairs both failures, averages 100.00% dense-on coverage,
+keeps off-region enables at zero, and keeps sparse shared false-enable at
+0.00%. This is still a deterministic audit, but it is stronger evidence that
+the tolerant guard is a robust local rule rather than a seed1501-only patch.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

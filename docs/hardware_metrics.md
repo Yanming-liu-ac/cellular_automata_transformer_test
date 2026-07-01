@@ -335,6 +335,16 @@ and cluster updates at 60%, both gates keep 100.00% dense-on coverage and
 comparison state can remove the observed brittle gate without increasing
 measured false-enable on this audit.
 
+The first noise matrix checks the same low-bit state under update-rate changes.
+For seeds 1501 and 1601, 25% dense off and 75% dense on, and base/revision-80%/
+cluster-60%/combined regimes, strict `loss=0` has two dense-on failures and
+75.00% mean dense-on coverage. Tolerant `loss=1` has zero dense-on failures,
+100.00% mean dense-on coverage, zero off-region enables, and 0.00% sparse
+false-enable across every row. This keeps the hardware story simple: the
+observed reliability gain comes from one additional low-bit comparison against
+the existing loss counter, not from a global controller or a high-precision
+score.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:
