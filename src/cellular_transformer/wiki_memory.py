@@ -548,6 +548,10 @@ class WikiMemoryDensityTagPoint:
     guarded_state_bytes: float
     baseline_state_bytes: float
     density_tag_state_bytes: float
+    sparse_probe_baseline_recall: float
+    sparse_probe_dense_recall: float
+    dense_probe_baseline_recall: float
+    dense_probe_dense_recall: float
 
 
 @dataclass(frozen=True)
@@ -563,6 +567,9 @@ class WikiMemoryDensityTagResult:
     summary_bits: int
     density_tag_bits: int
     region_directory_cells_per_query: int
+    quality_probe_queries: int
+    quality_probe_updates: int
+    quality_probe_min_gain: float
     points: Tuple[WikiMemoryDensityTagPoint, ...]
 
 
@@ -2495,6 +2502,10 @@ def run_wiki_memory_density_tag_sweep(
     dense_max_groups: int = 48,
     density_tag_bits: int = 2,
     facts_per_tag_step: int = 8,
+    quality_probe_queries: int = 128,
+    quality_probe_updates: int = 64,
+    quality_probe_min_gain: float = 0.02,
+    quality_probe_seed: int = 901,
     target_route_coverage: float = 1.0,
     train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
@@ -2514,6 +2525,12 @@ def run_wiki_memory_density_tag_sweep(
         raise ValueError("total_pages must be divisible by both group sizes")
     if density_tag_bits <= 0:
         raise ValueError("density_tag_bits must be positive")
+    if quality_probe_queries <= 0:
+        raise ValueError("quality_probe_queries must be positive")
+    if quality_probe_updates < 0:
+        raise ValueError("quality_probe_updates must be non-negative")
+    if quality_probe_min_gain < 0.0:
+        raise ValueError("quality_probe_min_gain must be non-negative")
     clean_fractions = tuple(dict.fromkeys(float(value) for value in dense_page_fractions))
     clean_thresholds = tuple(dict.fromkeys(int(value) for value in tag_thresholds))
     if len(clean_fractions) == 0:
@@ -2613,6 +2630,50 @@ def run_wiki_memory_density_tag_sweep(
         dense_dense_point = _trial(policy, dense_dense, seed, "lut", dense_dense_lut)
         sparse_flat_point = _trial(policy, sparse_base, seed, "flat")
         dense_flat_point = _trial(policy, dense_base, seed, "flat")
+        sparse_base_probe = _trial(
+            policy,
+            replace(
+                sparse_base,
+                query_events=quality_probe_queries,
+                update_events=quality_probe_updates,
+            ),
+            quality_probe_seed,
+            "lut",
+            sparse_base_lut,
+        )
+        sparse_dense_probe = _trial(
+            policy,
+            replace(
+                sparse_dense,
+                query_events=quality_probe_queries,
+                update_events=quality_probe_updates,
+            ),
+            quality_probe_seed,
+            "lut",
+            sparse_dense_lut,
+        )
+        dense_base_probe = _trial(
+            policy,
+            replace(
+                dense_base,
+                query_events=quality_probe_queries,
+                update_events=quality_probe_updates,
+            ),
+            quality_probe_seed,
+            "lut",
+            dense_base_lut,
+        )
+        dense_dense_probe = _trial(
+            policy,
+            replace(
+                dense_dense,
+                query_events=quality_probe_queries,
+                update_events=quality_probe_updates,
+            ),
+            quality_probe_seed,
+            "lut",
+            dense_dense_lut,
+        )
 
         baseline_recall = _weighted_pair(
             sparse_base_point.overall_recall,
@@ -2653,11 +2714,13 @@ def run_wiki_memory_density_tag_sweep(
 
             sparse_guard_enabled = (
                 sparse_tag_enabled
-                and sparse_dense_point.overall_recall >= sparse_base_point.overall_recall
+                and sparse_dense_probe.overall_recall
+                >= sparse_base_probe.overall_recall + quality_probe_min_gain
             )
             dense_guard_enabled = (
                 dense_tag_enabled
-                and dense_dense_point.overall_recall >= dense_base_point.overall_recall
+                and dense_dense_probe.overall_recall
+                >= dense_base_probe.overall_recall + quality_probe_min_gain
             )
             sparse_guard_point = sparse_dense_point if sparse_guard_enabled else sparse_base_point
             dense_guard_point = dense_dense_point if dense_guard_enabled else dense_base_point
@@ -2728,6 +2791,10 @@ def run_wiki_memory_density_tag_sweep(
                     guarded_state_bytes=guarded_state,
                     baseline_state_bytes=baseline_state,
                     density_tag_state_bytes=density_tag_state_bytes,
+                    sparse_probe_baseline_recall=sparse_base_probe.overall_recall,
+                    sparse_probe_dense_recall=sparse_dense_probe.overall_recall,
+                    dense_probe_baseline_recall=dense_base_probe.overall_recall,
+                    dense_probe_dense_recall=dense_dense_probe.overall_recall,
                 )
             )
 
@@ -2741,5 +2808,8 @@ def run_wiki_memory_density_tag_sweep(
         summary_bits=first_config.summary_bits,
         density_tag_bits=density_tag_bits,
         region_directory_cells_per_query=region_directory_cells,
+        quality_probe_queries=quality_probe_queries,
+        quality_probe_updates=quality_probe_updates,
+        quality_probe_min_gain=quality_probe_min_gain,
         points=tuple(points),
     )

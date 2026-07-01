@@ -127,8 +127,8 @@ The first experiments compare:
   summaries or page-internal routing are needed;
 - dense routing-tile sweeps that split high-density wiki memory into smaller
   local tiles and restore recall under 32 facts/page pressure;
-- density-aware routing-tile sweeps that enable small tiles only when local
-  probe quality justifies the extra state;
+- density-aware routing-tile sweeps that enable small tiles only when a local
+  rolling probe shows enough recall gain to justify the extra state;
 - refresh-derived density-tag sweeps showing why low-bit density tags need a
   quality guard before switching routing geometry;
 - exact key/value recall through a hash-routed associative CA lane;

@@ -291,10 +291,12 @@ The refresh-derived tag version keeps that state tiny. A 2-bit tag per page is
 512B for a 2,048-page wiki and can be generated while refreshing page summaries
 by counting local fact slots. The tag alone is not sufficient: at 25% dense
 pages it would enable the small tile and reduce recall to 97.71%. With the
-quality guard, recall remains 99.02%; at 50% and 75% dense pages the same tag
-enables the dense path and keeps the 72.94% and 65.62% flat-read reductions.
-This separates the hardware roles cleanly: density tag wakes the alternative
-geometry, quality guard commits it.
+local 128-query / 64-update quality probe, recall remains 99.02%; at 50% and
+75% dense pages the same tag enables the dense path and keeps the 72.94% and
+65.62% flat-read reductions. The probe requires a 2-point gain, so it acts like
+a small canary workload or an online agreement counter rather than a global
+oracle. This separates the hardware roles cleanly: density tag wakes the
+alternative geometry, quality guard commits it.
 
 ## Retrieval-Lane Metrics
 

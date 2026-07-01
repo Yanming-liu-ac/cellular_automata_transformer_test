@@ -28,7 +28,9 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         f"events={result.query_events + result.update_events}, "
         f"summary={result.summary_banks}x{result.summary_width}x{result.summary_bits}-bit, "
         f"tag_bits={result.density_tag_bits}, "
-        f"region_dir={result.region_directory_cells_per_query} cells/query"
+        f"region_dir={result.region_directory_cells_per_query} cells/query, "
+        f"probe={result.quality_probe_queries}q/{result.quality_probe_updates}u/"
+        f"{100.0 * result.quality_probe_min_gain:0.1f}%"
     )
     headers = [
         "dense%",
@@ -37,6 +39,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         "d_tag",
         "tag_on",
         "guard_on",
+        "p_base",
+        "p_dense",
         "base",
         "tag_acc",
         "guard",
@@ -59,6 +63,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
             f"{point.dense_density_tag}",
             "yes" if point.tag_dense_enabled else "no",
             "yes" if point.guard_dense_enabled else "no",
+            fmt_pct(point.dense_probe_baseline_recall),
+            fmt_pct(point.dense_probe_dense_recall),
             fmt_pct(point.baseline_overall_recall),
             fmt_pct(point.tag_only_overall_recall),
             fmt_pct(point.guarded_overall_recall),
@@ -77,7 +83,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
     print("Interpretation:")
     print("- s_tag and d_tag are low-bit tags from refresh-visible fact density.")
     print("- tag_on applies dense tiles from the density threshold alone.")
-    print("- guard_on additionally requires local probe quality not to regress.")
+    print("- guard_on additionally requires local probe recall to clear the gain margin.")
+    print("- p_base/p_dense show the baseline and dense-tile probe recall.")
     print("- tag_cut and guard_cut compare read traffic with flat scan.")
 
 
