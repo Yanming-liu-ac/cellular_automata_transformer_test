@@ -205,6 +205,7 @@ from .retrieval import (
 from .synthetic_lm import (
     DualPathSyntheticLM,
     make_exact_query_demand_trace,
+    make_mixed_exact_candidate_demand_trace,
     SyntheticLMDemandGateResult,
     SyntheticLMConfig,
     SyntheticLMResult,
@@ -329,6 +330,7 @@ __all__ = [
     "harc_ca_edges",
     "line_edges",
     "make_exact_query_demand_trace",
+    "make_mixed_exact_candidate_demand_trace",
     "profile_chip",
     "propagation_distances",
     "compare_to_transformer_kv",

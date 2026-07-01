@@ -137,6 +137,14 @@ exactness. Fixed refresh16 still costs 0.187 writes/token/tick. This suggests
 the content lane can remain mostly idle during topic-only decode steps and wake
 only for exact-memory demand.
 
+The mixed exact+candidate trace is the first warning that output-side demand can
+eat the savings. With 512 fact rows plus 64 candidate rows, topic events demand
+all candidate rows used for shortlist scoring, raising demand to 7.47% of
+token-cells per tick. The learned 16-byte LUT reaches 95.0% demanded exactness
+with 0.178 writes/token/tick, only slightly below fixed refresh16. The hardware
+target therefore needs candidate pruning, hierarchical candidate routing, or a
+separate low-bit scorer path that avoids exposing every candidate row's content.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

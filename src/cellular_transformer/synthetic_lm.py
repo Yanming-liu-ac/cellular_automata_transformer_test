@@ -155,12 +155,15 @@ class SyntheticLMResult:
 
 @dataclass(frozen=True)
 class SyntheticLMDemandGateResult:
-    """Content-gate diagnostic driven by synthetic exact-query demand."""
+    """Content-gate diagnostic driven by synthetic LM demand traces."""
 
+    demand_trace: str
     fact_count: int
+    candidate_rows: int
     topic_events: int
     query_events: int
     total_events: int
+    content_rows: int
     bits: int
     train_seed: int
     eval_seed: int
@@ -246,6 +249,46 @@ def make_exact_query_demand_trace(
             query_cursor += 1
         else:
             trace.append(np.empty(0, dtype=np.int32))
+    return tuple(trace)
+
+
+def make_mixed_exact_candidate_demand_trace(
+    config: SyntheticLMConfig,
+    seed: int,
+    candidate_rows: int | None = None,
+) -> Tuple[np.ndarray, ...]:
+    """Demand exact fact rows on query events and candidate rows on topic events."""
+
+    rows = config.topic_top_k if candidate_rows is None else int(candidate_rows)
+    if rows <= 0:
+        raise ValueError("candidate_rows must be positive")
+    rows = min(rows, config.candidate_pool_size)
+
+    rng = np.random.default_rng(seed)
+    query_indices = rng.choice(
+        config.fact_count,
+        size=config.query_events,
+        replace=True,
+    )
+    event_types = np.array(
+        ["topic"] * config.topic_events + ["query"] * config.query_events
+    )
+    rng.shuffle(event_types)
+
+    candidate_offset = config.fact_count
+    candidate_indices = np.arange(
+        candidate_offset,
+        candidate_offset + rows,
+        dtype=np.int32,
+    )
+    trace = []
+    query_cursor = 0
+    for event_type in event_types:
+        if event_type == "query":
+            trace.append(np.array([int(query_indices[query_cursor])], dtype=np.int32))
+            query_cursor += 1
+        else:
+            trace.append(candidate_indices)
     return tuple(trace)
 
 
@@ -558,6 +601,8 @@ def run_synthetic_lm_trial(seed: int = 0, config: SyntheticLMConfig | None = Non
 
 def run_synthetic_lm_demand_gate_sweep(
     config: SyntheticLMConfig | None = None,
+    demand_trace: str = "exact_query",
+    candidate_rows: int | None = None,
     policies: Tuple[str, ...] = (
         "none",
         "fixed_refresh16",
@@ -572,7 +617,7 @@ def run_synthetic_lm_demand_gate_sweep(
     route_weight: float = 0.50,
     envelope_weight: float = 0.25,
 ) -> SyntheticLMDemandGateResult:
-    """Train/evaluate content gates on synthetic exact-query demand."""
+    """Train/evaluate content gates on synthetic event demand."""
 
     gate_config = config or SyntheticLMConfig(
         fact_count=512,
@@ -586,12 +631,34 @@ def run_synthetic_lm_demand_gate_sweep(
         raise ValueError("bits must be one of 2, 4, 8")
     if len(policies) == 0:
         raise ValueError("policies must not be empty")
+    demand_trace = str(demand_trace).lower()
+    if demand_trace == "exact_query":
+        train_trace = make_exact_query_demand_trace(gate_config, seed=train_seed)
+        eval_trace = make_exact_query_demand_trace(gate_config, seed=eval_seed)
+        content_rows = gate_config.fact_count
+        candidate_row_count = 0
+    elif demand_trace == "mixed_candidate_topk":
+        candidate_row_count = (
+            gate_config.topic_top_k if candidate_rows is None else int(candidate_rows)
+        )
+        candidate_row_count = min(candidate_row_count, gate_config.candidate_pool_size)
+        train_trace = make_mixed_exact_candidate_demand_trace(
+            gate_config,
+            seed=train_seed,
+            candidate_rows=candidate_row_count,
+        )
+        eval_trace = make_mixed_exact_candidate_demand_trace(
+            gate_config,
+            seed=eval_seed,
+            candidate_rows=candidate_row_count,
+        )
+        content_rows = gate_config.fact_count + candidate_row_count
+    else:
+        raise ValueError("demand_trace must be one of: exact_query, mixed_candidate_topk")
 
-    train_trace = make_exact_query_demand_trace(gate_config, seed=train_seed)
-    eval_trace = make_exact_query_demand_trace(gate_config, seed=eval_seed)
     lut = train_trace_demand_content_gate_lut(
         demand_trace=train_trace,
-        length=gate_config.fact_count,
+        length=content_rows,
         bits=bits,
         seed=train_seed + 8192,
         write_cost=write_cost,
@@ -605,7 +672,7 @@ def run_synthetic_lm_demand_gate_sweep(
             evaluate_trace_demand_content_gate(
                 policy=policy,
                 demand_trace=eval_trace,
-                length=gate_config.fact_count,
+                length=content_rows,
                 bits=bits,
                 seed=eval_seed + 8192,
             )
@@ -614,18 +681,21 @@ def run_synthetic_lm_demand_gate_sweep(
         evaluate_lut_trace_demand_content_gate(
             lut=lut,
             demand_trace=eval_trace,
-            length=gate_config.fact_count,
+            length=content_rows,
             bits=bits,
             seed=eval_seed + 8192,
-            policy=f"learned_exact_trace_lut_c{write_cost:0.2f}",
+            policy=f"learned_{demand_trace}_lut_c{write_cost:0.2f}",
         )
     )
 
     return SyntheticLMDemandGateResult(
+        demand_trace=demand_trace,
         fact_count=gate_config.fact_count,
+        candidate_rows=candidate_row_count,
         topic_events=gate_config.topic_events,
         query_events=gate_config.query_events,
         total_events=gate_config.topic_events + gate_config.query_events,
+        content_rows=content_rows,
         bits=bits,
         train_seed=train_seed,
         eval_seed=eval_seed,

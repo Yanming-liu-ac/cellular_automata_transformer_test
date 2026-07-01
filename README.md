@@ -83,6 +83,8 @@ The first experiments compare:
   actual retrieval occurrence positions;
 - synthetic exact-query demand gates that wake persistent content only for
   exact-memory lookup events;
+- synthetic mixed exact+candidate demand gates that expose the output-side write
+  pressure of candidate shortlist scoring;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

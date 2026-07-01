@@ -225,6 +225,15 @@ reaches 99.6% demanded exactness. This is an even clearer systems result than
 the rare-directory trace: when demand is truly sparse, content exposure should
 be event-routed, not maintained continuously.
 
+Adding candidate-output demand makes the bottleneck more honest. In the mixed
+trace, query events still demand one exact fact row, but topic events demand the
+64 candidate rows used for shortlist scoring. The demand fraction rises to
+7.47%. The learned 16-byte LUT reaches 95.0% demanded exactness with only 0.3%
+mean demand error, but it spends 0.178 channel writes/token/tick, close to
+fixed refresh16's 0.187. This does not invalidate the CA path; it says the next
+output-side rule must reduce candidate demand before content exposure, rather
+than waking all top-k candidate rows every topic step.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -346,6 +346,12 @@ fact row. The learned gate reaches about 99.6% demanded exactness at roughly
 0.0019 channel writes/token/tick. This is path specialization as a CA rule:
 idle content stays persistent, active content is exposed locally.
 
+The mixed exact+candidate trace adds the uncomfortable but useful constraint:
+when topic events demand all 64 output candidate rows, the learned gate rises to
+about 0.178 writes/token/tick for 95.0% demanded exactness. DeepSeek-style
+sparsity has to be copied at the output side too. HARC-CA needs a candidate
+selection rule that makes output demand sparse before content is exposed.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

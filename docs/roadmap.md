@@ -353,12 +353,14 @@ Implement:
   route/query demand instead of pure carrier reconstruction error.
 - replace synthetic random demand in the learned demand-gate sweep with real
   route/retrieval demand from the dual-path synthetic LM and rare-directory
-  workloads.
-- extend the rare-directory trace-gate result into the dual-path synthetic LM,
-  where demand comes from exact-memory lookups and candidate output events.
-- add candidate-output demand to the synthetic trace. The exact-query trace now
-  works; topic events should next demand the candidate rows that are scored for
-  output shortlist ranking.
+  workloads. Rare-directory and synthetic exact-query traces now work.
+- extend the rare-directory trace-gate result into the dual-path synthetic LM.
+  Exact-memory demand now works; mixed exact+candidate demand shows candidate
+  output rows dominate write traffic.
+- prune candidate-output demand before content exposure. The current mixed
+  trace wakes 64 candidate rows on topic events and costs about 0.178
+  writes/token/tick, so the next rule should route or rank candidates before
+  asserting the content-demand bit.
 
 First trainable target:
 

@@ -231,6 +231,14 @@ separates persistent content storage from transient compute exposure in the
 architecture: exact-memory and route lanes assert demand, and the cell writes
 content into the carrier only at those demanded rows.
 
+The same mechanism becomes more expensive when topic events demand output
+candidate rows. In a mixed exact+candidate trace, topic steps demand the 64
+candidate rows scored by the output shortlist. A 16-byte learned gate still
+keeps demanded content accurate, but write traffic rises to about 0.178
+channels/token/tick. This makes candidate pruning part of the architecture, not
+an optional optimization: the output lane should narrow demand before the
+content lane exposes persistent state to the carrier.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code
