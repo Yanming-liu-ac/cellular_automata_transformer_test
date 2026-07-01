@@ -397,6 +397,20 @@ synthetic next-token benchmark.
 This target now includes learning a candidate output policy that avoids
 full-vocabulary scoring for most events.
 
+Parallel wiki-memory target:
+
+```text
+Build a CA-native external knowledge fabric before attempting a full CA-only
+general LLM.
+```
+
+The first version should store facts as local page/link cells, keep low-bit
+summaries per page and block, propagate dirty/version changes by local triggers,
+and benchmark update latency plus multi-hop recall against flat RAG and
+attention-over-context baselines. This is a better first product-shaped target
+than replacing the entire Transformer stack, because mutable knowledge is where
+local CA storage, versioning, and sparse routing are naturally strong.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

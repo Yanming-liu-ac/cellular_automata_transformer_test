@@ -39,6 +39,8 @@ low-bit controllers.
 - `docs/research_notes.md` - evidence, hypotheses, and research risks.
 - `docs/deepseek_lessons.md` - DeepSeek V3/V4 design lessons translated to
   HARC-CA.
+- `docs/wiki_memory_track.md` - CA-native external knowledge and wiki-memory
+  track.
 - `docs/hardware_metrics.md` - chip-oriented metrics to track from day one.
 - `docs/roadmap.md` - staged experiments and kill criteria.
 - `src/cellular_transformer/` - NumPy prototypes and measurement utilities.
