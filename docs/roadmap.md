@@ -134,6 +134,10 @@ Compressed block-index result:
   thresholds 8-15 keep similar rare coverage. Threshold 15 removes early probes
   in the split/repeated stress cases while keeping about 98.7% split-rare and
   98.3% repeated-name coverage.
+- The first trained HCA route LUT is 40B and replaces the explicit threshold at
+  inference, but it is not yet the default: it keeps about 99.0% split-rare
+  coverage and 97.7% repeated-name coverage, slightly below the threshold-15
+  joint policy.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -271,8 +275,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- replace the hand threshold sweep with a trained joint threshold/probe/fanout
-  table and re-run the bursty rare-token and repeated-name stress tests.
+- improve the trained HCA route table with recency/topic/context metadata or a
+  recall-weighted objective so it can replace the threshold-15 joint policy.
 - add recency/query-context features to the trained fanout LUT and then train a
   joint admission/probe/fanout policy so HCA threshold, exact-directory
   override, and read budget are optimized as one hardware control table.

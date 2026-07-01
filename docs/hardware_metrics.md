@@ -461,6 +461,21 @@ the learned exact-memory control plane exists. Threshold 15 keeps the same
 measured recall in this stress set, avoids early probes, and still uses the LUT
 fanout when the token is routed to CSA.
 
+The first trained HCA route LUT tests whether the threshold can disappear from
+inference. It is a 40B table over HCA estimate, bank spread, and saturation
+count:
+
+```text
+hca_route_lut  reference      HCA=84.7%  false-HCA=0.0%  coverage=2.5%   dir read=0.50B/query
+hca_route_lut  split_rare     HCA=0.8%   false-HCA=0.8%  coverage=99.0%  dir read=6.47B/query
+hca_route_lut  repeated_name  HCA=0.8%   false-HCA=0.8%  coverage=97.7%  dir read=12.77B/query
+```
+
+This route LUT is not the new default because repeated-name coverage remains
+below the threshold-15 joint policy's 98.3%. It does prove that HCA admission can
+be encoded as a very small local table; the next route table should add recency
+or topic/context metadata before replacing the hand threshold.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

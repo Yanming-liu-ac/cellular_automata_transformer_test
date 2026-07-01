@@ -18,6 +18,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_joint_threshold_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_policy_sweep,
+    run_csa_hca_rare_directory_route_lut_sweep,
     run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
     run_compressed_block_budget_sweep,
@@ -579,6 +580,43 @@ def main() -> None:
     print("- Threshold 6 is too permissive for split rare tokens in this stress set.")
     print("- Thresholds 8-15 keep similar rare coverage after joint probe/fanout control.")
     print("- Higher thresholds reduce early probes, making threshold 15 the cheaper exact-recall mode here.")
+    print()
+
+    route = run_csa_hca_rare_directory_route_lut_sweep()
+    print("Trained HCA route LUT sweep")
+    print(
+        f"training_samples={route.training_samples}, "
+        f"route_lut={format_bytes(route.route_lut.state_bytes)}, "
+        f"active_route_buckets={sum(route.route_lut.routes_hca)}"
+    )
+    headers = [
+        "scenario",
+        "hca_r",
+        "false_hca",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 94)
+    for point in route.points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.scenario,
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Route-LUT interpretation:")
+    print("- A 40B route LUT can replace the hand HCA threshold in this diagnostic.")
+    print("- It preserves reference HCA routing but is not yet better than threshold15+fanout.")
+    print("- The next route table needs richer metadata or a recall-weighted training objective.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

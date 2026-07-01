@@ -20,6 +20,25 @@ Reliable public sources used here:
 Correction: the DeepSeek-V4 Technical Report is available on arXiv. Earlier
 notes that no official V4 report was found are obsolete.
 
+## Why The V4 Report Matters
+
+DeepSeek-V4 is the closest public external anchor for this project so far. It
+does not prove that a CA-native LLM already exists, and it should not be copied
+as a Transformer clone. What it does prove is more important for hardware: a
+frontier-style LLM can be reorganized around compressed memory, sparse context
+selection, recurrent compressed state, very low precision, and custom kernels.
+
+For HARC-CA, the report turns the design question into a sharper one:
+
+```text
+Can CSA/HCA/FP4-style systems logic be made into local CA state, local routing,
+and small learned LUT controllers instead of attention kernels?
+```
+
+That is why the current experiments focus on a CSA-like sparse block path, an
+HCA-like compressed recurrent path, rare exact directories, and tiny route/probe
+LUTs before attempting a full language model.
+
 ## What DeepSeek Actually Optimizes
 
 DeepSeek-V3 is not just a larger Transformer. Its important pattern is:
@@ -471,6 +490,12 @@ fanout are learned, the HCA threshold should be chosen jointly with them. In the
 current stress set, threshold 15 is cheaper than threshold 8 because it removes
 early probes while preserving the same rare coverage under the learned fanout
 path.
+The first route-LUT sweep is the useful caution: replacing the explicit
+threshold with a 40B table is possible, but not automatically better. It
+preserves reference HCA routing yet loses a little repeated-name coverage. For a
+CA chip, trainable control tables need recall-weighted objectives, not just
+smaller control state.
+
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

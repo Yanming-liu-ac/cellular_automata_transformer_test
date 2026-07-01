@@ -52,6 +52,10 @@ sparse associative lane        -> exact rare facts and long-range copy
 ```
 
 The architecture should not force one memory path to solve both problems.
+The V4 report is therefore best treated as the closest external systems
+prototype, not as the target architecture itself. HARC-CA keeps the lesson but
+changes the primitive: attention/index kernels become local state updates,
+bounded route waves, and low-bit learned control tables.
 
 ## Cell State
 
@@ -342,6 +346,16 @@ stress, keeps about 98.7% split-rare and 98.3% repeated-name coverage, and keeps
 reference directory traffic at 0.50B/query. So the current exact-recall mode is
 again threshold 15, but now with learned probe/fanout control rather than a
 fixed no-guard rule.
+
+The first trained HCA route LUT removes the explicit threshold from inference.
+It is a 40B table over the same HCA bank metadata and activates only one HCA
+route bucket in the current stress set. It preserves reference HCA routing and
+keeps reference directory traffic at 0.50B/query, while getting about 99.0%
+split-rare coverage and 97.7% repeated-name coverage. That is close, but still
+slightly weaker than threshold-15 plus learned fanout. The conclusion is useful:
+the hand threshold can be represented as a tiny CA-local table, but the next
+route LUT needs richer metadata or a recall-weighted training objective before
+it should replace the current joint policy.
 
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in

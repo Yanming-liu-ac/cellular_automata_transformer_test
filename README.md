@@ -28,6 +28,11 @@ The near-term goal is to turn this into a sequence-model testbed:
 4. estimate memory movement, local wire cost, and cell throughput against a tiny
    Transformer baseline.
 
+DeepSeek-V4's CSA/HCA design is the closest current external systems anchor:
+it supports the two-path memory thesis, while this repository explores whether
+the same efficiency logic can be recast as CA-native state, routing, and tiny
+low-bit controllers.
+
 ## Repository Layout
 
 - `docs/architecture.md` - HARC-CA architecture proposal.

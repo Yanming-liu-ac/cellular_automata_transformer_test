@@ -44,6 +44,12 @@ CA analog is to pair a sparse exact associative lane with a compressed recurrent
 state field, instead of forcing one mechanism to solve both exact recall and
 fuzzy context integration.
 
+The arXiv report `2606.19348` is therefore not merely adjacent literature; it is
+the strongest current external blueprint for the memory-system side of this
+project. The missing step is still the hard one: replace attention-centric
+kernels with trainable CA dynamics and tiny local controllers without losing the
+quality benefits that CSA/HCA provide.
+
 ## What Must Be Proven
 
 The project should prove or disprove these claims experimentally:
@@ -559,6 +565,18 @@ repeated-name stress, keeps about 98.7% split-rare and 98.3% repeated-name
 coverage, and spends the same 6.45B/query and 12.54B/query directory traffic as
 the lower thresholds. This moves the current recommendation back to threshold
 15, now with learned probe/fanout control instead of the old hand no-guard rule.
+
+The thirty-sixth sweep trains a 40B HCA route LUT to replace the explicit
+threshold at inference. The route table uses only HCA estimate, bank spread, and
+saturation count, and it activates one HCA bucket in the current stress set. It
+preserves reference HCA routing and keeps reference directory traffic at
+0.50B/query. On split-rare stress it gets about 99.0% coverage at
+6.47B/query; on repeated-name stress it gets about 97.7% coverage at
+12.77B/query. This is close but not better than threshold-15 plus learned
+fanout, so the current recommendation stays with the threshold-15 joint policy.
+The value of the result is that it exposes the next missing feature: route
+selection needs richer low-bit metadata or a training objective that prices rare
+false-HCA routes more heavily.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
