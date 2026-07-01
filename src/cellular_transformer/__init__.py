@@ -242,6 +242,9 @@ from .synthetic_lm import (
     train_synthetic_lm_phased_demand_gate_lut,
 )
 from .wiki_memory import (
+    CAWikiCellCompiledTraceImportanceLUTEntry,
+    CAWikiCellCompiledTraceImportancePoint,
+    CAWikiCellCompiledTraceImportanceResult,
     CAWikiCellConfig,
     CAWikiCellLearnedRepairPoint,
     CAWikiCellLearnedRepairResult,
@@ -300,6 +303,7 @@ from .wiki_memory import (
     run_wiki_memory_learned_guard_sharing_sweep,
     run_wiki_memory_scaling_sweep,
     run_wiki_memory_sweep,
+    run_ca_wiki_cell_compiled_trace_importance_sweep,
     run_ca_wiki_cell_learned_repair_sweep,
     run_ca_wiki_cell_summary_sweep,
     run_ca_wiki_cell_subtile_repair_sweep,
@@ -314,6 +318,9 @@ from .wiki_memory import (
 __all__ = [
     "CellularMoE",
     "CellularMoEConfig",
+    "CAWikiCellCompiledTraceImportanceLUTEntry",
+    "CAWikiCellCompiledTraceImportancePoint",
+    "CAWikiCellCompiledTraceImportanceResult",
     "CAWikiCellConfig",
     "CAWikiCellLearnedRepairPoint",
     "CAWikiCellLearnedRepairResult",
@@ -557,6 +564,7 @@ __all__ = [
     "run_compressed_block_budget_sweep",
     "run_compressed_block_index_trial",
     "run_csa_hca_policy_trial",
+    "run_ca_wiki_cell_compiled_trace_importance_sweep",
     "run_ca_wiki_cell_learned_repair_sweep",
     "run_ca_wiki_cell_summary_sweep",
     "run_ca_wiki_cell_subtile_repair_sweep",

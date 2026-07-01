@@ -1230,6 +1230,66 @@ class CAWikiCellTraceMetadataImportanceResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellCompiledTraceImportanceLUTEntry:
+    """Compiled-wiki error/audit buckets mapped to importance."""
+
+    retrieval_error_bucket: int
+    contradiction_bucket: int
+    stale_probe_bucket: int
+    chosen_importance: str
+    training_count: int
+
+
+@dataclass(frozen=True)
+class CAWikiCellCompiledTraceImportancePoint:
+    """Evaluation point for compiled-wiki trace-derived importance."""
+
+    eval_seed: int
+    claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    local_signal_bits_per_claim: int
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    loose_rate: float
+    normal_rate: float
+    strict_rate: float
+    mean_queries_per_claim: float
+    mean_updates_per_claim: float
+    mean_compiles_per_claim: float
+    mean_retrieval_errors_per_claim: float
+    mean_contradiction_probes_per_claim: float
+    mean_stale_probes_per_claim: float
+    estimated_touch_per_event: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellCompiledTraceImportanceResult:
+    """Compiled-wiki retrieval/audit trace -> provenance importance."""
+
+    claim_count: int
+    train_claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    local_signal_bits_per_claim: int
+    classifier_lut_bytes: float
+    repair_lut_bytes: float
+    under_importance_weight: float
+    over_importance_weight: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    entries: Tuple[CAWikiCellCompiledTraceImportanceLUTEntry, ...]
+    points: Tuple[CAWikiCellCompiledTraceImportancePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -5905,6 +5965,14 @@ def _ca_wiki_trace_pressure_bucket(pressure: np.ndarray) -> np.ndarray:
     return buckets
 
 
+def _ca_wiki_count_bucket(values: np.ndarray) -> np.ndarray:
+    buckets = np.zeros(values.shape[0], dtype=np.int64)
+    buckets[values >= 1] = 1
+    buckets[values >= 2] = 2
+    buckets[values >= 4] = 3
+    return buckets
+
+
 def _ca_wiki_metadata_trace_labels(
     features: np.ndarray,
     seed: int,
@@ -5975,6 +6043,120 @@ def _ca_wiki_metadata_trace_labels(
     labels[pressure_bucket >= 1] = 1
     labels[pressure_bucket >= 2] = 2
     return labels, query_count, update_count, stale_probe_count, pressure_bucket
+
+
+def _ca_wiki_majority_value(values: np.ndarray) -> int:
+    return int(np.argmax(np.bincount(values, minlength=4)))
+
+
+def _ca_wiki_compiled_trace_labels(
+    features: np.ndarray,
+    seed: int,
+    query_events: int,
+    update_events: int,
+    compile_events: int,
+    sources_per_claim: int = 16,
+    audit_probes: int = 2,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Derive importance from compiled-wiki retrieval and audit failures."""
+
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    if sources_per_claim <= 0:
+        raise ValueError("sources_per_claim must be positive")
+    if audit_probes <= 0:
+        raise ValueError("audit_probes must be positive")
+    claim_count = int(features.shape[0])
+    if claim_count <= 0:
+        raise ValueError("features must contain at least one claim")
+
+    rng = np.random.default_rng(seed)
+    trust = features[:, 0].astype(np.float64)
+    citations = features[:, 1].astype(np.float64)
+    recency = features[:, 2].astype(np.float64)
+    query_bucket = features[:, 3].astype(np.float64)
+    query_weights = 1.0 + 2.0 * query_bucket + 0.75 * recency + 0.35 * citations
+    query_weights /= float(np.sum(query_weights))
+    update_weights = 0.5 + 1.8 * recency + 0.35 * query_bucket
+    update_weights /= float(np.sum(update_weights))
+
+    truth_value = rng.integers(0, 4, size=claim_count, dtype=np.int64)
+    source_value = np.repeat(truth_value[:, None], sources_per_claim, axis=1)
+    summary_value = truth_value.copy()
+    dirty_count = np.zeros(claim_count, dtype=np.int64)
+    query_count = np.zeros(claim_count, dtype=np.int64)
+    update_count = np.zeros(claim_count, dtype=np.int64)
+    compile_count = np.zeros(claim_count, dtype=np.int64)
+    retrieval_error_count = np.zeros(claim_count, dtype=np.int64)
+    stale_probe_count = np.zeros(claim_count, dtype=np.int64)
+    contradiction_probe_count = np.zeros(claim_count, dtype=np.int64)
+
+    events = np.concatenate(
+        (
+            np.zeros(int(query_events), dtype=np.int8),
+            np.ones(int(update_events), dtype=np.int8),
+            np.full(int(compile_events), 2, dtype=np.int8),
+        )
+    )
+    rng.shuffle(events)
+    probe_count = min(audit_probes, sources_per_claim)
+    for event in events:
+        if event == 1:
+            claim = int(rng.choice(claim_count, p=update_weights))
+            update_count[claim] += 1
+            dirty_count[claim] += 1
+            if rng.random() < (0.35 + 0.25 * recency[claim] / 3.0):
+                truth_value[claim] = int((truth_value[claim] + rng.integers(1, 4)) % 4)
+            fanout = int(rng.integers(1, min(4, sources_per_claim) + 1))
+            sources = rng.choice(sources_per_claim, size=fanout, replace=False)
+            for source in sources:
+                if rng.random() < (0.12 + 0.10 * (3.0 - trust[claim]) / 3.0):
+                    alternatives = [value for value in range(4) if value != truth_value[claim]]
+                    source_value[claim, source] = int(rng.choice(alternatives))
+                else:
+                    source_value[claim, source] = truth_value[claim]
+        elif event == 2:
+            compile_weights = dirty_count.astype(np.float64) + 0.1 + 0.2 * recency + 0.1 * query_bucket
+            compile_weights /= float(np.sum(compile_weights))
+            claim = int(rng.choice(claim_count, p=compile_weights))
+            summary_value[claim] = _ca_wiki_majority_value(source_value[claim])
+            dirty_count[claim] = 0
+            compile_count[claim] += 1
+        else:
+            claim = int(rng.choice(claim_count, p=query_weights))
+            query_count[claim] += 1
+            if summary_value[claim] != truth_value[claim]:
+                retrieval_error_count[claim] += 1
+            sources = rng.choice(sources_per_claim, size=probe_count, replace=False)
+            probed_values = source_value[claim, sources]
+            stale_probe_count[claim] += int(np.sum(probed_values != summary_value[claim]))
+            if np.any(probed_values != truth_value[claim]) or len(set(int(value) for value in probed_values)) > 1:
+                contradiction_probe_count[claim] += 1
+
+    risk = (
+        3.0 * retrieval_error_count.astype(np.float64)
+        + 2.0 * contradiction_probe_count.astype(np.float64)
+        + 1.5 * stale_probe_count.astype(np.float64)
+        + 0.5 * update_count.astype(np.float64)
+        + 1.5 * trust
+        + 0.75 * citations
+    )
+    labels = np.zeros(claim_count, dtype=np.int64)
+    labels[risk >= 6.0] = 1
+    labels[risk >= 11.0] = 2
+    return (
+        labels,
+        query_count,
+        update_count,
+        compile_count,
+        retrieval_error_count,
+        contradiction_probe_count,
+        stale_probe_count,
+    )
 
 
 def _ca_wiki_metadata_key_teacher(
@@ -6499,6 +6681,235 @@ def run_ca_wiki_cell_trace_metadata_importance_sweep(
         update_events=update_events,
         metadata_bits_per_claim=8,
         local_pressure_bits_per_claim=2,
+        classifier_lut_bytes=classifier_lut_bytes,
+        repair_lut_bytes=provenance.lut_state_bytes,
+        under_importance_weight=under_importance_weight,
+        over_importance_weight=over_importance_weight,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
+        entries=tuple(entries),
+        points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_compiled_trace_importance_sweep(
+    *,
+    claim_count: int = 1024,
+    train_claim_count: int = 4096,
+    query_events: int = 4096,
+    update_events: int = 2048,
+    compile_events: int = 512,
+    train_seeds: Tuple[int, ...] = (3601, 3701, 3801),
+    eval_seeds: Tuple[int, ...] = (3901, 4001, 4101, 4201),
+    under_importance_weight: float = 4.0,
+    over_importance_weight: float = 0.75,
+    min_accuracy: float = 0.84,
+    min_strict_recall: float = 0.98,
+    max_under_strict_rate: float = 0.065,
+) -> CAWikiCellCompiledTraceImportanceResult:
+    """Learn importance from compiled-wiki retrieval/audit error counters."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    if under_importance_weight < 0.0:
+        raise ValueError("under_importance_weight must be non-negative")
+    if over_importance_weight < 0.0:
+        raise ValueError("over_importance_weight must be non-negative")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts = np.zeros(
+        (bucket_count, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+    train_event_scale = train_claim_count / float(claim_count)
+    train_query_events = int(round(query_events * train_event_scale))
+    train_update_events = int(round(update_events * train_event_scale))
+    train_compile_events = int(round(compile_events * train_event_scale))
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        (
+            labels,
+            _,
+            _,
+            _,
+            retrieval_errors,
+            contradiction_probes,
+            stale_probes,
+        ) = _ca_wiki_compiled_trace_labels(
+            features,
+            seed + 47,
+            train_query_events,
+            train_update_events,
+            train_compile_events,
+        )
+        error_bucket = _ca_wiki_count_bucket(retrieval_errors)
+        contradiction_bucket = _ca_wiki_count_bucket(contradiction_probes)
+        stale_bucket = _ca_wiki_count_bucket(stale_probes)
+        for buckets, label in zip(
+            zip(error_bucket, contradiction_bucket, stale_bucket),
+            labels,
+        ):
+            counts[int(buckets[0]), int(buckets[1]), int(buckets[2]), int(label)] += 1
+
+    lut = np.zeros((bucket_count, bucket_count, bucket_count), dtype=np.int64)
+    entries: List[CAWikiCellCompiledTraceImportanceLUTEntry] = []
+    for error_bucket in range(bucket_count):
+        for contradiction_bucket in range(bucket_count):
+            for stale_bucket in range(bucket_count):
+                bucket_counts = counts[error_bucket, contradiction_bucket, stale_bucket]
+                training_count = int(np.sum(bucket_counts))
+                losses = []
+                for predicted in range(mode_count):
+                    loss = 0.0
+                    for actual, count in enumerate(bucket_counts):
+                        if predicted < actual:
+                            loss += (actual - predicted) * under_importance_weight * count
+                        elif predicted > actual:
+                            loss += (predicted - actual) * over_importance_weight * count
+                    losses.append(loss)
+                if training_count:
+                    chosen_index = int(np.argmin(losses))
+                else:
+                    fallback_score = 2 * error_bucket + contradiction_bucket + stale_bucket
+                    chosen_index = 2 if fallback_score >= 4 else 1 if fallback_score >= 2 else 0
+                lut[error_bucket, contradiction_bucket, stale_bucket] = chosen_index
+                entries.append(
+                    CAWikiCellCompiledTraceImportanceLUTEntry(
+                        retrieval_error_bucket=error_bucket,
+                        contradiction_bucket=contradiction_bucket,
+                        stale_probe_bucket=stale_bucket,
+                        chosen_importance=modes[chosen_index],
+                        training_count=training_count,
+                    )
+                )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    classifier_bits = bucket_count**3 * max(1, int(np.ceil(np.log2(mode_count))))
+    classifier_lut_bytes = classifier_bits / 8.0
+    eval_points: List[CAWikiCellCompiledTraceImportancePoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        (
+            teacher,
+            query_count,
+            update_count,
+            compiled_count,
+            retrieval_errors,
+            contradiction_probes,
+            stale_probes,
+        ) = _ca_wiki_compiled_trace_labels(
+            features,
+            seed + 47,
+            query_events,
+            update_events,
+            compile_events,
+        )
+        error_bucket = _ca_wiki_count_bucket(retrieval_errors)
+        contradiction_bucket = _ca_wiki_count_bucket(contradiction_probes)
+        stale_bucket = _ca_wiki_count_bucket(stale_probes)
+        predicted = np.array(
+            [
+                lut[int(error_value), int(contradiction_value), int(stale_value)]
+                for error_value, contradiction_value, stale_value in zip(
+                    error_bucket,
+                    contradiction_bucket,
+                    stale_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(
+            mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count)
+        )
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        eval_points.append(
+            CAWikiCellCompiledTraceImportancePoint(
+                eval_seed=seed,
+                claim_count=claim_count,
+                query_events=query_events,
+                update_events=update_events,
+                compile_events=compile_events,
+                local_signal_bits_per_claim=6,
+                accuracy=accuracy,
+                strict_precision=strict_precision,
+                strict_recall=strict_recall,
+                over_strict_rate=over_strict / float(claim_count),
+                under_strict_rate=under_strict_rate,
+                loose_rate=mode_rates[0],
+                normal_rate=mode_rates[1],
+                strict_rate=mode_rates[2],
+                mean_queries_per_claim=float(np.mean(query_count)),
+                mean_updates_per_claim=float(np.mean(update_count)),
+                mean_compiles_per_claim=float(np.mean(compiled_count)),
+                mean_retrieval_errors_per_claim=float(np.mean(retrieval_errors)),
+                mean_contradiction_probes_per_claim=float(np.mean(contradiction_probes)),
+                mean_stale_probes_per_claim=float(np.mean(stale_probes)),
+                estimated_touch_per_event=estimated_touch,
+                target_met=(
+                    accuracy >= min_accuracy
+                    and strict_recall >= min_strict_recall
+                    and under_strict_rate <= max_under_strict_rate
+                ),
+            )
+        )
+
+    return CAWikiCellCompiledTraceImportanceResult(
+        claim_count=claim_count,
+        train_claim_count=train_claim_count,
+        query_events=query_events,
+        update_events=update_events,
+        compile_events=compile_events,
+        local_signal_bits_per_claim=6,
         classifier_lut_bytes=classifier_lut_bytes,
         repair_lut_bytes=provenance.lut_state_bytes,
         under_importance_weight=under_importance_weight,

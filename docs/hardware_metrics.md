@@ -1443,6 +1443,22 @@ provenance repair traffic is 8.44-8.54 touched cells/event. The classifier LUT
 is small because the expensive information is not in the table; it is in the
 local counters that the CA fabric maintains as events arrive.
 
+The compiled-trace controller replaces the pressure bucket with three local
+audit buckets:
+
+- retrieval-error count bucket;
+- contradiction-probe count bucket;
+- stale-source-probe count bucket.
+
+Those three 2-bit buckets index a 16.00B classifier LUT. With the same 1.125B
+provenance repair table, the total controller LUT state is 17.125B. On four
+1024-claim held-out traces with 4096 query events, 2048 update events, and 512
+compile events, strict recall is 99.19-100.00%, under-strict rate is
+4.00-6.05%, and estimated provenance repair traffic is 8.36-8.40 touched
+cells/event. The relevant chip interpretation is that the CA fabric stores and
+updates the counters beside the claim cell; global model weights are not needed
+to decide when a compiled wiki page needs stricter provenance repair.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

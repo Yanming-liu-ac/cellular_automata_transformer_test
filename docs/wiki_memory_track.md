@@ -439,6 +439,21 @@ provenance touch is 8.44-8.54 cells/event. This is not a solved real-wiki
 importance model; it is a clean CA control primitive: local event counters ->
 local pressure bucket -> tiny importance LUT -> local provenance repair mode.
 
+The compiled-trace audit moves one step closer to an LLM-Wiki memory engine.
+It simulates raw source cells, a compiled claim summary, source updates,
+summary recompilation, and query-time audit probes. Importance labels now come
+from actual local failures in that compiled wiki: retrieval errors when the
+summary lags the current truth, contradiction probes when audited source cells
+disagree, and stale-source probes when sources disagree with the compiled
+summary. Inference uses only three 2-bit local buckets for those counters. The
+classifier LUT is 16.00B and the reused provenance repair LUT is 1.125B. On
+four held-out traces with 4096 queries, 2048 updates, and 512 compile events,
+accuracy is 85.35-86.82%, strict recall is 99.19-100.00%, under-strict rate is
+4.00-6.05%, and estimated provenance touch is 8.36-8.40 cells/event. This is
+the strongest evidence so far that the CA-first chip target should start as a
+mutable compiled-wiki maintenance fabric rather than a full decoder
+replacement.
+
 ## Kill Criteria
 
 This track is not useful if:

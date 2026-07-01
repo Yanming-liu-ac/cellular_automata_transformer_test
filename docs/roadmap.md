@@ -608,6 +608,15 @@ remaining roadmap item is narrower and harder: replace the synthetic pressure
 formula with labels from a compiled wiki, retrieval failures, contradiction
 buffers, and source freshness audits.
 
+That compiled-wiki replacement now exists in synthetic form. Raw source cells
+can diverge from a compiled summary; query and audit events accumulate
+retrieval-error, contradiction, and stale-source counters. A 16B LUT over those
+three 2-bit buckets maps to provenance importance and passes 4/4 held-out
+traces, with strict recall above 99% and under-strict rate at or below 6.05%.
+The next roadmap item is to connect this diagnostic to real compiled markdown
+pages or generated source snippets, so contradictions and stale summaries come
+from text-level edits instead of synthetic integer facts.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

@@ -93,6 +93,7 @@ python experiments/ca_wiki_cell_learned_subtile_repair_demo.py
 python experiments/ca_wiki_cell_metadata_importance_demo.py
 python experiments/ca_wiki_cell_noisy_metadata_importance_demo.py
 python experiments/ca_wiki_cell_trace_metadata_importance_demo.py
+python experiments/ca_wiki_cell_compiled_trace_importance_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -153,6 +154,8 @@ The first experiments compare:
   importance more heavily than over-strict repair;
 - trace-derived CA Wiki Cell importance controllers that turn local
   query/update/stale pressure counters into provenance repair modes;
+- compiled-trace CA Wiki Cell importance controllers that learn repair modes
+  from local retrieval-error, contradiction, and stale-source audit counters;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as
