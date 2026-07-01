@@ -41,6 +41,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         "guard_on",
         "p_base",
         "p_dense",
+        "p_win",
+        "p_loss",
         "base",
         "tag_acc",
         "guard",
@@ -53,8 +55,9 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
         "tag_B",
         "guard_B",
     ]
-    print(" | ".join(f"{header:>10}" for header in headers))
-    print("-" * 205)
+    header_line = " | ".join(f"{header:>10}" for header in headers)
+    print(header_line)
+    print("-" * len(header_line))
     for point in result.points:
         row = [
             fmt_pct(point.dense_page_fraction),
@@ -65,6 +68,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
             "yes" if point.guard_dense_enabled else "no",
             fmt_pct(point.dense_probe_baseline_recall),
             fmt_pct(point.dense_probe_dense_recall),
+            f"{point.dense_probe_dense_wins}",
+            f"{point.dense_probe_dense_losses}",
             fmt_pct(point.baseline_overall_recall),
             fmt_pct(point.tag_only_overall_recall),
             fmt_pct(point.guarded_overall_recall),
@@ -83,8 +88,8 @@ def print_density_tags(result: WikiMemoryDensityTagResult) -> None:
     print("Interpretation:")
     print("- s_tag and d_tag are low-bit tags from refresh-visible fact density.")
     print("- tag_on applies dense tiles from the density threshold alone.")
-    print("- guard_on additionally requires local probe recall to clear the gain margin.")
-    print("- p_base/p_dense show the baseline and dense-tile probe recall.")
+    print("- guard_on requires local probe recall gain and zero dense-tile losses.")
+    print("- p_base/p_dense and p_win/p_loss show dense-region online guard counters.")
     print("- tag_cut and guard_cut compare read traffic with flat scan.")
 
 

@@ -552,6 +552,10 @@ class WikiMemoryDensityTagPoint:
     sparse_probe_dense_recall: float
     dense_probe_baseline_recall: float
     dense_probe_dense_recall: float
+    sparse_probe_dense_wins: int
+    sparse_probe_dense_losses: int
+    dense_probe_dense_wins: int
+    dense_probe_dense_losses: int
 
 
 @dataclass(frozen=True)
@@ -601,6 +605,38 @@ class _AnswerResult:
     precise: bool
     cells_read: int
     route_found: bool
+
+
+@dataclass(frozen=True)
+class _PairedOnlineProbePoint:
+    """Online guard counters comparing two local routing geometries."""
+
+    queries: int
+    updates: int
+    baseline_hits: int
+    dense_hits: int
+    agreement_hits: int
+    agreement_misses: int
+    dense_wins: int
+    dense_losses: int
+    cells_read_per_query: float
+
+    @property
+    def baseline_recall(self) -> float:
+        return self.baseline_hits / float(self.queries) if self.queries else 0.0
+
+    @property
+    def dense_recall(self) -> float:
+        return self.dense_hits / float(self.queries) if self.queries else 0.0
+
+    @property
+    def dense_gain(self) -> float:
+        return self.dense_recall - self.baseline_recall
+
+    @property
+    def agreement_rate(self) -> float:
+        agreements = self.agreement_hits + self.agreement_misses
+        return agreements / float(self.queries) if self.queries else 0.0
 
 
 class _SyntheticWikiMemory:
@@ -1279,6 +1315,92 @@ def _trial(
         cluster_repair_events=cluster_repair_events,
         dirty_pages_end=int(np.count_nonzero(wiki.dirty_pages)),
         state_bytes=config.state_bytes,
+    )
+
+
+def _paired_online_guard_probe(
+    policy: WikiMemoryRefreshPolicy,
+    baseline_config: WikiMemoryConfig,
+    dense_config: WikiMemoryConfig,
+    seed: int,
+    baseline_lut: WikiMemoryFanoutLUT,
+    dense_lut: WikiMemoryFanoutLUT,
+    query_events: int,
+    update_events: int,
+) -> _PairedOnlineProbePoint:
+    if baseline_config.page_count != dense_config.page_count:
+        raise ValueError("paired probe configs must have the same page_count")
+    if baseline_config.facts_per_page != dense_config.facts_per_page:
+        raise ValueError("paired probe configs must have the same facts_per_page")
+    if query_events <= 0:
+        raise ValueError("query_events must be positive")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+
+    baseline_wiki = _SyntheticWikiMemory(baseline_config, seed)
+    dense_wiki = _SyntheticWikiMemory(dense_config, seed)
+    event_rng = np.random.default_rng(seed + 1_000_003)
+    query_rng = np.random.default_rng(seed + 2_000_003)
+    event_types = np.array(["query"] * query_events + ["update"] * update_events)
+    event_rng.shuffle(event_types)
+
+    queries = 0
+    updates = 0
+    baseline_hits = 0
+    dense_hits = 0
+    agreement_hits = 0
+    agreement_misses = 0
+    dense_wins = 0
+    dense_losses = 0
+    total_cells_read = 0
+
+    for event_type in event_types:
+        if event_type == "update":
+            baseline_wiki.update_fact(policy)
+            dense_wiki.update_fact(policy)
+            updates += 1
+            continue
+
+        baseline_wiki.maybe_refresh(policy)
+        dense_wiki.maybe_refresh(policy)
+        update_rng = baseline_wiki.rng
+        baseline_wiki.rng = query_rng
+        query = baseline_wiki.sample_query()
+        query_rng = baseline_wiki.rng
+        baseline_wiki.rng = update_rng
+
+        baseline_answer = baseline_wiki.answer_query(
+            query,
+            route_mode="lut",
+            fanout_lut=baseline_lut,
+        )
+        dense_answer = dense_wiki.answer_query(
+            query,
+            route_mode="lut",
+            fanout_lut=dense_lut,
+        )
+        baseline_hit = bool(baseline_answer.hit)
+        dense_hit = bool(dense_answer.hit)
+
+        queries += 1
+        baseline_hits += int(baseline_hit)
+        dense_hits += int(dense_hit)
+        agreement_hits += int(baseline_hit and dense_hit)
+        agreement_misses += int((not baseline_hit) and (not dense_hit))
+        dense_wins += int(dense_hit and not baseline_hit)
+        dense_losses += int(baseline_hit and not dense_hit)
+        total_cells_read += baseline_answer.cells_read + dense_answer.cells_read
+
+    return _PairedOnlineProbePoint(
+        queries=queries,
+        updates=updates,
+        baseline_hits=baseline_hits,
+        dense_hits=dense_hits,
+        agreement_hits=agreement_hits,
+        agreement_misses=agreement_misses,
+        dense_wins=dense_wins,
+        dense_losses=dense_losses,
+        cells_read_per_query=total_cells_read / float(queries) if queries else 0.0,
     )
 
 
@@ -2630,49 +2752,25 @@ def run_wiki_memory_density_tag_sweep(
         dense_dense_point = _trial(policy, dense_dense, seed, "lut", dense_dense_lut)
         sparse_flat_point = _trial(policy, sparse_base, seed, "flat")
         dense_flat_point = _trial(policy, dense_base, seed, "flat")
-        sparse_base_probe = _trial(
-            policy,
-            replace(
-                sparse_base,
-                query_events=quality_probe_queries,
-                update_events=quality_probe_updates,
-            ),
-            quality_probe_seed,
-            "lut",
-            sparse_base_lut,
+        sparse_probe = _paired_online_guard_probe(
+            policy=policy,
+            baseline_config=sparse_base,
+            dense_config=sparse_dense,
+            seed=quality_probe_seed,
+            baseline_lut=sparse_base_lut,
+            dense_lut=sparse_dense_lut,
+            query_events=quality_probe_queries,
+            update_events=quality_probe_updates,
         )
-        sparse_dense_probe = _trial(
-            policy,
-            replace(
-                sparse_dense,
-                query_events=quality_probe_queries,
-                update_events=quality_probe_updates,
-            ),
-            quality_probe_seed,
-            "lut",
-            sparse_dense_lut,
-        )
-        dense_base_probe = _trial(
-            policy,
-            replace(
-                dense_base,
-                query_events=quality_probe_queries,
-                update_events=quality_probe_updates,
-            ),
-            quality_probe_seed,
-            "lut",
-            dense_base_lut,
-        )
-        dense_dense_probe = _trial(
-            policy,
-            replace(
-                dense_dense,
-                query_events=quality_probe_queries,
-                update_events=quality_probe_updates,
-            ),
-            quality_probe_seed,
-            "lut",
-            dense_dense_lut,
+        dense_probe = _paired_online_guard_probe(
+            policy=policy,
+            baseline_config=dense_base,
+            dense_config=dense_dense,
+            seed=quality_probe_seed,
+            baseline_lut=dense_base_lut,
+            dense_lut=dense_dense_lut,
+            query_events=quality_probe_queries,
+            update_events=quality_probe_updates,
         )
 
         baseline_recall = _weighted_pair(
@@ -2714,13 +2812,13 @@ def run_wiki_memory_density_tag_sweep(
 
             sparse_guard_enabled = (
                 sparse_tag_enabled
-                and sparse_dense_probe.overall_recall
-                >= sparse_base_probe.overall_recall + quality_probe_min_gain
+                and sparse_probe.dense_gain >= quality_probe_min_gain
+                and sparse_probe.dense_losses == 0
             )
             dense_guard_enabled = (
                 dense_tag_enabled
-                and dense_dense_probe.overall_recall
-                >= dense_base_probe.overall_recall + quality_probe_min_gain
+                and dense_probe.dense_gain >= quality_probe_min_gain
+                and dense_probe.dense_losses == 0
             )
             sparse_guard_point = sparse_dense_point if sparse_guard_enabled else sparse_base_point
             dense_guard_point = dense_dense_point if dense_guard_enabled else dense_base_point
@@ -2791,10 +2889,14 @@ def run_wiki_memory_density_tag_sweep(
                     guarded_state_bytes=guarded_state,
                     baseline_state_bytes=baseline_state,
                     density_tag_state_bytes=density_tag_state_bytes,
-                    sparse_probe_baseline_recall=sparse_base_probe.overall_recall,
-                    sparse_probe_dense_recall=sparse_dense_probe.overall_recall,
-                    dense_probe_baseline_recall=dense_base_probe.overall_recall,
-                    dense_probe_dense_recall=dense_dense_probe.overall_recall,
+                    sparse_probe_baseline_recall=sparse_probe.baseline_recall,
+                    sparse_probe_dense_recall=sparse_probe.dense_recall,
+                    dense_probe_baseline_recall=dense_probe.baseline_recall,
+                    dense_probe_dense_recall=dense_probe.dense_recall,
+                    sparse_probe_dense_wins=sparse_probe.dense_wins,
+                    sparse_probe_dense_losses=sparse_probe.dense_losses,
+                    dense_probe_dense_wins=dense_probe.dense_wins,
+                    dense_probe_dense_losses=dense_probe.dense_losses,
                 )
             )
 

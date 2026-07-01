@@ -224,13 +224,15 @@ that can be emitted during normal summary refresh. With 2-bit tags and an
 8 facts/tag step, sparse 8 facts/page regions get tag 1 and dense 32 facts/page
 regions get tag 3. That is enough to identify dense regions, but not enough to
 choose geometry by itself: at 25% dense pages, density-only thresholding enables
-four-page tiles and drops recall from 99.02% to 97.71%. The guard is now local:
-a 128-query / 64-update probe window requires the dense tile to beat the
-baseline by at least 2 percentage points. At 25% dense pages the probe sees
-100.00% versus 100.00% and rejects the switch, keeping 99.02% recall. At 50%
-and 75% dense pages the probe sees 64.84% -> 97.66% and 50.00% -> 98.44%, so
-the same tag plus guard enables dense tiles and recovers 99.22% and 99.32%
-recall while cutting flat reads by 72.94% and 65.62%.
+four-page tiles and drops recall from 99.02% to 97.71%. The guard is now a
+paired online counter: during a 128-query / 64-update probe window it presents
+the same queries to the baseline and dense-tile routes, requires at least a
+2-point dense recall gain, and rejects any dense loss where baseline hits but
+dense misses. At 25% dense pages the dense route has no wins or losses and is
+rejected, keeping 99.02% recall. At 50% and 75% dense pages the probe sees
+20 and 42 dense wins with zero losses, so the same tag plus guard enables dense
+tiles and recovers 99.22% and 99.32% recall while cutting flat reads by 72.94%
+and 65.62%.
 
 ## Kill Criteria
 

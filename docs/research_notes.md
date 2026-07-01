@@ -408,11 +408,12 @@ The tag is a 2-bit value computed from fact density seen during summary refresh:
 2 or 3 turns dense tiles on for the 32 facts/page region, but density alone
 repeats the 25% dense failure: tag-only recall is 97.71% while the guarded
 policy keeps 99.02%. The guard is no longer an offline region comparison: it
-runs a 128-query / 64-update local probe and requires a 2-point gain. The probe
-rejects 25% dense because dense and baseline both score 100.00%, but enables
-50% and 75% dense where the probe improves from 64.84% to 97.66% and from
-50.00% to 98.44%. The conclusion is precise: density tags are good wake
-signals, but geometry changes need a local quality guard.
+runs a 128-query / 64-update paired online probe, compares baseline and
+dense-tile answers on the same queries, requires a 2-point gain, and rejects
+any dense loss. The probe rejects 25% dense because the dense route has 0 wins
+and 0 losses, but enables 50% and 75% dense with 20 and 42 dense wins and zero
+losses. The conclusion is precise: density tags are good wake signals, but
+geometry changes need a local quality guard.
 
 ## First Retrieval Prototype
 
