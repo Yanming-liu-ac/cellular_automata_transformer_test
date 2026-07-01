@@ -10444,6 +10444,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     factor_guard56_max_strict_fraction: float = 0.20,
     factor_guard80_min_count: int = 4,
     factor_guard80_max_strict_fraction: float = 0.15,
+    factor_guard80_covsafe_max_core_gap_sum: int = 0,
+    factor_guard80_covsafe_parser_miss_relief: int = 1,
+    factor_guard80_covsafe_parser_max_core_gap_sum: int = 2,
+    factor_guard80_shiftguard_min_core_gap_sum: int = 3,
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
@@ -10533,6 +10537,20 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("factor_guard80_min_count must be non-negative")
     if not 0.0 <= factor_guard80_max_strict_fraction <= 1.0:
         raise ValueError("factor_guard80_max_strict_fraction must be in [0, 1]")
+    if factor_guard80_covsafe_max_core_gap_sum < 0:
+        raise ValueError("factor_guard80_covsafe_max_core_gap_sum must be non-negative")
+    if factor_guard80_covsafe_parser_miss_relief < 0:
+        raise ValueError(
+            "factor_guard80_covsafe_parser_miss_relief must be non-negative"
+        )
+    if factor_guard80_covsafe_parser_max_core_gap_sum < 0:
+        raise ValueError(
+            "factor_guard80_covsafe_parser_max_core_gap_sum must be non-negative"
+        )
+    if factor_guard80_shiftguard_min_core_gap_sum < 0:
+        raise ValueError(
+            "factor_guard80_shiftguard_min_core_gap_sum must be non-negative"
+        )
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10773,6 +10791,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             factor_guard56_min_count,
             factor_guard56_max_strict_fraction,
             False,
+            None,
+            None,
+            None,
+            None,
         ),
         (
             "factor_vote80b",
@@ -10781,6 +10803,34 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             factor_guard80_min_count,
             factor_guard80_max_strict_fraction,
             True,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            "factor_vote80b_covsafe",
+            ((0, 2, 4, 6), (1, 3, 5, 6), (0, 1, 4), (2, 5, 6)),
+            2,
+            factor_guard80_min_count,
+            factor_guard80_max_strict_fraction,
+            True,
+            factor_guard80_covsafe_max_core_gap_sum,
+            factor_guard80_covsafe_parser_miss_relief,
+            factor_guard80_covsafe_parser_max_core_gap_sum,
+            None,
+        ),
+        (
+            "factor_vote80b_shiftguard",
+            ((0, 2, 4, 6), (1, 3, 5, 6), (0, 1, 4), (2, 5, 6)),
+            2,
+            factor_guard80_min_count,
+            factor_guard80_max_strict_fraction,
+            True,
+            factor_guard80_covsafe_max_core_gap_sum,
+            factor_guard80_covsafe_parser_miss_relief,
+            factor_guard80_covsafe_parser_max_core_gap_sum,
+            factor_guard80_shiftguard_min_core_gap_sum,
         ),
     )
     factor_guard_variants = []
@@ -10791,6 +10841,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         min_count,
         max_strict_fraction,
         base_strict_only,
+        max_core_gap_sum,
+        parser_miss_relief,
+        parser_max_core_gap_sum,
+        upgrade_min_core_gap_sum,
     ) in factor_guard_specs:
         guards = tuple(
             make_factorized_guard(
@@ -10805,7 +10859,17 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             bucket_count ** len(projection) / 8.0 for projection in projections
         )
         factor_guard_variants.append(
-            (variant, projections, vote_threshold, guards, guard_bytes)
+            (
+                variant,
+                projections,
+                vote_threshold,
+                guards,
+                guard_bytes,
+                max_core_gap_sum,
+                parser_miss_relief,
+                parser_max_core_gap_sum,
+                upgrade_min_core_gap_sum,
+            )
         )
 
     provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
@@ -11018,17 +11082,46 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             vote_threshold,
             factor_guards,
             factor_guard_bytes,
+            max_core_gap_sum,
+            parser_miss_relief,
+            parser_max_core_gap_sum,
+            upgrade_min_core_gap_sum,
         ) in factor_guard_variants:
             downgrade_votes = np.zeros(claim_count, dtype=np.int64)
             for projection, factor_guard in zip(projections, factor_guards):
                 downgrade_votes += factor_guard[
                     tuple(split_buckets[:, index] for index in projection)
                 ].astype(np.int64)
+            coverage_safe_mask = np.ones(claim_count, dtype=np.bool_)
+            if max_core_gap_sum is not None:
+                core_gap_sum = summary_core_bucket + source_core_bucket
+                coverage_safe_mask = (
+                    core_gap_sum <= int(max_core_gap_sum)
+                )
+                if parser_miss_relief is not None:
+                    parser_relief_mask = parser_miss_bucket >= int(
+                        parser_miss_relief
+                    )
+                    if parser_max_core_gap_sum is not None:
+                        parser_relief_mask = parser_relief_mask & (
+                            core_gap_sum <= int(parser_max_core_gap_sum)
+                        )
+                    coverage_safe_mask = coverage_safe_mask | (
+                        parser_relief_mask
+                    )
             factor_predicted = base_predicted.copy()
-            factor_downgrade_mask = (factor_predicted == 2) & (
-                downgrade_votes >= vote_threshold
+            factor_downgrade_mask = (
+                (factor_predicted == 2)
+                & (downgrade_votes >= vote_threshold)
+                & coverage_safe_mask
             )
             factor_predicted[factor_downgrade_mask] = 1
+            if upgrade_min_core_gap_sum is not None:
+                core_gap_sum = summary_core_bucket + source_core_bucket
+                upgrade_mask = (factor_predicted == 1) & (
+                    core_gap_sum >= int(upgrade_min_core_gap_sum)
+                )
+                factor_predicted[upgrade_mask] = 2
             eval_points.append(
                 make_point(
                     variant,
@@ -11101,6 +11194,8 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "split_guard7d",
             "factor_vote56b",
             "factor_vote80b",
+            "factor_vote80b_covsafe",
+            "factor_vote80b_shiftguard",
             "split_lut7d",
         ),
         points=tuple(eval_points),
@@ -11138,6 +11233,8 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "split_guard7d",
         "factor_vote56b",
         "factor_vote80b",
+        "factor_vote80b_covsafe",
+        "factor_vote80b_shiftguard",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,

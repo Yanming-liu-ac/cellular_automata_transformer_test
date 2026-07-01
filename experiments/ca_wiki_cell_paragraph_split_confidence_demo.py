@@ -107,6 +107,7 @@ def print_result(result: CAWikiCellParagraphSplitConfidenceResult) -> None:
     print("- coverage_lut5d is the previous combined weighted field-coverage bucket.")
     print("- split_guard7d adds a conservative guard over summary-core, source-core, and agreement gaps.")
     print("- factor_vote56b/80b compress the split guard into small projected vote tables.")
+    print("- covsafe/shiftguard are hand-coded coverage-shift diagnostics.")
     print("- split_lut7d is the direct 7D classifier; it is more aggressive and can miss the safety gate.")
 
 

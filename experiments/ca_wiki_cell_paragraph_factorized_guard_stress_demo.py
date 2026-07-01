@@ -36,15 +36,15 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
     print(f"train_seeds={result.train_seeds}, eval_seeds={result.eval_seeds}")
     print()
     print(
-        "scenario       variant          total_lut  accuracy  strict_r  "
+        "scenario       variant                    total_lut  accuracy  strict_r  "
         "under     over      strict    touch/e  down    pass"
     )
-    print("-" * 116)
+    print("-" * 126)
     for point in result.points:
         total_lut = point.classifier_lut_bytes + point.guard_lut_bytes
         print(
             f"{point.scenario:<14} "
-            f"{point.variant:<16} "
+            f"{point.variant:<26} "
             f"{format_bytes(total_lut):>8} "
             f"{fmt_pct(point.accuracy):>9} "
             f"{fmt_pct(point.strict_recall):>9} "
@@ -59,6 +59,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
     print("Interpretation:")
     print("- Training stays on the default paragraph distribution.")
     print("- Eval shifts parser noise, omitted fields, distractors, and claim count.")
+    print("- covsafe/shiftguard are hand-coded diagnostics, not solved robust gates.")
     print("- A pass means every eval seed met accuracy, strict-recall, and under-strict gates.")
 
 

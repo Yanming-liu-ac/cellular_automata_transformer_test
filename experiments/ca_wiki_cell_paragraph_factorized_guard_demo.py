@@ -36,10 +36,10 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
     )
     print()
     print(
-        "variant          total_lut  guard     signal  accuracy  strict_r  "
+        "variant                    total_lut  guard     signal  accuracy  strict_r  "
         "under     over      strict    touch/e  down    pass"
     )
-    print("-" * 116)
+    print("-" * 126)
     buckets: dict[str, list[CAWikiCellParagraphFactorizedGuardPoint]] = defaultdict(list)
     for point in result.points:
         buckets[point.variant].append(point)
@@ -48,7 +48,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
         failures = sum(1 for point in points if not point.target_met)
         total_lut = points[0].classifier_lut_bytes + points[0].guard_lut_bytes
         print(
-            f"{variant:<16} "
+            f"{variant:<26} "
             f"{format_bytes(total_lut):>8} "
             f"{format_bytes(points[0].guard_lut_bytes):>8} "
             f"{points[0].local_signal_bits_per_claim:>5}b "
@@ -65,7 +65,8 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
     print("Interpretation:")
     print("- factor_vote56b uses four small projections, 56B of one-bit guard state.")
     print("- factor_vote80b uses two 4D and two 3D projections, 80B of guard state.")
-    print("- both reuse the 64B baseline classifier and only downgrade strict to normal.")
+    print("- covsafe/shiftguard add hand-coded coverage-shift protection diagnostics.")
+    print("- all factorized variants reuse the 64B baseline classifier.")
 
 
 def main() -> None:

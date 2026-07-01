@@ -684,6 +684,15 @@ therefore not a larger monolithic table; it is a shift-aware factorized guard:
 noise-augmented training, a conservative second threshold, or a small local
 coverage-shift detector before strict repair is downgraded.
 
+The first hand-coded version of that roadmap item is now measured and rejected
+as insufficient. `factor_vote80b_covsafe` blocks downgrades under high
+summary/source core gaps, and `factor_vote80b_shiftguard` also upgrades normal
+claims to strict under high coverage gaps. Both keep the default held-out rows
+passing, but neither closes the stress matrix: parser_x2, omit_x2,
+distractor_x2, and large_2k still have failures. The next attempt should learn
+the selector from multi-distribution traces or add an explicit teacher for
+"uncertain coverage means stricter repair" instead of hand tuning thresholds.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

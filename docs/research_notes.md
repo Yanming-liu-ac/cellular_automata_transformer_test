@@ -691,6 +691,19 @@ the 144B factorized guard is an efficient default-distribution controller, but
 its downgrade votes need distribution-shift protection before being promoted to
 a hardware primitive.
 
+The first hand-built shift protection is a negative but useful result.
+`factor_vote80b_covsafe` adds a local rule that blocks strict-to-normal
+downgrades when summary/source core coverage gaps are high, unless parser-miss
+pressure suggests parser-noise shift. It still passes the default held-out
+rows, with 74.66% mean accuracy, 98.37% strict recall, and 24.22% over-strict,
+but it does not close the stress matrix. `factor_vote80b_shiftguard` adds the
+opposite action, upgrading normal to strict on high core-gap claims; default
+remains safe at 74.61% accuracy and 98.42% strict recall, but parser_x2,
+omit_x2, distractor_x2, and large_2k still have held-out failures. A small grid
+search over parser-miss/core-gap thresholds also found no zero-failure hand
+rule. The next robust version should therefore learn a selector or train a
+factorized guard against multiple paragraph-noise distributions.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

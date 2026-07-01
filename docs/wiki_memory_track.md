@@ -577,6 +577,19 @@ coverage statistics. The next version needs noise-augmented training,
 shift-aware thresholds, or a second conservative guard mode before this
 controller should be treated as robust.
 
+A hand-coded shift-aware follow-up tried exactly that conservative mode. The
+`factor_vote80b_covsafe` variant keeps the same 144B control state but blocks
+downgrades when summary/source core coverage gaps are high, with a parser-miss
+relief path. It still passes the default four held-out rows and keeps
+over-strict at 24.22%, but the stress set remains unresolved: parser_x2 passes
+only 1/2 rows, omit_x2 remains 0/2, distractor_x2 is 1/2, and large_2k is 1/2.
+The `factor_vote80b_shiftguard` diagnostic additionally upgrades normal to
+strict on high core-gap claims. It improves default strict recall to 98.42% and
+passes default rows, but the same stress failures remain. A small grid search
+over these local thresholds found no 0-failure hand rule. This points the next
+step toward a learned factorized selector or multi-distribution teacher, not
+more manual threshold tuning.
+
 ## Kill Criteria
 
 This track is not useful if:

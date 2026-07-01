@@ -1547,6 +1547,8 @@ coverage_lut5d: 256B controller, 26.93% mean over-strict, 9.35 touch/event, 0/4 
 split_guard7d:  2.06KB controller, 25.73% mean over-strict, 9.34 touch/event, 0/4 failures
 factor_vote56b: 120B controller, 24.58% mean over-strict, 9.35 touch/event, 0/4 failures
 factor_vote80b: 144B controller, 23.83% mean over-strict, 9.32 touch/event, 0/4 failures
+factor_vote80b_covsafe: 144B controller, 24.22% mean over-strict, 9.32 touch/event, 0/4 failures
+factor_vote80b_shiftguard: 144B controller, 24.29% mean over-strict, 9.33 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
 
@@ -1567,12 +1569,19 @@ factor_vote80b parser_x2:      66.60% accuracy, 98.47% strict recall, 0.83% unde
 factor_vote80b omit_x2:        76.37% accuracy, 97.01% strict recall, 2.15% under, 21.48% over, 0/2 pass
 factor_vote80b distractor_x2:  73.24% accuracy, 98.21% strict recall, 1.32% under, 25.44% over, 1/2 pass
 factor_vote80b large_2k:       73.85% accuracy, 98.12% strict recall, 1.29% under, 24.85% over, 1/2 pass
+factor_vote80b_shiftguard default_1k:    74.85% accuracy, 98.38% strict recall, 1.07% under, 24.07% over, 2/2 pass
+factor_vote80b_shiftguard parser_x2:     66.06% accuracy, 98.57% strict recall, 0.78% under, 33.15% over, 1/2 pass
+factor_vote80b_shiftguard omit_x2:       75.54% accuracy, 97.40% strict recall, 1.95% under, 22.51% over, 0/2 pass
+factor_vote80b_shiftguard distractor_x2: 73.14% accuracy, 98.42% strict recall, 1.22% under, 25.63% over, 1/2 pass
+factor_vote80b_shiftguard large_2k:      73.36% accuracy, 98.17% strict recall, 1.27% under, 25.37% over, 1/2 pass
 ```
 
 This separates efficiency from robustness. The 144B guard is efficient and
 survives parser-noise shift, but field-coverage shift can make it downgrade too
-many strict claims. A chip-facing version should therefore train or gate
-against shifted omission statistics before fixing the projection tables.
+many strict claims. The hand-coded shiftguard does not solve that matrix; it
+mainly shows that manual core-gap/parser-miss thresholds are too brittle. A
+chip-facing version should therefore learn a selector or train against shifted
+omission statistics before fixing the projection tables.
 
 ## Tile/Floorplan Metrics
 
