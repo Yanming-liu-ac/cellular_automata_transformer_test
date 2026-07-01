@@ -74,6 +74,7 @@ python experiments/wiki_memory_fanout_demo.py
 python experiments/wiki_memory_learned_fanout_grid_demo.py
 python experiments/wiki_memory_dense_tile_demo.py
 python experiments/wiki_memory_density_aware_tile_demo.py
+python experiments/wiki_memory_density_tag_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -128,6 +129,8 @@ The first experiments compare:
   local tiles and restore recall under 32 facts/page pressure;
 - density-aware routing-tile sweeps that enable small tiles only when local
   probe quality justifies the extra state;
+- refresh-derived density-tag sweeps showing why low-bit density tags need a
+  quality guard before switching routing geometry;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

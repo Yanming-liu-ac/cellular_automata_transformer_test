@@ -287,6 +287,15 @@ to 99.22% and cuts flat reads by 72.94%. At 75% dense pages it spends 144.85KB
 extra state, improves recall from 64.60% to 99.32%, and cuts flat reads by
 65.62%. This is the current best CA-chip trade for mixed wiki density.
 
+The refresh-derived tag version keeps that state tiny. A 2-bit tag per page is
+512B for a 2,048-page wiki and can be generated while refreshing page summaries
+by counting local fact slots. The tag alone is not sufficient: at 25% dense
+pages it would enable the small tile and reduce recall to 97.71%. With the
+quality guard, recall remains 99.02%; at 50% and 75% dense pages the same tag
+enables the dense path and keeps the 72.94% and 65.62% flat-read reductions.
+This separates the hardware roles cleanly: density tag wakes the alternative
+geometry, quality guard commits it.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

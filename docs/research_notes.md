@@ -402,6 +402,15 @@ recovers 99.22% and 99.32% recall, compared with 79.00% and 64.60% for uniform
 cells/query at 50% dense, and 1,842.6 versus 5,359.6 at 75% dense. This is the
 first real density-aware routing policy in the wiki-memory track.
 
+The refresh-derived density-tag sweep makes the policy more hardware-realistic.
+The tag is a 2-bit value computed from fact density seen during summary refresh:
+8 facts/page maps to tag 1 and 32 facts/page maps to tag 3. A tag threshold of
+2 or 3 turns dense tiles on for the 32 facts/page region, but density alone
+repeats the 25% dense failure: tag-only recall is 97.71% while the guarded
+policy keeps 99.02%. For 50% and 75% dense pages, tag-only and guarded decisions
+agree and recover flat-level recall. The conclusion is precise: density tags are
+good wake signals, but geometry changes need a local quality guard.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

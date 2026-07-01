@@ -451,6 +451,13 @@ recovers flat-level recall while reading 65-73% fewer cells than flat scan. The
 next step is to replace the region-level density oracle with per-block density
 tags generated during normal summary refresh.
 
+The refresh-derived density tag version now exists. Two-bit tags from summary
+refresh identify sparse tag-1 and dense tag-3 regions, but tag-only switching
+can still regress recall on small dense regions. The current policy is therefore
+tag plus quality guard. The next step is to make the quality guard itself local:
+store a small rolling failed-probe or agreement counter per density-tagged
+block, rather than using the offline region comparison.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
