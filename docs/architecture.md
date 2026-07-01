@@ -205,6 +205,16 @@ error, but it does not yet outperform the hand threshold. The architecture
 therefore keeps the LUT gate, but the next version should train it with
 task-weighted demand signals rather than only carrier mismatch statistics.
 
+Adding the demand signal fixes that limitation. A demand-weighted gate adds one
+route/query demand bit to the local LUT, producing a 128-entry, 16-byte table.
+At 5% demanded token cells per tick, the learned table writes about
+0.134 channels/token/tick and gives 96.6% exact content on demanded cells. It
+does not try to make the whole mHC carrier a faithful copy of content; global
+carrier error remains high by design. The architecture implication is important:
+content exposure is demand-routed. The route/query lane should assert a local
+demand bit, and the content lane should write into the carrier only for cells
+that are about to participate in computation.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code

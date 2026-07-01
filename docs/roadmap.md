@@ -351,6 +351,9 @@ Implement:
 - improve the learned write-gate objective. The first 8-byte LUT only recovers a
   threshold-like policy, so the next labels should be task-weighted by active
   route/query demand instead of pure carrier reconstruction error.
+- replace synthetic random demand in the learned demand-gate sweep with real
+  route/retrieval demand from the dual-path synthetic LM and rare-directory
+  workloads.
 
 First trainable target:
 

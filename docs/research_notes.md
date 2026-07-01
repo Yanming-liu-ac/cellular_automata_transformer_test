@@ -191,6 +191,18 @@ it is that the gate fits in a tiny LUT and the next training objective must use
 richer features or task-weighted demand labels to move beyond threshold-like
 behavior.
 
+The demand-weighted gate sweep gives that better label. It adds one local
+route/query demand bit to the write-gate LUT, expanding the controller from
+8 bytes to 16 bytes. With 5% demanded token cells per tick, the learned demand
+LUT enables 7 of 128 states. It spends about 0.134 channel writes/token/tick and
+delivers 96.6% exact content on demanded cells with only 0.4% demand error. For
+comparison, fixed refresh16 spends 0.186 writes and reaches only 12.9% demanded
+exactness, while the global `mismatch_ge8` gate spends 0.154 writes and reaches
+11.5%. The demand-only hand upper bound, `demand_mismatch_ge1`, reaches 100.0%
+at about 0.139 writes. This is the first genuinely better content-gate result:
+the controller should not reconstruct the whole carrier; it should expose
+persistent content only where the route/query lane asks for it.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

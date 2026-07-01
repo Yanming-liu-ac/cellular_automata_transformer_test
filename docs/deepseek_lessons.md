@@ -327,6 +327,13 @@ it. That is still useful: the control format is small enough for hardware, and
 the failure mode is now precise. Better gates need task-weighted labels and
 additional local demand features, not a larger controller.
 
+The demand-weighted version confirms this. Adding one route/query demand bit
+turns the gate into a 16-byte table and shifts the objective from "reconstruct
+the whole carrier" to "make demanded content exact now." The result is a large
+gain on the relevant path: 96.6% demanded exactness at about 0.134 channel
+writes/token/tick. This is the CA form of DeepSeek-style path specialization:
+move data on the active path, not everywhere.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

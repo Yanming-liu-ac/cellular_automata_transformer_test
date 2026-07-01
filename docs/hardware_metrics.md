@@ -112,6 +112,15 @@ on the same seed needs 0.186 writes/token/tick and has 28.9% average error. The
 hardware conclusion is that the controller size is negligible; the remaining
 problem is better labels/features, not table storage.
 
+Demand-weighted labels change the result. Adding one route/query demand bit
+makes the LUT 128 bits, or 16 bytes. With 5% demand rate, the learned demand LUT
+uses about 0.134 channel writes/token/tick, below fixed refresh16's 0.186 and
+below global `mismatch_ge8`'s 0.154. It reaches 96.6% exact content on demanded
+cells with about 0.4% demand error. The global carrier still has high average
+error, about 33.1%, but that is now acceptable for this control objective: the
+chip should move persistent content into the carrier only where computation
+needs it, not refresh the full context field.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

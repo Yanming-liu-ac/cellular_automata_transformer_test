@@ -77,6 +77,8 @@ The first experiments compare:
 - local content-to-carrier write gates that expose persistent content to the mHC
   carrier only when low-bit mismatch warrants the write;
 - an 8-byte learned content-gate LUT over mismatch, route, and envelope buckets;
+- a 16-byte demand-weighted content-gate LUT that writes persistent content only
+  for route/query-demanded cells;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

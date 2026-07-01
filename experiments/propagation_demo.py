@@ -15,6 +15,7 @@ from cellular_transformer.propagation import (
     run_content_retention_sweep,
     run_dynamic_propagation_sweep,
     run_learned_content_gate_sweep,
+    run_learned_demand_content_gate_sweep,
     run_long_rollout_stability_sweep,
     summarize_lengths,
 )
@@ -274,6 +275,47 @@ def main() -> None:
     print("Learned-gate interpretation:")
     print("- The LUT uses only mismatch, route, and envelope buckets, so its table is hardware-sized.")
     print("- This is a first local controller, not a trained language rule; it should beat at least one hand gate to stay interesting.")
+    print()
+
+    demand_gate = run_learned_demand_content_gate_sweep()
+    print("Demand-weighted content gate LUT")
+    print(
+        f"lut={demand_gate.lut.state_bytes:0.1f}B, "
+        f"write_states={demand_gate.lut.write_state_count}/{len(demand_gate.lut.writes)}, "
+        f"demand={fmt_pct(demand_gate.demand_rate)}, "
+        f"cost={demand_gate.write_cost:0.2f}"
+    )
+    headers = [
+        "policy",
+        "wr/tok/t",
+        "demand",
+        "d_exact",
+        "d_err",
+        "carrierM",
+        "errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{h:>18}" for h in headers))
+    print("-" * 176)
+    for point in demand_gate.points:
+        row = [
+            point.policy,
+            f"{point.gate_channel_writes_per_token_tick:0.4f}",
+            fmt_pct(point.mean_demand_fraction),
+            fmt_pct(point.demand_exact_rate),
+            fmt_pct(point.demand_mean_abs_error),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            fmt_entropy(point.carrier_final_entropy_bits),
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>18}" for cell in row))
+
+    print()
+    print("Demand-gate interpretation:")
+    print("- Demand-weighted metrics score only token cells requested by the route/query lane.")
+    print("- A good demand gate can spend writes on requested content without reconstructing the whole carrier.")
 
 
 if __name__ == "__main__":

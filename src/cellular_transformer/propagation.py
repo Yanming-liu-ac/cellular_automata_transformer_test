@@ -257,6 +257,110 @@ class LearnedContentGateResult:
     points: Tuple[ContentGatePoint, ...]
 
 
+@dataclass(frozen=True)
+class DemandContentGatePoint:
+    """Demand-weighted content-to-carrier gate result."""
+
+    policy: str
+    length: int
+    topology: str
+    bits: int
+    ticks: int
+    demand_rate: float
+    seed: int
+    state_bits_per_token: int
+    gate_token_writes: int
+    gate_channel_writes_per_token_tick: float
+    demand_token_count: int
+    mean_demand_fraction: float
+    demand_exact_rate: float
+    demand_mean_abs_error: float
+    carrier_exact_retention_rate: float
+    mean_carrier_exact_retention_rate: float
+    carrier_mean_abs_error: float
+    mean_carrier_mean_abs_error: float
+    carrier_final_entropy_bits: float
+    carrier_final_saturation_fraction: float
+    checksum: int
+
+
+@dataclass(frozen=True)
+class DemandContentGateLUT:
+    """Tiny local LUT with a route/query demand bit."""
+
+    writes: Tuple[bool, ...]
+    mismatch_thresholds: Tuple[int, ...] = (1, 4, 8)
+    route_thresholds: Tuple[int, ...] = (1, 4, 8)
+    envelope_thresholds: Tuple[int, ...] = (1, 4, 8)
+
+    def __post_init__(self) -> None:
+        expected = (
+            2
+            * (len(self.mismatch_thresholds) + 1)
+            * (len(self.route_thresholds) + 1)
+            * (len(self.envelope_thresholds) + 1)
+        )
+        if len(self.writes) != expected:
+            raise ValueError("write table length does not match demand-gate dimensions")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.writes) / 8
+
+    @property
+    def write_state_count(self) -> int:
+        return sum(1 for value in self.writes if value)
+
+    def indices(
+        self,
+        demand: np.ndarray,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        demand_bucket = demand.astype(np.int64)
+        mismatch_bucket = np.searchsorted(self.mismatch_thresholds, mismatch, side="right")
+        route_bucket = np.searchsorted(self.route_thresholds, route, side="right")
+        envelope_bucket = np.searchsorted(self.envelope_thresholds, envelope, side="right")
+        mismatch_bucket_count = len(self.mismatch_thresholds) + 1
+        route_bucket_count = len(self.route_thresholds) + 1
+        envelope_bucket_count = len(self.envelope_thresholds) + 1
+        return (
+            ((demand_bucket * mismatch_bucket_count + mismatch_bucket) * route_bucket_count + route_bucket)
+            * envelope_bucket_count
+            + envelope_bucket
+        )
+
+    def gate_mask(
+        self,
+        demand: np.ndarray,
+        mismatch: np.ndarray,
+        route: np.ndarray,
+        envelope: np.ndarray,
+    ) -> np.ndarray:
+        table = np.array(self.writes, dtype=np.bool_)
+        return table[self.indices(demand, mismatch, route, envelope)]
+
+
+@dataclass(frozen=True)
+class LearnedDemandContentGateResult:
+    """Demand-weighted learned content-gate LUT and comparison points."""
+
+    length: int
+    topology: str
+    bits: int
+    train_ticks: int
+    eval_ticks: int
+    demand_rate: float
+    write_cost: float
+    route_weight: float
+    envelope_weight: float
+    train_seed: int
+    eval_seed: int
+    lut: DemandContentGateLUT
+    points: Tuple[DemandContentGatePoint, ...]
+
+
 def _connect(edges: EdgeMap, a: Node, b: Node) -> None:
     edges.setdefault(a, []).append(b)
     edges.setdefault(b, []).append(a)
@@ -1546,4 +1650,434 @@ def run_learned_content_gate_sweep(
         eval_seed=eval_seed,
         lut=lut,
         points=baseline.points + (learned,),
+    )
+
+
+def _demand_gate_selection(
+    policy: str,
+    tick: int,
+    demand_mask: np.ndarray,
+    carrier: np.ndarray,
+    content_values: np.ndarray,
+    token_indices: np.ndarray,
+) -> np.ndarray:
+    policy = str(policy).lower()
+    if policy == "none":
+        return np.empty(0, dtype=np.int32)
+
+    if policy.startswith("fixed_refresh"):
+        suffix = policy[len("fixed_refresh") :]
+        if not suffix:
+            raise ValueError("fixed_refresh policy must include an interval")
+        interval = int(suffix)
+        if interval <= 0:
+            raise ValueError("fixed_refresh interval must be positive")
+        return token_indices if tick % interval == 0 else np.empty(0, dtype=np.int32)
+
+    carrier_values = carrier[token_indices, 0].astype(np.int16)
+    content = content_values[token_indices].astype(np.int16)
+    mismatch = np.abs(carrier_values - content)
+
+    if policy.startswith("mismatch_ge"):
+        threshold = int(policy[len("mismatch_ge") :])
+        if threshold <= 0:
+            raise ValueError("mismatch threshold must be positive")
+        return token_indices[mismatch >= threshold]
+
+    if policy.startswith("demand_mismatch_ge"):
+        threshold = int(policy[len("demand_mismatch_ge") :])
+        if threshold <= 0:
+            raise ValueError("demand mismatch threshold must be positive")
+        return token_indices[demand_mask & (mismatch >= threshold)]
+
+    if policy == "demand_all":
+        return token_indices[demand_mask]
+
+    raise ValueError(
+        "demand gate policy must be one of: none, fixed_refresh<N>, mismatch_ge<N>, "
+        "demand_mismatch_ge<N>, demand_all"
+    )
+
+
+def evaluate_demand_content_gate(
+    policy: str,
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    ticks: int = 1000,
+    demand_rate: float = 0.05,
+    radius: int = 1,
+    seed: int = 607,
+) -> DemandContentGatePoint:
+    """Evaluate a content gate on route/query demand-weighted content exposure."""
+
+    if not 0.0 < demand_rate <= 1.0:
+        raise ValueError("demand_rate must be in (0, 1]")
+    if length <= 0:
+        raise ValueError("length must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+    if ticks <= 0:
+        raise ValueError("ticks must be positive")
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    content_rng = np.random.default_rng(seed)
+    demand_rng = np.random.default_rng(seed + 7919)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = content_rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    gate_token_writes = 0
+    demand_token_count = 0
+    demand_exact_count = 0.0
+    demand_error_sum = 0.0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+
+    for tick in range(1, ticks + 1):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        demand_mask = demand_rng.random(length) < demand_rate
+        selected = _demand_gate_selection(
+            policy=policy,
+            tick=tick,
+            demand_mask=demand_mask,
+            carrier=carrier,
+            content_values=content_values,
+            token_indices=token_indices,
+        )
+        if len(selected) > 0:
+            _inject_content_into_carrier(carrier, content_values, selected)
+            gate_token_writes += int(len(selected))
+
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+        if bool(np.any(demand_mask)):
+            demand_values = carrier_token_content[demand_mask]
+            target_values = initial_token_content[demand_mask]
+            demand_errors = np.abs(demand_values.astype(np.int16) - target_values.astype(np.int16))
+            demand_token_count += int(np.count_nonzero(demand_mask))
+            demand_exact_count += float(np.count_nonzero(demand_values == target_values))
+            demand_error_sum += float(np.sum(demand_errors) / float(max_value))
+
+    carrier_token_content = carrier[token_indices, 0]
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    demand_denominator = demand_token_count if demand_token_count else 1
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return DemandContentGatePoint(
+        policy=str(policy).lower(),
+        length=length,
+        topology=topology.lower(),
+        bits=bits,
+        ticks=ticks,
+        demand_rate=demand_rate,
+        seed=seed,
+        state_bits_per_token=4 * bits,
+        gate_token_writes=gate_token_writes,
+        gate_channel_writes_per_token_tick=3 * gate_token_writes / float(length * ticks),
+        demand_token_count=demand_token_count,
+        mean_demand_fraction=demand_token_count / float(length * ticks),
+        demand_exact_rate=demand_exact_count / float(demand_denominator),
+        demand_mean_abs_error=demand_error_sum / float(demand_denominator),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        checksum=int(checksum),
+    )
+
+
+def train_demand_content_gate_lut(
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    ticks: int = 1000,
+    demand_rate: float = 0.05,
+    radius: int = 1,
+    seed: int = 607,
+    write_cost: float = 0.15,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+) -> DemandContentGateLUT:
+    """Train a tiny content gate using route/query demand-weighted labels."""
+
+    if not 0.0 < demand_rate <= 1.0:
+        raise ValueError("demand_rate must be in (0, 1]")
+    if write_cost < 0.0:
+        raise ValueError("write_cost must be non-negative")
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    content_rng = np.random.default_rng(seed)
+    demand_rng = np.random.default_rng(seed + 7919)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = content_rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    template = DemandContentGateLUT(writes=tuple(False for _ in range(128)))
+    benefit_sums = np.zeros(len(template.writes), dtype=np.float64)
+    counts = np.zeros(len(template.writes), dtype=np.int64)
+
+    for _ in range(ticks):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        demand = demand_rng.random(length) < demand_rate
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        indices = template.indices(demand, mismatch, route, envelope)
+        normalized_error = mismatch.astype(np.float64) / float(max_value)
+        route_activity = route.astype(np.float64) / float(max_value)
+        envelope_activity = envelope.astype(np.float64) / float(max_value)
+        benefit = demand.astype(np.float64) * normalized_error * (
+            1.0 + route_weight * route_activity + envelope_weight * envelope_activity
+        )
+        np.add.at(benefit_sums, indices, benefit)
+        np.add.at(counts, indices, 1)
+
+    mean_benefit = np.divide(
+        benefit_sums,
+        counts,
+        out=np.zeros_like(benefit_sums),
+        where=counts > 0,
+    )
+    writes = tuple(bool(count > 0 and value >= write_cost) for count, value in zip(counts, mean_benefit))
+    return DemandContentGateLUT(writes=writes)
+
+
+def evaluate_lut_demand_content_gate(
+    lut: DemandContentGateLUT,
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    ticks: int = 1000,
+    demand_rate: float = 0.05,
+    radius: int = 1,
+    seed: int = 809,
+    policy: str = "learned_demand_lut",
+) -> DemandContentGatePoint:
+    """Evaluate a demand-aware content gate LUT."""
+
+    edges = _graph_for_topology(topology, length, radius)
+    nodes = _ordered_nodes(edges)
+    node_index = {node: index for index, node in enumerate(nodes)}
+    neighbors = _neighbor_indices(edges, nodes)
+    token_indices = np.array([node_index[(0, index)] for index in range(length)], dtype=np.int32)
+    max_value = (1 << bits) - 1
+    content_rng = np.random.default_rng(seed)
+    demand_rng = np.random.default_rng(seed + 7919)
+
+    content_values = np.zeros(len(nodes), dtype=np.uint8)
+    content_values[token_indices] = content_rng.integers(
+        0, max_value + 1, size=length, dtype=np.uint8
+    )
+    initial_token_content = content_values[token_indices].copy()
+    carrier = np.zeros((len(nodes), 3), dtype=np.uint8)
+    _inject_content_into_carrier(carrier, content_values, token_indices)
+
+    gate_token_writes = 0
+    demand_token_count = 0
+    demand_exact_count = 0.0
+    demand_error_sum = 0.0
+    carrier_exact_sum = 0.0
+    carrier_error_sum = 0.0
+
+    for _ in range(ticks):
+        carrier = _step_dynamic_state(
+            state=carrier,
+            rule="mhc_grouped",
+            neighbors=neighbors,
+            max_value=max_value,
+            source_index=None,
+        )
+        demand = demand_rng.random(length) < demand_rate
+        carrier_values = carrier[token_indices, 0].astype(np.int16)
+        content = content_values[token_indices].astype(np.int16)
+        mismatch = np.abs(carrier_values - content)
+        route = carrier[token_indices, 1].astype(np.int16)
+        envelope = carrier[token_indices, 2].astype(np.int16)
+        selected = token_indices[lut.gate_mask(demand, mismatch, route, envelope)]
+        if len(selected) > 0:
+            _inject_content_into_carrier(carrier, content_values, selected)
+            gate_token_writes += int(len(selected))
+
+        carrier_token_content = carrier[token_indices, 0]
+        carrier_error = np.abs(
+            carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+        )
+        carrier_exact_sum += float(np.mean(carrier_token_content == initial_token_content))
+        carrier_error_sum += float(np.mean(carrier_error) / float(max_value))
+
+        if bool(np.any(demand)):
+            demand_values = carrier_token_content[demand]
+            target_values = initial_token_content[demand]
+            demand_errors = np.abs(demand_values.astype(np.int16) - target_values.astype(np.int16))
+            demand_token_count += int(np.count_nonzero(demand))
+            demand_exact_count += float(np.count_nonzero(demand_values == target_values))
+            demand_error_sum += float(np.sum(demand_errors) / float(max_value))
+
+    carrier_token_content = carrier[token_indices, 0]
+    carrier_error = np.abs(
+        carrier_token_content.astype(np.int16) - initial_token_content.astype(np.int16)
+    )
+    demand_denominator = demand_token_count if demand_token_count else 1
+    checksum = (
+        _state_checksum(carrier)
+        + int(
+            np.sum(
+                content_values[token_indices].astype(np.uint64)
+                * np.arange(1, length + 1, dtype=np.uint64)
+            )
+            % (2**63 - 1)
+        )
+    ) % (2**63 - 1)
+
+    return DemandContentGatePoint(
+        policy=policy,
+        length=length,
+        topology=topology.lower(),
+        bits=bits,
+        ticks=ticks,
+        demand_rate=demand_rate,
+        seed=seed,
+        state_bits_per_token=4 * bits,
+        gate_token_writes=gate_token_writes,
+        gate_channel_writes_per_token_tick=3 * gate_token_writes / float(length * ticks),
+        demand_token_count=demand_token_count,
+        mean_demand_fraction=demand_token_count / float(length * ticks),
+        demand_exact_rate=demand_exact_count / float(demand_denominator),
+        demand_mean_abs_error=demand_error_sum / float(demand_denominator),
+        carrier_exact_retention_rate=float(np.mean(carrier_token_content == initial_token_content)),
+        mean_carrier_exact_retention_rate=carrier_exact_sum / float(ticks),
+        carrier_mean_abs_error=float(np.mean(carrier_error) / float(max_value)),
+        mean_carrier_mean_abs_error=carrier_error_sum / float(ticks),
+        carrier_final_entropy_bits=_level_entropy_bits(carrier, max_value),
+        carrier_final_saturation_fraction=float(np.count_nonzero(carrier == max_value))
+        / float(carrier.size),
+        checksum=int(checksum),
+    )
+
+
+def run_learned_demand_content_gate_sweep(
+    length: int = 512,
+    topology: str = "harc",
+    bits: int = 4,
+    train_ticks: int = 1000,
+    eval_ticks: int = 1000,
+    demand_rate: float = 0.05,
+    radius: int = 1,
+    train_seed: int = 607,
+    eval_seed: int = 809,
+    write_cost: float = 0.15,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+) -> LearnedDemandContentGateResult:
+    """Train and evaluate a demand-weighted content-to-carrier LUT."""
+
+    lut = train_demand_content_gate_lut(
+        length=length,
+        topology=topology,
+        bits=bits,
+        ticks=train_ticks,
+        demand_rate=demand_rate,
+        radius=radius,
+        seed=train_seed,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+    )
+    manual_points = tuple(
+        evaluate_demand_content_gate(
+            policy=policy,
+            length=length,
+            topology=topology,
+            bits=bits,
+            ticks=eval_ticks,
+            demand_rate=demand_rate,
+            radius=radius,
+            seed=eval_seed,
+        )
+        for policy in (
+            "none",
+            "fixed_refresh16",
+            "mismatch_ge8",
+            "demand_mismatch_ge1",
+            "demand_mismatch_ge4",
+        )
+    )
+    learned = evaluate_lut_demand_content_gate(
+        lut=lut,
+        length=length,
+        topology=topology,
+        bits=bits,
+        ticks=eval_ticks,
+        demand_rate=demand_rate,
+        radius=radius,
+        seed=eval_seed,
+        policy=f"learned_demand_lut_c{write_cost:0.2f}",
+    )
+    return LearnedDemandContentGateResult(
+        length=length,
+        topology=topology.lower(),
+        bits=bits,
+        train_ticks=train_ticks,
+        eval_ticks=eval_ticks,
+        demand_rate=demand_rate,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+        train_seed=train_seed,
+        eval_seed=eval_seed,
+        lut=lut,
+        points=manual_points + (learned,),
     )
