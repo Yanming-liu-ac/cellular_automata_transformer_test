@@ -17,6 +17,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_joint_policy_sweep,
     run_csa_hca_rare_directory_joint_threshold_sweep,
     run_csa_hca_rare_directory_learned_fanout_sweep,
+    run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_policy_sweep,
     run_csa_hca_rare_directory_route_lut_sweep,
     run_csa_hca_rare_directory_stress_sweep,
@@ -617,6 +618,44 @@ def main() -> None:
     print("- A 40B route LUT can replace the hand HCA threshold in this diagnostic.")
     print("- It preserves reference HCA routing but is not yet better than threshold15+fanout.")
     print("- The next route table needs richer metadata or a recall-weighted training objective.")
+    print()
+
+    aware_route = run_csa_hca_rare_directory_aware_route_lut_sweep()
+    print("Directory-aware HCA route LUT sweep")
+    print(
+        f"training_samples={aware_route.training_samples}, "
+        f"route_lut={format_bytes(aware_route.route_lut.state_bytes)}, "
+        f"presence_read={format_bytes(aware_route.route_feature_read_bytes)}/query, "
+        f"active_route_buckets={sum(aware_route.route_lut.routes_hca)}"
+    )
+    headers = [
+        "scenario",
+        "hca_r",
+        "false_hca",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 94)
+    for point in aware_route.points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            point.scenario,
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.rare_false_hca_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Directory-aware route interpretation:")
+    print("- One rare-directory presence bit is enough to suppress the remaining false-HCA cases.")
+    print("- The 80B route table keeps the reference HCA path while exposing a CA-local metadata tradeoff.")
+    print("- The next hardware question is whether this sidecar is a real 1-bit SRAM/Bloom read.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

@@ -547,6 +547,48 @@ class LowBitHcaRouteLUT:
 
 
 @dataclass(frozen=True)
+class LowBitDirectoryAwareHcaRouteLUT:
+    """HCA route LUT with one rare-directory presence feature bit."""
+
+    routes_hca: Tuple[bool, ...]
+    max_counter: int = 15
+    spread_thresholds: Tuple[int, ...] = (1, 3, 7)
+    max_saturation_bucket: int = 4
+
+    def __post_init__(self) -> None:
+        if self.max_counter <= 0:
+            raise ValueError("max_counter must be positive")
+        if self.max_saturation_bucket < 0:
+            raise ValueError("max_saturation_bucket must be non-negative")
+        if any(int(threshold) < 0 for threshold in self.spread_thresholds):
+            raise ValueError("spread thresholds must be non-negative")
+        hca_buckets = (self.max_counter + 1) * (len(self.spread_thresholds) + 1) * (
+            self.max_saturation_bucket + 1
+        )
+        expected = hca_buckets * 2
+        if len(self.routes_hca) != expected:
+            raise ValueError("route table length does not match metadata dimensions")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.routes_hca) / 8
+
+    def route_hca(
+        self,
+        counter_values: Tuple[int, ...],
+        directory_blocks: np.ndarray,
+    ) -> bool:
+        index = _directory_aware_hca_route_lut_index(
+            counter_values=counter_values,
+            directory_blocks=directory_blocks,
+            max_counter=self.max_counter,
+            spread_thresholds=self.spread_thresholds,
+            max_saturation_bucket=self.max_saturation_bucket,
+        )
+        return bool(self.routes_hca[index])
+
+
+@dataclass(frozen=True)
 class CsaHcaRareDirectoryLearnedFanoutResult:
     """Trained fanout-LUT evaluation for the rare-token directory."""
 
@@ -653,6 +695,29 @@ class CsaHcaRareDirectoryRouteLutResult:
     eval_scenarios: Tuple[str, ...]
     training_samples: int
     route_lut: LowBitHcaRouteLUT
+    fanout_lut: LowBitRareDirectoryFanoutLUT
+    points: Tuple[CsaHcaRareDirectoryJointPolicyPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryAwareRouteLutResult:
+    """Directory-aware HCA-route LUT evaluation with fanout control."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    coverage_target: float
+    route_positive_rate_threshold: float
+    route_feature_read_bytes: float
+    train_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    route_lut: LowBitDirectoryAwareHcaRouteLUT
     fanout_lut: LowBitRareDirectoryFanoutLUT
     points: Tuple[CsaHcaRareDirectoryJointPolicyPoint, ...]
 
@@ -2257,6 +2322,114 @@ def train_hca_route_lut(
     )
 
 
+def train_directory_aware_hca_route_lut(
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    route_positive_rate_threshold: float = 0.50,
+    hca_spread_thresholds: Tuple[int, ...] = (1, 3, 7),
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    seed: int = 31,
+) -> Tuple[LowBitDirectoryAwareHcaRouteLUT, int]:
+    """Train an HCA route LUT with a rare-directory presence sidecar bit."""
+
+    if len(train_scenarios) == 0:
+        raise ValueError("train_scenarios must not be empty")
+    if hca_threshold <= 0:
+        raise ValueError("hca_threshold must be positive")
+    if directory_blocks_per_token < 0:
+        raise ValueError("directory_blocks_per_token must be non-negative")
+    if not 0.0 <= route_positive_rate_threshold <= 1.0:
+        raise ValueError("route_positive_rate_threshold must be in [0, 1]")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+    max_counter = global_config.max_value
+    max_saturation_bucket = config.banks
+    hca_buckets = (max_counter + 1) * (len(hca_spread_thresholds) + 1) * (
+        max_saturation_bucket + 1
+    )
+    table_size = hca_buckets * 2
+    positive = np.zeros(table_size, dtype=np.int32)
+    negative = np.zeros(table_size, dtype=np.int32)
+
+    for scenario_index, scenario in enumerate(train_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=seed + scenario_index * 997,
+        )
+        global_summary = LowBitDenseContext(global_config)
+        for token in stream:
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        for token in query_tokens:
+            token = int(token)
+            counter_values = _dense_counter_values(global_summary, token)
+            directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+            feature = _directory_aware_hca_route_lut_index(
+                counter_values=counter_values,
+                directory_blocks=directory_blocks,
+                max_counter=max_counter,
+                spread_thresholds=hca_spread_thresholds,
+                max_saturation_bucket=max_saturation_bucket,
+            )
+            exact_total = sum(int(value) for value in exact_counts.get(token, {}).values())
+            if exact_total >= hca_threshold:
+                positive[feature] += 1
+            else:
+                negative[feature] += 1
+
+    routes_hca = []
+    for pos, neg in zip(positive, negative):
+        if pos == 0 and neg == 0:
+            routes_hca.append(False)
+        else:
+            routes_hca.append(_safe_divide(pos, pos + neg) >= route_positive_rate_threshold)
+
+    return (
+        LowBitDirectoryAwareHcaRouteLUT(
+            routes_hca=tuple(bool(value) for value in routes_hca),
+            max_counter=max_counter,
+            spread_thresholds=hca_spread_thresholds,
+            max_saturation_bucket=max_saturation_bucket,
+        ),
+        int(np.sum(positive + negative)),
+    )
+
+
 def run_csa_hca_rare_directory_learned_fanout_sweep(
     train_scenarios: Tuple[str, ...] = (
         "rare_burst",
@@ -2762,6 +2935,161 @@ def run_csa_hca_rare_directory_route_lut_sweep(
         directory_blocks_per_token=directory_blocks_per_token,
         coverage_target=coverage_target,
         route_positive_rate_threshold=route_positive_rate_threshold,
+        train_scenarios=train_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=route_training_samples + fanout_training_samples,
+        route_lut=route_lut,
+        fanout_lut=fanout_lut,
+        points=tuple(points),
+    )
+
+
+def run_csa_hca_rare_directory_aware_route_lut_sweep(
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    route_positive_rate_threshold: float = 0.50,
+    route_feature_read_bytes: float = 1 / 8,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+) -> CsaHcaRareDirectoryAwareRouteLutResult:
+    """Train a directory-aware HCA-route LUT and evaluate it with fanout."""
+
+    if route_feature_read_bytes < 0:
+        raise ValueError("route_feature_read_bytes must be non-negative")
+
+    route_lut, route_training_samples = train_directory_aware_hca_route_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+    fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=tuple(s for s in train_scenarios if s != "zipf_reference") or train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=True,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed + 4096,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        directory_presence_state_bytes = len(directory) / 8
+        directory_state_bytes = (
+            sum(len(blocks) for blocks in directory.values()) * directory_entry_bytes
+            + directory_presence_state_bytes
+        )
+        points.append(
+            _evaluate_rare_directory_aware_hca_route_lut_point(
+                scenario=scenario,
+                config=config,
+                index=index,
+                global_summary=global_summary,
+                exact_counts=exact_counts,
+                directory=directory,
+                directory_blocks_per_token=directory_blocks_per_token,
+                directory_entry_bytes=directory_entry_bytes,
+                directory_state_bytes=directory_state_bytes,
+                hca_threshold=hca_threshold,
+                route_lut=route_lut,
+                fanout_lut=fanout_lut,
+                min_read_blocks_per_token=min_read_blocks_per_token,
+                recent_blocks=_recent_blocks(config.blocks, config.tail_blocks),
+                query_tokens=query_tokens,
+                route_feature_read_bytes=route_feature_read_bytes,
+            )
+        )
+
+    return CsaHcaRareDirectoryAwareRouteLutResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        coverage_target=coverage_target,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        route_feature_read_bytes=route_feature_read_bytes,
         train_scenarios=train_scenarios,
         eval_scenarios=eval_scenarios,
         training_samples=route_training_samples + fanout_training_samples,
@@ -3799,6 +4127,112 @@ def _evaluate_rare_directory_hca_route_lut_point(
     )
 
 
+def _evaluate_rare_directory_aware_hca_route_lut_point(
+    scenario: str,
+    config: CompressedBlockIndexConfig,
+    index: LowBitCompressedBlockIndex,
+    global_summary: LowBitDenseContext,
+    exact_counts: Dict[int, Dict[int, int]],
+    directory: Dict[int, np.ndarray],
+    directory_blocks_per_token: int,
+    directory_entry_bytes: float,
+    directory_state_bytes: float,
+    hca_threshold: int,
+    route_lut: LowBitDirectoryAwareHcaRouteLUT,
+    fanout_lut: LowBitRareDirectoryFanoutLUT,
+    min_read_blocks_per_token: int,
+    recent_blocks: np.ndarray,
+    query_tokens: np.ndarray,
+    route_feature_read_bytes: float,
+) -> CsaHcaRareDirectoryJointPolicyPoint:
+    hca_queries = 0
+    csa_queries = 0
+    directory_hits = 0
+    relevant_queries = 0
+    rare_relevant_queries = 0
+    rare_false_hca = 0
+    repaired_hits = 0
+    repaired_coverage = 0.0
+    token_reads = 0.0
+    directory_read_bytes = 0.0
+    directory_entries_seen = 0
+    directory_blocks_read = 0
+    expanded_read_queries = 0
+    min_read_blocks_per_token = min(max(0, int(min_read_blocks_per_token)), directory_blocks_per_token)
+
+    for token in query_tokens:
+        token = int(token)
+        counter_values = _dense_counter_values(global_summary, token)
+        directory_blocks = directory.get(token, np.empty(0, dtype=np.int32))
+        directory_hit = len(directory_blocks) > 0
+        directory_read_bytes += route_feature_read_bytes
+        directory_hits += int(directory_hit)
+        directory_entries_seen += len(directory_blocks)
+
+        route_hca = route_lut.route_hca(counter_values, directory_blocks)
+        block_counts = exact_counts.get(token)
+        is_relevant = block_counts is not None
+
+        if route_hca:
+            selected = recent_blocks
+            hca_queries += 1
+        else:
+            scores = index.estimate_blocks(token)
+            base_selected = np.union1d(_top_blocks(scores, config.selected_blocks), recent_blocks)
+            read_limit = fanout_lut.predict(directory_blocks, base_selected)
+            readable_directory_blocks = directory_blocks[:read_limit]
+            selected = np.union1d(base_selected, readable_directory_blocks)
+            csa_queries += 1
+            if directory_hit:
+                directory_read_bytes += directory_entry_bytes * len(readable_directory_blocks)
+                directory_blocks_read += len(readable_directory_blocks)
+                expanded_read_queries += int(len(readable_directory_blocks) > min_read_blocks_per_token)
+
+        token_reads += len(selected) * config.block_size
+        if not is_relevant:
+            continue
+
+        relevant_queries += 1
+        exact_total = sum(int(value) for value in block_counts.values())
+        is_exact_rare = exact_total < hca_threshold
+        rare_relevant_queries += int(is_exact_rare)
+        rare_false_hca += int(is_exact_rare and route_hca)
+        repaired_hits += _block_hit(selected, block_counts)
+        repaired_coverage += _occurrence_coverage(selected, block_counts)
+
+    query_denominator = len(query_tokens) if len(query_tokens) else 1
+    relevant_denominator = relevant_queries if relevant_queries else 1
+    rare_denominator = rare_relevant_queries if rare_relevant_queries else 1
+    directory_hit_denominator = directory_hits if directory_hits else 1
+    token_reads_per_query = token_reads / query_denominator
+    spread_metadata_state_bytes = len(directory) * 2 / 8
+
+    return CsaHcaRareDirectoryJointPolicyPoint(
+        policy="dir_aware_route_lut",
+        scenario=scenario,
+        hca_threshold=hca_threshold,
+        probe_mode="presence_bit_route_lut",
+        directory_blocks_per_token=directory_blocks_per_token,
+        probe_lut_state_bytes=route_lut.state_bytes,
+        fanout_lut_state_bytes=fanout_lut.state_bytes,
+        fanout_metadata_state_bytes=fanout_lut.state_bytes + spread_metadata_state_bytes,
+        directory_state_bytes=directory_state_bytes,
+        directory_probe_rate=1.0,
+        directory_hit_rate=directory_hits / query_denominator,
+        avg_directory_entries_per_hit=directory_entries_seen / directory_hit_denominator,
+        avg_directory_read_blocks_per_hit=directory_blocks_read / directory_hit_denominator,
+        expanded_read_rate=expanded_read_queries / directory_hit_denominator,
+        hca_query_rate=hca_queries / query_denominator,
+        csa_query_rate=csa_queries / query_denominator,
+        rare_false_hca_rate=rare_false_hca / rare_denominator,
+        repaired_relevant_hit_rate=repaired_hits / relevant_denominator,
+        repaired_relevant_coverage=repaired_coverage / relevant_denominator,
+        directory_read_bytes_per_query=directory_read_bytes / query_denominator,
+        token_reads_per_query=token_reads_per_query,
+        token_read_reduction=_safe_divide(config.context_length, token_reads_per_query),
+    )
+
+
 def _rare_fanout_lut_index(
     directory_blocks: np.ndarray,
     base_selected: np.ndarray,
@@ -3856,6 +4290,23 @@ def _hca_control_lut_index(
     spread_bucket_count = len(spread_thresholds) + 1
     saturation_bucket_count = max(0, int(max_saturation_bucket)) + 1
     return (estimate * spread_bucket_count + spread_bucket) * saturation_bucket_count + saturation_bucket
+
+
+def _directory_aware_hca_route_lut_index(
+    counter_values: Tuple[int, ...],
+    directory_blocks: np.ndarray,
+    max_counter: int,
+    spread_thresholds: Tuple[int, ...],
+    max_saturation_bucket: int,
+) -> int:
+    hca_index = _hca_control_lut_index(
+        counter_values=counter_values,
+        max_counter=max_counter,
+        spread_thresholds=spread_thresholds,
+        max_saturation_bucket=max_saturation_bucket,
+    )
+    directory_hit_bucket = int(len(directory_blocks) > 0)
+    return hca_index * 2 + directory_hit_bucket
 
 
 def _dense_counter_values(summary: LowBitDenseContext, token: int) -> Tuple[int, ...]:

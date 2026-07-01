@@ -496,6 +496,13 @@ preserves reference HCA routing yet loses a little repeated-name coverage. For a
 CA chip, trainable control tables need recall-weighted objectives, not just
 smaller control state.
 
+The directory-aware route sweep is the constructive version of that lesson.
+Adding one rare-directory presence bit gives an 80B route table that preserves
+reference HCA routing, removes rare false-HCA in the stress set, and slightly
+beats the threshold-15 repeated-name coverage. This mirrors the useful V4
+pattern: the win is not an exotic rule alone, but the right small metadata made
+visible at the routing point.
+
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

@@ -476,6 +476,22 @@ below the threshold-15 joint policy's 98.3%. It does prove that HCA admission ca
 be encoded as a very small local table; the next route table should add recency
 or topic/context metadata before replacing the hand threshold.
 
+A directory-aware route LUT adds exactly one such visible feature: a rare-token
+directory presence bit. The table doubles to 80B and the model charges a
+0.125B/query presence-sidecar read before admission:
+
+```text
+dir_aware_route_lut  reference      HCA=84.7%  false-HCA=0.0%  coverage=2.5%    dir read=0.19B/query
+dir_aware_route_lut  split_rare     HCA=0.0%   false-HCA=0.0%  coverage=100.0%  dir read=6.65B/query
+dir_aware_route_lut  repeated_name  HCA=0.0%   false-HCA=0.0%  coverage=98.4%   dir read=13.00B/query
+```
+
+This is now the stronger learned-admission diagnostic: it beats the HCA-only
+route LUT and slightly improves repeated-name coverage versus the threshold-15
+joint policy, while preserving the reference HCA hot path. The remaining
+hardware question is whether the presence feature is a true 1-bit sidecar read
+or a more expensive associative probe.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text

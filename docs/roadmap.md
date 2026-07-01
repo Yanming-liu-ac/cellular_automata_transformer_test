@@ -138,6 +138,10 @@ Compressed block-index result:
   inference, but it is not yet the default: it keeps about 99.0% split-rare
   coverage and 97.7% repeated-name coverage, slightly below the threshold-15
   joint policy.
+- Adding one rare-directory presence bit gives the first stronger learned
+  admission table: the route LUT becomes 80B, pays a modeled 0.125B/query
+  sidecar read, preserves 84.7% reference HCA routing, removes rare false-HCA,
+  reaches 100.0% split-rare coverage, and reaches 98.4% repeated-name coverage.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -275,8 +279,11 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
+- validate whether the trained HCA route table's rare-directory presence
+  feature can be implemented as a true 1-bit sidecar/Bloom read; if not, account
+  for the more expensive associative probe.
 - improve the trained HCA route table with recency/topic/context metadata or a
-  recall-weighted objective so it can replace the threshold-15 joint policy.
+  recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a
   joint admission/probe/fanout policy so HCA threshold, exact-directory
   override, and read budget are optimized as one hardware control table.

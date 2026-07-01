@@ -578,6 +578,15 @@ The value of the result is that it exposes the next missing feature: route
 selection needs richer low-bit metadata or a training objective that prices rare
 false-HCA routes more heavily.
 
+The thirty-seventh sweep adds the smallest useful metadata feature: a
+rare-directory presence bit visible to HCA admission. The route table doubles
+from 40B to 80B and pays a modeled 0.125B/query sidecar read. That is enough to
+keep the reference stream at 84.7% HCA routing, remove the remaining rare
+false-HCA routes, reach 100.0% split-rare coverage at 6.65B/query, and reach
+98.4% repeated-name coverage at 13.00B/query. This is a stronger CA-chip
+primitive than the HCA-only route table because it exposes exactly the metadata
+the compressed counters cannot infer from collisions.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

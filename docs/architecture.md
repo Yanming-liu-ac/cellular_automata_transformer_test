@@ -357,6 +357,15 @@ the hand threshold can be represented as a tiny CA-local table, but the next
 route LUT needs richer metadata or a recall-weighted training objective before
 it should replace the current joint policy.
 
+Adding one rare-directory presence bit to that route table is the first useful
+fix. The directory-aware route LUT is still only 80B, keeps the same 84.7%
+reference HCA route rate, and uses a 0.125B/query sidecar read. In the current
+stress sweep it removes the remaining rare false-HCA routes, reaches 100.0%
+split-rare coverage, and reaches 98.4% repeated-name coverage at about
+13.00B/query directory traffic. This is the better CA control-plane shape:
+HCA admission should see a tiny exact-memory sidecar, not only the compressed
+HCA counters.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA
