@@ -1137,6 +1137,7 @@ class CsaHcaRareDirectoryBloomRetirementPoint:
     final_hot_tokens: int
     inserted_final_rare_rate: float
     active_final_rare_rate: float
+    visible_active_rare_rate: float
     hot_retired_token_rate: float
     hot_polluted_token_rate: float
     update_bytes_per_context_token: float
@@ -1167,6 +1168,34 @@ class CsaHcaRareDirectoryBloomRetirementResult:
     bits_per_entry: int
     hash_count: int
     counter_bits: int
+    bank_count: int
+    bank_mode: str
+    sidecar_salt: int
+    insert_count_thresholds: Tuple[int, ...]
+    retire_count_threshold: int
+    train_scenarios: Tuple[str, ...]
+    eval_scenarios: Tuple[str, ...]
+    training_samples: int
+    route_lut: LowBitDirectoryAwareHcaRouteLUT
+    fanout_lut: LowBitRareDirectoryFanoutLUT
+    points: Tuple[CsaHcaRareDirectoryBloomRetirementPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryBloomRetirementCompressionResult:
+    """Compressed counting-Bloom geometry sweep for hot-token retirement."""
+
+    context_length: int
+    block_size: int
+    summary_width: int
+    global_width: int
+    csa_blocks: int
+    tail_blocks: int
+    hca_threshold: int
+    directory_blocks_per_token: int
+    bits_per_entries: Tuple[int, ...]
+    hash_count: int
+    counter_bits_values: Tuple[int, ...]
     bank_count: int
     bank_mode: str
     sidecar_salt: int
@@ -4864,6 +4893,203 @@ def run_csa_hca_rare_directory_bloom_retirement_sweep(
     )
 
 
+def run_csa_hca_rare_directory_bloom_retirement_compression_sweep(
+    bits_per_entries: Tuple[int, ...] = (4, 6, 8),
+    counter_bits_values: Tuple[int, ...] = (1, 2, 3, 4),
+    insert_count_thresholds: Tuple[int, ...] = (1, 2),
+    retire_count_threshold: int = 15,
+    hash_count: int = 3,
+    bank_count: int = 8,
+    bank_mode: str = "by_hash",
+    sidecar_salt: int = 30775,
+    train_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "rare_burst",
+        "split_rare",
+        "repeated_name",
+        "collision_noise",
+    ),
+    eval_scenarios: Tuple[str, ...] = (
+        "zipf_reference",
+        "split_rare",
+        "repeated_name",
+    ),
+    hca_threshold: int = 15,
+    directory_blocks_per_token: int = 6,
+    min_read_blocks_per_token: int = 2,
+    coverage_target: float = 0.95,
+    route_positive_rate_threshold: float = 0.50,
+    span_thresholds: Tuple[int, ...] = (64, 128, 256),
+    max_overlap_bucket: int = 3,
+    block_size: int = 128,
+    summary_width: int = 128,
+    csa_blocks: int = 4,
+    global_width: int = 2048,
+    tail_blocks: int = 2,
+    context_length: int = 65536,
+    queries: int = 2048,
+    train_seed: int = 31,
+    eval_seed: int = 37,
+) -> CsaHcaRareDirectoryBloomRetirementCompressionResult:
+    """Sweep smaller counting-Bloom geometries for the retirement sidecar."""
+
+    if len(bits_per_entries) == 0:
+        raise ValueError("bits_per_entries must not be empty")
+    clean_bits = tuple(sorted({int(bits) for bits in bits_per_entries}))
+    if any(bits <= 0 for bits in clean_bits):
+        raise ValueError("bits_per_entries must be positive")
+    if len(counter_bits_values) == 0:
+        raise ValueError("counter_bits_values must not be empty")
+    clean_counter_bits = tuple(sorted({int(bits) for bits in counter_bits_values}))
+    if any(bits <= 0 for bits in clean_counter_bits):
+        raise ValueError("counter_bits_values must be positive")
+    if any(bits > 16 for bits in clean_counter_bits):
+        raise ValueError("counter_bits_values must be at most 16")
+    if len(insert_count_thresholds) == 0:
+        raise ValueError("insert_count_thresholds must not be empty")
+    clean_thresholds = tuple(sorted({int(threshold) for threshold in insert_count_thresholds}))
+    if any(threshold <= 0 for threshold in clean_thresholds):
+        raise ValueError("insert_count_thresholds must be positive")
+    if retire_count_threshold <= 0:
+        raise ValueError("retire_count_threshold must be positive")
+    if any(threshold >= retire_count_threshold for threshold in clean_thresholds):
+        raise ValueError("insert thresholds must be below retire_count_threshold")
+    if hash_count <= 0:
+        raise ValueError("hash_count must be positive")
+    if bank_count <= 0:
+        raise ValueError("bank_count must be positive")
+    if bank_mode not in ("modulo", "by_hash", "hash_slot"):
+        raise ValueError("bank_mode must be one of: modulo, by_hash, hash_slot")
+
+    route_lut, route_training_samples = train_directory_aware_hca_route_lut(
+        train_scenarios=train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        route_positive_rate_threshold=route_positive_rate_threshold,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed,
+    )
+    fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+        train_scenarios=tuple(s for s in train_scenarios if s != "zipf_reference") or train_scenarios,
+        hca_threshold=hca_threshold,
+        directory_guard=True,
+        directory_blocks_per_token=directory_blocks_per_token,
+        min_read_blocks_per_token=min_read_blocks_per_token,
+        coverage_target=coverage_target,
+        span_thresholds=span_thresholds,
+        max_overlap_bucket=max_overlap_bucket,
+        block_size=block_size,
+        summary_width=summary_width,
+        csa_blocks=csa_blocks,
+        global_width=global_width,
+        tail_blocks=tail_blocks,
+        context_length=context_length,
+        queries=queries,
+        seed=train_seed + 4096,
+    )
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=csa_blocks,
+        tail_blocks=tail_blocks,
+        summary_width=summary_width,
+        queries=queries,
+    )
+    global_config = DenseContextConfig(
+        vocab_size=config.vocab_size,
+        banks=config.banks,
+        width=global_width,
+        bits=config.bits,
+        decay_interval=config.context_length + 1,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(eval_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        index = LowBitCompressedBlockIndex(config)
+        global_summary = LowBitDenseContext(global_config)
+        for position, token in enumerate(stream):
+            index.update(int(token), position)
+            global_summary.update(int(token))
+
+        exact_counts = _build_exact_block_counts(stream, config.block_size)
+        directory = _build_rare_block_directory(
+            exact_counts=exact_counts,
+            hca_threshold=hca_threshold,
+            max_blocks_per_token=directory_blocks_per_token,
+        )
+        directory_entry_bytes = _rare_directory_entry_bytes(config.vocab_size, config.blocks)
+        recent_blocks = _recent_blocks(config.blocks, config.tail_blocks)
+
+        for bits_per_entry in clean_bits:
+            for counter_bits in clean_counter_bits:
+                for threshold in clean_thresholds:
+                    points.append(
+                        _evaluate_rare_directory_bloom_retirement_point(
+                            insert_count_threshold=threshold,
+                            retire_count_threshold=retire_count_threshold,
+                            scenario=scenario,
+                            config=config,
+                            index=index,
+                            global_summary=global_summary,
+                            exact_counts=exact_counts,
+                            directory=directory,
+                            directory_blocks_per_token=directory_blocks_per_token,
+                            directory_entry_bytes=directory_entry_bytes,
+                            hca_threshold=hca_threshold,
+                            route_lut=route_lut,
+                            fanout_lut=fanout_lut,
+                            min_read_blocks_per_token=min_read_blocks_per_token,
+                            recent_blocks=recent_blocks,
+                            query_tokens=query_tokens,
+                            stream=stream,
+                            bits_per_entry=bits_per_entry,
+                            hash_count=hash_count,
+                            counter_bits=counter_bits,
+                            bank_count=bank_count,
+                            bank_mode=bank_mode,
+                            sidecar_salt=sidecar_salt,
+                        )
+                    )
+
+    return CsaHcaRareDirectoryBloomRetirementCompressionResult(
+        context_length=context_length,
+        block_size=block_size,
+        summary_width=summary_width,
+        global_width=global_width,
+        csa_blocks=config.selected_blocks,
+        tail_blocks=config.tail_blocks,
+        hca_threshold=hca_threshold,
+        directory_blocks_per_token=directory_blocks_per_token,
+        bits_per_entries=clean_bits,
+        hash_count=hash_count,
+        counter_bits_values=clean_counter_bits,
+        bank_count=bank_count,
+        bank_mode=bank_mode,
+        sidecar_salt=sidecar_salt,
+        insert_count_thresholds=clean_thresholds,
+        retire_count_threshold=retire_count_threshold,
+        train_scenarios=train_scenarios,
+        eval_scenarios=eval_scenarios,
+        training_samples=route_training_samples + fanout_training_samples,
+        route_lut=route_lut,
+        fanout_lut=fanout_lut,
+        points=tuple(points),
+    )
+
+
 def run_hca_summary_quality_sweep(
     global_widths: Tuple[int, ...] = (512, 1024, 2048, 4096),
     threshold: int = 8,
@@ -6615,7 +6841,9 @@ def _evaluate_rare_directory_bloom_retirement_point(
             delete_token(token)
 
     inserted_final_rare = sum(1 for token in ever_inserted_tokens if token in directory)
-    active_final_rare = sum(1 for token in active_tokens if token in directory)
+    active_final_rare_tokens = [int(token) for token in active_tokens if token in directory]
+    active_final_rare = len(active_final_rare_tokens)
+    visible_active_rare = sum(1 for token in active_final_rare_tokens if sidecar.query(token))
     active_hot_tokens = sum(1 for token in active_tokens if token in final_hot_tokens)
     retired_hot_tokens = sum(1 for token in deleted_tokens if token in final_hot_tokens)
     update_denominator = update_events if update_events else 1
@@ -6707,6 +6935,7 @@ def _evaluate_rare_directory_bloom_retirement_point(
         final_hot_tokens=len(final_hot_tokens),
         inserted_final_rare_rate=inserted_final_rare / rare_denominator_for_insert,
         active_final_rare_rate=active_final_rare / rare_denominator_for_insert,
+        visible_active_rare_rate=visible_active_rare / rare_denominator_for_insert,
         hot_retired_token_rate=retired_hot_tokens / hot_denominator,
         hot_polluted_token_rate=active_hot_tokens / hot_denominator,
         update_bytes_per_context_token=update_events * sidecar.write_bytes_per_insert / config.context_length,

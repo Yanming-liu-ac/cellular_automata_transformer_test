@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_bloom_bank_sweep,
+    run_csa_hca_rare_directory_bloom_retirement_compression_sweep,
     run_csa_hca_rare_directory_bloom_retirement_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_selection_sweep,
@@ -960,6 +961,7 @@ def main() -> None:
         "active",
         "delete",
         "active_rare",
+        "vis_rare",
         "hot_ret",
         "hot_poll",
         "upd/tok",
@@ -985,6 +987,7 @@ def main() -> None:
             str(point.active_tokens),
             str(point.deleted_tokens),
             fmt_pct(point.active_final_rare_rate),
+            fmt_pct(point.visible_active_rare_rate),
             fmt_pct(point.hot_retired_token_rate),
             fmt_pct(point.hot_polluted_token_rate),
             f"{point.update_bytes_per_context_token:0.5f}",
@@ -999,6 +1002,64 @@ def main() -> None:
     print("- Hot-token retirement fixes the irreversible pollution found by naive streaming insertion.")
     print("- count1_retire15 matches the oracle sidecar shape but spends about 5x sidecar state.")
     print("- Later insert thresholds reduce update traffic but become a recall-risk knob for rarer tokens.")
+    print()
+
+    compression = run_csa_hca_rare_directory_bloom_retirement_compression_sweep()
+    print("Counting Bloom compression sweep")
+    print(
+        f"salt={compression.sidecar_salt}, "
+        f"k={compression.hash_count}, "
+        f"retire={compression.retire_count_threshold}, "
+        f"bank_mode={compression.bank_mode}"
+    )
+    headers = [
+        "scenario",
+        "policy",
+        "bpe",
+        "cbits",
+        "state",
+        "vis_rare",
+        "hot_poll",
+        "fp_q",
+        "hca_r",
+        "coverage",
+        "upd/tok",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 160)
+    for point in compression.points:
+        show_count1 = point.policy == "count1_retire15" and (
+            point.scenario == "zipf_reference"
+            or (point.bits_per_entry == 8 and point.counter_bits in (1, 2, 4))
+        )
+        show_count2 = (
+            point.policy == "count2_retire15"
+            and point.scenario == "zipf_reference"
+            and point.bits_per_entry == 8
+            and point.counter_bits in (2, 4)
+        )
+        if not (show_count1 or show_count2):
+            continue
+        row = [
+            point.scenario,
+            point.policy,
+            str(point.bits_per_entry),
+            str(point.counter_bits),
+            f"{point.sidecar_state_bytes / 1024:0.1f}KB",
+            fmt_pct(point.visible_active_rare_rate),
+            fmt_pct(point.hot_polluted_token_rate),
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.update_bytes_per_context_token:0.5f}",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Counting Bloom compression interpretation:")
+    print("- 8 bits/entry with 2-bit counters keeps visible rare coverage at 100% in this sweep.")
+    print("- 1-bit counters cut more SRAM, but they introduce small rare-token visibility loss.")
+    print("- The current hardware budget should move from c4 to c2 before trying learned promotion.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

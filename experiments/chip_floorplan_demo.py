@@ -62,7 +62,7 @@ def main() -> None:
     tile = TileConfig(cells_per_tile=64, local_sram_bytes=16 * 1024, local_bytes_per_cycle=32)
     print("HARC-CA tile/floorplan proxy")
     print("tile: 64 cells, 16KB local SRAM, 32 local bytes/cycle")
-    print("profile: retire128 counting-sidecar CSA/HCA-aware context summaries")
+    print("profile: retire128c2 compressed counting-sidecar CSA/HCA-aware context summaries")
     print("target: 1M synthetic decode events/s")
     print()
 
@@ -106,7 +106,7 @@ def main() -> None:
     print("Interpretation:")
     print("- This is a floorplan proxy, not area/timing closure.")
     print("- SRAM and bandwidth are local on-chip budgets.")
-    print("- retire128 adds the online counting Bloom sidecar on top of joint probe/fanout control.")
+    print("- retire128c2 adds the compressed online counting Bloom sidecar on top of joint probe/fanout control.")
     print("- The table helps track whether future learned rules break the local budget.")
 
 

@@ -664,6 +664,20 @@ to about 78.5% and state tiles from 23 to 26. This keeps the online sidecar
 inside the current local-SRAM budget, but it also makes sidecar compression the
 next concrete hardware target.
 
+The forty-sixth sweep compresses the retirement sidecar geometry. The decisive
+new metric is visible rare-token rate after hot-token deletions, because the
+logical active set can hide Bloom-counter false negatives. At `8 bits/entry`,
+2-bit counters keep visible rare-token rate at 100.0% on the measured reference,
+split-rare, and repeated-name streams, while preserving the 84.0% reference HCA
+rate and 99.5%/99.1% rare-stress coverage. Sidecar state falls from about
+44.9KB to about 26.9KB, and update traffic falls from about 0.27B/token to about
+0.16B/token. One-bit counters reduce state further to about 18KB, but visible
+rare-token rate falls to about 98.9-99.3%, so that point needs harder collision
+tests before it can become the baseline. The current event profile therefore
+moves from `retire128c4` to `retire128c2`: total on-chip state falls from about
+401.8KB to about 383.8KB, and the 32-tile state utilization falls from about
+78.5% to about 75.0%.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

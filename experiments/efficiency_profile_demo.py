@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from cellular_transformer.cellular_moe import CellularMoE, CellularMoEConfig
 from cellular_transformer.efficiency import (
     compact_csa_hca_context_budget,
+    compressed_retiring_sidecar_csa_hca_context_budget,
     compare_to_transformer_kv,
     joint_control_csa_hca_context_budget,
     rare_directory_csa_hca_context_budget,
@@ -53,7 +54,8 @@ def main() -> None:
     compact_context_budget = compact_csa_hca_context_budget()
     rare_context_budget = rare_directory_csa_hca_context_budget()
     joint_context_budget = joint_control_csa_hca_context_budget()
-    context_budget = retiring_sidecar_csa_hca_context_budget()
+    retiring_context_budget = retiring_sidecar_csa_hca_context_budget()
+    context_budget = compressed_retiring_sidecar_csa_hca_context_budget()
     headers = [
         "profile",
         "moe_ticks",
@@ -76,7 +78,8 @@ def main() -> None:
         ("compact128", compact_context_budget),
         ("rare128", rare_context_budget),
         ("joint128", joint_context_budget),
-        ("retire128", context_budget),
+        ("retire128c4", retiring_context_budget),
+        ("retire128c2", context_budget),
     ):
         for moe_ticks in (1, 2, 4, 8):
             rows.append((label, moe_ticks, maybe_context))
@@ -115,7 +118,7 @@ def main() -> None:
         context_summary=context_budget,
     )
     harc = comparison.harc
-    print("Detailed retirement-sidecar CSA/HCA-aware profile:")
+    print("Detailed compressed retirement-sidecar CSA/HCA-aware profile:")
     print(f"  exact_query_fraction={harc.exact_query_fraction:0.3f}")
     print(f"  exact_avg_visited_cells={harc.exact_avg_visited_cells:0.1f}")
     print(f"  overflow_query_rate={harc.overflow_query_rate:0.3f}")
@@ -147,7 +150,8 @@ def main() -> None:
     print("- compact128 uses 256KB block summaries plus a 12KB lazy-epoch HCA summary.")
     print("- rare128 uses 128KB block summaries plus a small exact rare-token directory.")
     print("- joint128 adds learned probe/fanout control metadata to rare128.")
-    print("- retire128 adds the online counting Bloom sidecar used by count1_retire15.")
+    print("- retire128c4 adds the original 4-bit counting Bloom sidecar.")
+    print("- retire128c2 uses the compressed 2-bit counter sidecar selected by the geometry sweep.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")
 

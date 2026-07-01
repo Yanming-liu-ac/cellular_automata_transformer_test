@@ -425,6 +425,15 @@ traffic to about 0.27B/context token. That is still small versus KV traffic, but
 large enough that the next CA-chip rule should learn or compile a lower-update
 promotion gate before making this the final sidecar.
 
+The first compressed-retirement sweep improves that point without changing the
+query path. Keeping `8 bits/entry` and reducing counters from 4 bits to 2 bits
+keeps measured visible rare-token coverage at 100.0%, keeps reference HCA at
+84.0%, and keeps split/repeated rare coverage at 99.5%/99.1%. Sidecar state
+falls from about 44.9KB to about 26.9KB, and update traffic falls from about
+0.27B/token to about 0.16B/token. One-bit counters are smaller, about 18KB, but
+they lose roughly 1% rare-token visibility in this stress set, so they are an
+aggressive target rather than the current baseline.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA
@@ -754,10 +763,11 @@ state to about 451.8KB. The rare128 profile replaces half of that block summary
 with a small exact directory: context traffic remains about 52.28KB/event, while
 on-chip state falls to about 354.6KB. The current joint128 profile adds the
 learned probe/fanout control state to rare128 and still keeps local traffic about
-52.28KB/event, with on-chip state about 356.9KB. The current retire128 profile
-adds the online `count1_retire15` counting Bloom sidecar. It keeps local traffic
-at about 52.28KB/event because sidecar read/update traffic is below 1B/event,
-while on-chip state rises to about 401.8KB.
+52.28KB/event, with on-chip state about 356.9KB. The current retire128c2 profile
+adds the online `count1_retire15` counting Bloom sidecar. The current
+retire128c2 point keeps local traffic at about 52.28KB/event because sidecar
+read/update traffic is below 1B/event, while on-chip state rises to about
+383.8KB.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,
@@ -773,11 +783,11 @@ local-SRAM tiles:
 tile = 64 low-bit cells + 16KB local SRAM + 32 local bytes/cycle
 ```
 
-At 4 Cellular-MoE ticks per synthetic event, the retire128 CSA/HCA-aware profile
-needs about 52.28KB of local traffic and about 401.8KB of on-chip state. With a
-32-tile fabric under the proxy assumptions, the state fits in about 78.5% of
-available SRAM and requires 26 state tiles. A 64-tile fabric stores the same
-state at about 39.2% utilization, while a 1M events/s target consumes about
+At 4 Cellular-MoE ticks per synthetic event, the retire128c2 CSA/HCA-aware
+profile needs about 52.28KB of local traffic and about 383.8KB of on-chip state.
+With a 32-tile fabric under the proxy assumptions, the state fits in about
+75.0% of available SRAM and requires 24 state tiles. A 64-tile fabric stores the
+same state at about 37.5% utilization, while a 1M events/s target consumes about
 2.6% of aggregate local byte bandwidth.
 
 This is not area/timing closure. It is the first explicit chip budget:

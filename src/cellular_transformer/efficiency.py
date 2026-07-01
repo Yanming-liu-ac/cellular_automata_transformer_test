@@ -411,7 +411,43 @@ def retiring_sidecar_csa_hca_context_budget() -> ContextSummaryBudget:
     )
 
 
+def compressed_retiring_sidecar_csa_hca_context_budget() -> ContextSummaryBudget:
+    """Joint CSA/HCA budget with the compressed 2-bit retirement sidecar."""
+
+    block_summary_state = 512 * 4 * 128 * 4 / 8
+    directory_entry_bytes = (16 + 9 + 1) / 8
+    directory_state = 9694 * directory_entry_bytes
+    fanout_lut_state = 42.0
+    probe_lut_state = 40.0
+    spread_metadata_state = 2252.0
+    hca_state = 4 * 2048 * (4 + 8) / 8
+    hca_read = 4 * (4 + 8) / 8
+    hca_update = 4 * (4 + 8) / 8 * 2
+    csa_block_score = 150.0
+    control_lut_read = 0.17
+    csa_directory_read = 0.50
+    csa_token_read = 331.6 * 16 / 8
+    sidecar_state = 26.9 * 1024
+    sidecar_read = 3 / 8
+    sidecar_update = 0.167
+    return ContextSummaryBudget(
+        block_summary_state_bytes=block_summary_state,
+        csa_directory_state_bytes=directory_state,
+        control_lut_state_bytes=fanout_lut_state + probe_lut_state + spread_metadata_state,
+        sidecar_state_bytes=sidecar_state,
+        hca_summary_state_bytes=hca_state,
+        hca_summary_read_bytes_per_event=hca_read,
+        hca_summary_update_bytes_per_event=hca_update,
+        control_lut_read_bytes_per_event=control_lut_read,
+        sidecar_read_bytes_per_event=sidecar_read,
+        sidecar_update_bytes_per_event=sidecar_update,
+        csa_block_score_bytes_per_event=csa_block_score,
+        csa_directory_read_bytes_per_event=csa_directory_read,
+        csa_token_read_bytes_per_event=csa_token_read,
+    )
+
+
 def current_csa_hca_context_budget() -> ContextSummaryBudget:
     """Current recommended CSA/HCA context-summary budget."""
 
-    return retiring_sidecar_csa_hca_context_budget()
+    return compressed_retiring_sidecar_csa_hca_context_budget()
