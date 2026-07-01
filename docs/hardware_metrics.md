@@ -187,6 +187,13 @@ top-16 hierarchical scoring costs about 490 cells/topic and top-32 costs about
 618, versus 2,048 for full-pool scoring. The net reduction remains 76% and 70%,
 respectively.
 
+Lazy refresh improves that budget. With 16-row groups, top-16 and refresh-16
+costs about 364 score cells/topic while preserving 84.0% of top-64 topic-hit
+quality. Top-32 with refresh-16 costs about 492 cells/topic while preserving
+91.1%. Both keep the exact content gate at 100.0% demanded exactness. This
+suggests group summaries can be maintained with dirty/lazy local updates rather
+than exact recompute every topic step.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

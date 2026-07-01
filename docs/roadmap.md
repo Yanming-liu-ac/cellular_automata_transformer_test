@@ -378,6 +378,10 @@ Implement:
   Exact maintenance for 16-row groups costs about 234 cells/topic and still
   preserves a 76% net top-16 scoring reduction, but lazy dirty summaries may
   reduce this further.
+- replace fixed lazy refresh intervals with a local refresh trigger. Refresh-16
+  keeps top-16 at 84.0% of top-64 quality while reducing total score work to
+  364 cells/topic; a learned trigger should recover refresh-4 quality with
+  closer to refresh-16 cost.
 
 First trainable target:
 

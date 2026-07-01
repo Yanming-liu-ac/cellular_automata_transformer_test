@@ -63,6 +63,7 @@ python experiments/synthetic_candidate_demand_sweep_demo.py
 python experiments/synthetic_candidate_reducer_demo.py
 python experiments/synthetic_hierarchical_candidate_reducer_demo.py
 python experiments/synthetic_group_summary_update_demo.py
+python experiments/synthetic_lazy_group_summary_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -99,6 +100,8 @@ The first experiments compare:
   scoring before top-M exposure;
 - group-summary maintenance diagnostics that estimate update cost for the
   hierarchical reducer;
+- lazy group-summary refresh diagnostics that trade stale summaries for lower
+  update traffic;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

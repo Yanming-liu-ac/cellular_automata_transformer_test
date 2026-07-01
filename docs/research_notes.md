@@ -282,6 +282,15 @@ writes, and decay shifts. Adding that to the hierarchical reducer gives about
 2,048-cell full-pool scorer. Group size 16 is the current best balance; group
 size 8 scans more summaries, while group size 32 makes each recompute too wide.
 
+Lazy summary refresh reduces the update cost further. With 16-row groups and
+top-16 demand, refreshing dirty summaries every 4 topic steps keeps 85.6% of
+top-64 quality and drops total score work to 446 cells/topic. Refreshing every
+16 topic steps still keeps 84.0% of top-64 quality and drops total score work
+to 364 cells/topic, an 82.2% reduction from full-pool scoring. For top-32,
+refresh-16 keeps 91.1% of top-64 quality at 492 cells/topic. Stale summaries
+therefore look tolerable on this trace; the next step is to learn when to force
+an early refresh rather than using a fixed interval.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -379,6 +379,11 @@ The update-cost estimate keeps the same conclusion honest. Maintaining exact
 hierarchical top-16 path still cuts total score work by about 76%. Compression
 has to include the update path, not only the read path.
 
+Lazy refresh pushes the same point further: refreshing dirty 16-row summaries
+every 16 topic steps still keeps top-16 at about 84% of top-64 quality while
+cutting score work by about 82%. The useful CA rule is not "always exact"; it is
+"exact only where stale state would change the route."
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

@@ -276,6 +276,12 @@ the hierarchical top-16 path costs about 490 score cells/topic, far below the
 2,048-cell full-pool scorer. This makes local group summaries a plausible
 hardware primitive rather than a free oracle.
 
+The same primitive can be lazy. If dirty summaries refresh every 16 topic
+steps, top-16 retains 84.0% of the top-64 topic-hit quality while total score
+work falls to about 364 cells/topic. The architectural rule becomes: keep group
+summaries local and mostly stale, refresh dirty groups periodically or on a
+learned trigger, then fine-score only selected groups.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code
