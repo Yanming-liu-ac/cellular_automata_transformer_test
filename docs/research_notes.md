@@ -737,6 +737,33 @@ plain count threshold. It needs extra local evidence, such as directory-probe
 feedback, short recency, source phase, or a tiny probation state, while keeping
 count1-style protection for one-hit rare facts.
 
+The fifty-first sweep tests that probation idea directly. It keeps the full
+counting sidecar on delayed `count2_retire15` promotion and adds optional
+first-hit visibility. A persistent first-hit presence Bloom restores 100.0%
+rare-token visibility, but it is not usable as a default because it also makes
+100.0% of final hot tokens look like rare-sidecar hits and reaches 85.2%
+sidecar false positives on the reference query stream. A deletable
+first-hit-retiring probation plane is much closer to hardware-useful: with
+8 bits/entry and 1-bit counters it keeps 99.1%-99.4% rare-token visibility,
+limits hot pollution to at most 2.0%, and cuts update traffic to about
+0.136-0.141B/token instead of the count1 baseline's about 0.22B/token. The cost
+is real: total sidecar state rises to about 53KB and every query reads both the
+full and probation sidecars, 0.75B/query. A `directory_feedback_oracle` row gives
+the upper bound: if a local exact directory signal could expose one-hit rare
+facts, count2 would keep 100.0% visibility with the low 0.027-0.030B/token
+update traffic and only about 0.5B/query sidecar read. Therefore the next
+promotion target is not a bigger Bloom filter; it is a local feedback/probe rule
+that approaches the oracle without the persistent-probation hot-path pollution.
+
+A small probation bit-budget check sharpens the tradeoff. Two bits/entry is too
+collision-prone, with up to 27.7% hot pollution and 48.8% false positives.
+Four bits/entry is the aggressive low-state point: about 44.9KB maximum sidecar
+state, at least 98.5% rare visibility, up to 6.6% hot pollution, and the same
+about 0.139B/token update traffic. Eight bits/entry is the cleaner robust point:
+about 53.9KB maximum state, at least 99.1% rare visibility, and at most 2.0% hot
+pollution. This is a useful candidate family, but not yet the default robust
+architecture.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

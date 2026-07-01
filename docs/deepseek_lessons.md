@@ -573,6 +573,17 @@ normal stress because one-hit facts never get admitted. That is exactly the kind
 of low-bit optimization DeepSeek-style engineering should reject. The next gate
 needs another local signal, not just a higher threshold.
 
+The probation-promotion follow-up gives the constructive version. A persistent
+first-hit presence plane repairs rare visibility but pollutes the hot path, so
+it fails the same "common path must stay cheap" test. A deletable first-hit
+probation plane is better: at 8 probation bits/entry it keeps about 99% rare
+visibility and lowers update traffic from about 0.22B/token to about
+0.14B/token, but it spends roughly 53KB of sidecar state and 0.75B/query of
+sidecar read bandwidth. At 4 bits/entry it is smaller, about 45KB, but takes
+more false-positive risk. The DeepSeek-style lesson is that promotion must be a
+joint control problem: admission, deletion, local probe feedback, and sidecar
+bit-width have to be optimized together.
+
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not
 for fine ranking of the hottest topic tokens. Even an 8KB version has only about

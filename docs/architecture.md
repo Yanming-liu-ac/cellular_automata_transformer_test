@@ -443,6 +443,17 @@ constructed rare token appears exactly three times, but they do not save update
 traffic there; threshold 4 fails outright. The promotion gate therefore needs
 additional local evidence rather than a bare count threshold.
 
+A first version of that extra-evidence path is now measured. `count2_retire15`
+plus a persistent first-hit presence sidecar restores rare visibility, but it is
+too blunt because hot tokens remain visible as false rare-directory hits. The
+more plausible candidate is a deletable first-hit-retiring probation plane:
+8 probation bits/entry with 1-bit counters keeps about 99.1%-99.4% rare
+visibility and reduces update traffic to about 0.14B/token, but increases total
+sidecar state to roughly 53KB and doubles sidecar query reads to 0.75B/query.
+Four probation bits/entry is smaller, about 45KB, but accepts more hot-path
+pollution. This family is promising for a future learned/probe-controlled
+promotion gate, but it does not supersede the current robust baseline.
+
 The adversarial-collision check tightens that conclusion. It chooses hot tokens
 that share Bloom slots with rare tokens before retiring them. Under this chosen
 collision pattern, 1-bit counters nearly erase rare-token visibility, 2-bit

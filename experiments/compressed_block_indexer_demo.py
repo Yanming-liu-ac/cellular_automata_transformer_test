@@ -22,6 +22,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep,
     run_csa_hca_rare_directory_bloom_retirement_collision_sweep,
     run_csa_hca_rare_directory_bloom_retirement_compression_sweep,
+    run_csa_hca_rare_directory_bloom_probation_promotion_sweep,
     run_csa_hca_rare_directory_bloom_retirement_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_selection_sweep,
@@ -1141,6 +1142,89 @@ def main() -> None:
     print("- Naive insert thresholds cut update traffic but break the exact sidecar visibility contract.")
     print("- count2/count3 are not acceptable defaults even when CSA/fanout masks some coverage loss.")
     print("- The next promotion gate needs extra local evidence, not just a higher count threshold.")
+    print()
+
+    probation = run_csa_hca_rare_directory_bloom_probation_promotion_sweep()
+    print("Delayed-promotion probation/feedback diagnostic")
+    headers = [
+        "scenario",
+        "mode",
+        "state",
+        "full_vis",
+        "comb_vis",
+        "hot_poll",
+        "fp_q",
+        "full_upd",
+        "prob_upd",
+        "tot_upd",
+        "side_rd",
+        "coverage",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>18}" for header in headers))
+    print("-" * 270)
+    for point in probation.points:
+        row = [
+            point.scenario,
+            point.probation_mode,
+            f"{point.total_sidecar_state_bytes / 1024:0.1f}KB",
+            fmt_pct(point.full_visible_final_rare_rate),
+            fmt_pct(point.combined_visible_final_rare_rate),
+            fmt_pct(point.combined_hot_polluted_token_rate),
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            f"{point.full_update_bytes_per_context_token:0.5f}",
+            f"{point.probation_update_bytes_per_context_token:0.5f}",
+            f"{point.total_update_bytes_per_context_token:0.5f}",
+            f"{point.sidecar_read_bytes_per_query:0.3f}B",
+            fmt_pct(point.repaired_relevant_coverage),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>18}" for cell in row))
+
+    print()
+    print("Probation/feedback interpretation:")
+    print("- The oracle row is an upper bound for a perfect local directory-feedback signal.")
+    print("- First-hit probation restores one-hit rare visibility, but it must be judged by hot pollution and sidecar read cost.")
+    print("- A useful hardware gate must approach the oracle row without turning hot-token probes into false rare-directory hits.")
+    print()
+
+    print("Retiring probation bit-budget diagnostic")
+    headers = [
+        "pbits",
+        "max_state",
+        "worst_vis",
+        "max_hot",
+        "max_fp",
+        "mean_upd",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 102)
+    for probation_bits in (2, 4, 8):
+        bit_result = run_csa_hca_rare_directory_bloom_probation_promotion_sweep(
+            probation_modes=("first_hit_retiring",),
+            probation_bits_per_entry=probation_bits,
+        )
+        points = bit_result.points
+        max_state = max(point.total_sidecar_state_bytes for point in points)
+        worst_visible = min(point.combined_visible_final_rare_rate for point in points)
+        max_hot = max(point.combined_hot_polluted_token_rate for point in points)
+        max_false_positive = max(point.sidecar_false_positive_query_rate for point in points)
+        mean_update = sum(point.total_update_bytes_per_context_token for point in points) / len(points)
+        row = [
+            str(probation_bits),
+            f"{max_state / 1024:0.1f}KB",
+            fmt_pct(worst_visible),
+            fmt_pct(max_hot),
+            fmt_pct(max_false_positive),
+            f"{mean_update:0.5f}",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Retiring-probation bit-budget interpretation:")
+    print("- 2 bits/entry is too collision-prone for hot-token pollution.")
+    print("- 4 bits/entry is the aggressive low-state target; 8 bits/entry is the cleaner robust target.")
+    print("- The write saving is mostly independent of probation bits because first-hit writes still touch k low-bit cells.")
     print()
 
     collision = run_csa_hca_rare_directory_bloom_retirement_collision_sweep()

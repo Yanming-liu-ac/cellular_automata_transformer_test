@@ -665,6 +665,24 @@ visibility contract by skipping one-hit rare facts. The coverage numbers remain
 high only because CSA/fanout still reads many blocks; that is not a valid exact
 sidecar replacement.
 
+The probation-promotion diagnostic tests the missing local evidence. With
+`count2_retire15` as the full-sidecar promotion gate, a persistent first-hit
+presence plane restores 100% rare visibility but is rejected because it leaves
+hot tokens permanently polluted; in the reference stream, hot pollution is
+100% and sidecar false positives reach 85.2%. A deletable first-hit probation
+plane with 1-bit counters is the useful candidate. At 8 probation bits/entry it
+keeps 99.1%-99.4% rare visibility, holds hot pollution below 2.0%, and reduces
+update traffic to about 0.136-0.141B/token. The hardware price is about
+52.8-53.9KB total sidecar state and 0.75B/query sidecar read, because the route
+must check both the delayed full sidecar and the probation plane. Four
+probation bits/entry is the aggressive option: maximum state falls to about
+44.9KB, rare visibility remains at least 98.5%, but hot pollution rises to
+6.6% and reference false positives to 8.7%. Two bits/entry is too collision
+heavy. The oracle directory-feedback row is only an upper bound: it shows that
+the same count2 update traffic, about 0.027-0.030B/token, would be possible if a
+local exact directory/probe signal exposed one-hit rare facts without Bloom
+pollution.
+
 The adversarial-collision sweep chooses hot tokens that share Bloom slots with
 rare tokens before retiring them. It now varies both the number of rare-token
 occurrences and the number of hot colliders per rare token:

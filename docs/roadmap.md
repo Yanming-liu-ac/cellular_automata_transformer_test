@@ -304,10 +304,12 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- design a delayed-promotion gate with extra local evidence, because pure
-  count2/count3 promotion saves updates but breaks one-hit rare sidecar
-  visibility; candidate features are directory-probe feedback, short recency,
-  source phase, or a tiny probation state.
+- train or hand-design a delayed-promotion gate with stronger local evidence.
+  The first probation diagnostic shows that persistent first-hit presence
+  pollutes the hot path, while deletable first-hit probation is promising but
+  spends extra state/read bandwidth; the next candidate should use
+  directory-probe feedback, short recency, or source phase to approach the
+  oracle feedback row without permanent Bloom pollution.
 - add recency/query-context features to the trained fanout LUT so the
   zero-overlap guard can distinguish true repeated-key/spread rare misses from
   harmless CSA disagreement; the current `retire128c3g3` budget proves the
