@@ -523,6 +523,18 @@ result supports the LLM-Wiki direction, but it also identifies the next missing
 state: field coverage and parser confidence should reduce unnecessary strict
 repair on natural paragraphs.
 
+The first field-coverage follow-up makes that missing state measurable. It adds
+one 2-bit bucket for weighted current-field coverage gap: missing status and
+priority count more than missing region or owner. The baseline remains the 64B
+4D paragraph LUT. A conservative 128B downgrade guard on top of that baseline
+uses 192B total controller state and keeps all four held-out rows passing while
+moving mean over-strict from 27.49% to 26.93% and mean touch from 9.37 to 9.36
+cells/event. A direct 256B 5D LUT reaches the same 26.93% mean over-strict and
+9.35 cells/event, also with 0/4 failures. This is progress, but small progress:
+one coverage bucket is not enough to solve paragraph over-repair. The next
+compiler-side signals should separate summary coverage, source coverage, and
+core-field agreement rather than compressing all missing fields into one bucket.
+
 ## Kill Criteria
 
 This track is not useful if:

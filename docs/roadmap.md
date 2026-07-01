@@ -656,6 +656,13 @@ under-strict rate. The tradeoff is high over-strict repair, 26.95-28.03%, and
 "paragraph text"; it is field-coverage confidence or compiler-side diagnostics
 that can lower strict repair without missing important stale wiki claims.
 
+The first coverage-confidence follow-up narrows that roadmap item. A single
+weighted field-coverage gap bucket lowers mean over-strict only from 27.49% to
+26.93% while keeping all four held-out rows passing. The 192B guard and 256B
+5D LUT both work, but neither is a decisive traffic win. The next version should
+split the signal into summary-core coverage, source-core coverage, and
+agreement confidence before adding more controller SRAM.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

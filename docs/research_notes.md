@@ -645,6 +645,17 @@ That is a useful result, not a solved one: CA looks well matched to maintaining
 a compiled wiki, while paragraph-level text now requires field coverage or
 parser-confidence state to avoid excess repair traffic.
 
+The first coverage-confidence diagnostic tests exactly one extra local signal:
+a 2-bit weighted field-coverage gap bucket. The signal is cheap and hardware
+natural, because the parser/compiler already knows which current fields were
+present. It helps, but only modestly. The 64B paragraph baseline has 27.49%
+mean over-strict and 9.37 touched cells/event. A 192B controller with a 128B
+coverage downgrade guard passes all four rows and lowers those to 26.93% and
+9.36. A 256B 5D LUT also passes and lowers touch to 9.35. The lesson is useful:
+coverage is a real feature, but over-repair is not caused by a single missing
+field-count axis. The next diagnostic should split coverage into summary/core,
+source/core, and agreement-confidence channels.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

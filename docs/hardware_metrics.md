@@ -1524,6 +1524,20 @@ estimated provenance traffic rises to 9.35-9.40 touched cells/event. The chip
 cost is therefore not a larger controller table; it is extra local repair
 traffic caused by weak paragraph coverage/confidence signals.
 
+The first coverage-confidence variant prices one such signal. Adding a 2-bit
+weighted field-coverage gap bucket gives two hardware options:
+
+```text
+baseline_4d:     64B controller, 27.49% mean over-strict, 9.37 touch/event, 0/4 failures
+coverage_guard: 192B controller, 26.93% mean over-strict, 9.36 touch/event, 0/4 failures
+coverage_lut5d: 256B controller, 26.93% mean over-strict, 9.35 touch/event, 0/4 failures
+```
+
+This is a weak but useful positive result. The extra 128-192B of controller
+state does not buy a large traffic reduction, so the next hardware metric
+should split field coverage into separate summary-core and source-core
+confidence counters before spending more LUT dimensions.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:
