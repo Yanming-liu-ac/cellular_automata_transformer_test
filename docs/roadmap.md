@@ -142,6 +142,10 @@ Compressed block-index result:
   admission table: the route LUT becomes 80B, pays a modeled 0.125B/query
   sidecar read, preserves 84.7% reference HCA routing, removes rare false-HCA,
   reaches 100.0% split-rare coverage, and reaches 98.4% repeated-name coverage.
+- A Bloom-like presence-sidecar false-positive sweep says rare recall is robust
+  but HCA hot-path efficiency is sensitive: 1% FPR keeps reference HCA routing
+  at 82.1%, 10% keeps it at 80.0%, and 25% drops it to 46.3%. The first sidecar
+  target is therefore roughly 1-10% FPR, pending a real layout model.
 - The first HCA-summary quality check says the same 4KB global summary is good
   enough for threshold routing but not yet for fine dense-topic ranking:
   top-256 recall is about 94.1%, while top-64 recall is only about 42.2%.
@@ -279,9 +283,8 @@ Next retrieval work:
 - continue compressing or tiering the CSA block-summary index beyond the current
   rare128 point, because learned rules and richer states still need SRAM
   headroom.
-- validate whether the trained HCA route table's rare-directory presence
-  feature can be implemented as a true 1-bit sidecar/Bloom read; if not, account
-  for the more expensive associative probe.
+- implement a more physical rare-directory presence sidecar: hash count, bits
+  per entry, update cost, bank conflicts, and adversarial false-positive tests.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - add recency/query-context features to the trained fanout LUT and then train a

@@ -366,6 +366,14 @@ split-rare coverage, and reaches 98.4% repeated-name coverage at about
 HCA admission should see a tiny exact-memory sidecar, not only the compressed
 HCA counters.
 
+A Bloom-like sidecar false-positive sweep makes the hardware tradeoff explicit.
+At 1% target false-positive rate, the sidecar is about 10.8KB in the reference
+case and reference HCA routing drops modestly from 84.7% to 82.1%. At 10%, the
+sidecar is about 5.4KB and reference HCA routing is still about 80.0%. At 25%,
+reference HCA routing falls to 46.3%, so the hot path starts losing its point.
+Rare recall remains safe in this sweep because false positives route extra
+queries to CSA, not HCA.
+
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
 the deterministic query stream: query route accuracy is 100%, with no false HCA

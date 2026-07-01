@@ -502,6 +502,11 @@ reference HCA routing, removes rare false-HCA in the stress set, and slightly
 beats the threshold-15 repeated-name coverage. This mirrors the useful V4
 pattern: the win is not an exotic rule alone, but the right small metadata made
 visible at the routing point.
+The sidecar false-positive sweep adds the matching hardware discipline: low-bit
+metadata needs an error budget. In the current stress set, 1-10% presence
+false positives mostly cost hot-path HCA efficiency, while 25% is too loose and
+collapses reference HCA routing. CA routing metadata should therefore be trained
+and budgeted as part of the model, not treated as free bookkeeping.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

@@ -19,6 +19,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_learned_fanout_sweep,
     run_csa_hca_rare_directory_aware_route_lut_sweep,
     run_csa_hca_rare_directory_policy_sweep,
+    run_csa_hca_rare_directory_presence_sidecar_sweep,
     run_csa_hca_rare_directory_route_lut_sweep,
     run_csa_hca_rare_directory_stress_sweep,
     run_csa_hca_rare_directory_sweep,
@@ -656,6 +657,47 @@ def main() -> None:
     print("- One rare-directory presence bit is enough to suppress the remaining false-HCA cases.")
     print("- The 80B route table keeps the reference HCA path while exposing a CA-local metadata tradeoff.")
     print("- The next hardware question is whether this sidecar is a real 1-bit SRAM/Bloom read.")
+    print()
+
+    sidecar = run_csa_hca_rare_directory_presence_sidecar_sweep()
+    print("Presence-sidecar false-positive sweep")
+    print(
+        f"training_samples={sidecar.training_samples}, "
+        f"route_lut={format_bytes(sidecar.route_lut.state_bytes)}, "
+        f"presence_read={format_bytes(sidecar.route_feature_read_bytes)}/query"
+    )
+    headers = [
+        "fp",
+        "scenario",
+        "sidecar",
+        "fp_q",
+        "hca_r",
+        "coverage",
+        "dir_rd",
+        "reduct",
+    ]
+    print(" | ".join(f"{header:>14}" for header in headers))
+    print("-" * 126)
+    for point in sidecar.points:
+        if point.scenario not in ("zipf_reference", "split_rare", "repeated_name"):
+            continue
+        row = [
+            fmt_pct(point.false_positive_rate),
+            point.scenario,
+            format_bytes(point.sidecar_state_bytes),
+            fmt_pct(point.sidecar_false_positive_query_rate),
+            fmt_pct(point.hca_query_rate),
+            fmt_pct(point.repaired_relevant_coverage),
+            format_bytes(point.directory_read_bytes_per_query),
+            f"{point.token_read_reduction:0.1f}x",
+        ]
+        print(" | ".join(f"{cell:>14}" for cell in row))
+
+    print()
+    print("Presence-sidecar interpretation:")
+    print("- Exact sidecar behavior is the upper bound; Bloom false positives trade state for HCA hot-path loss.")
+    print("- Rare recall stays safe because false positives route extra queries to CSA instead of HCA.")
+    print("- The hardware target is the largest false-positive rate that keeps reference HCA routing high enough.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

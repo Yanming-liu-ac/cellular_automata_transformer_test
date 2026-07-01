@@ -587,6 +587,16 @@ false-HCA routes, reach 100.0% split-rare coverage at 6.65B/query, and reach
 primitive than the HCA-only route table because it exposes exactly the metadata
 the compressed counters cannot infer from collisions.
 
+The thirty-eighth sweep turns that presence bit into a Bloom-like sidecar with
+false positives. The important failure mode is not rare recall: false positives
+send extra queries to CSA, so split-rare coverage stays at 100.0% and
+repeated-name coverage stays at 98.4% in the measured stress cases. The cost is
+hot-path efficiency. On the reference stream, a 1% target sidecar has about
+10.5KB state and lowers HCA routing from 84.7% to 82.1%; a 10% target uses about
+5.3KB and keeps HCA routing at 80.0%; a 25% target drops HCA routing to 46.3%.
+This gives the first concrete sidecar design target: 1-10% false positives may
+be acceptable, but loose presence summaries destroy the dense hot path.
+
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6
 score cells per mixed event. Because these are 4-bit local reads, the unified

@@ -492,6 +492,25 @@ joint policy, while preserving the reference HCA hot path. The remaining
 hardware question is whether the presence feature is a true 1-bit sidecar read
 or a more expensive associative probe.
 
+The first presence-sidecar false-positive sweep models that question as a
+Bloom-like summary. The route LUT is unchanged at 80B and still reads one
+presence bit per query; the sidecar state varies with target false-positive
+rate:
+
+```text
+fp=0%    reference  sidecar=1.10KB   fp_q=0.0%   HCA=84.7%  coverage=2.5%    reduction=195.6x
+fp=1%    reference  sidecar=10.54KB  fp_q=2.8%   HCA=82.1%  coverage=2.6%    reduction=188.1x
+fp=10%   reference  sidecar=5.27KB   fp_q=6.0%   HCA=80.0%  coverage=2.8%    reduction=182.4x
+fp=25%   reference  sidecar=3.17KB   fp_q=41.7%  HCA=46.3%  coverage=3.6%    reduction=123.3x
+fp=10%   split_rare sidecar=5.39KB   fp_q=0.0%   HCA=0.0%   coverage=100.0%  reduction=84.7x
+fp=10%   repeated   sidecar=5.27KB   fp_q=0.0%   HCA=0.0%   coverage=98.4%   reduction=52.4x
+```
+
+The useful conclusion is asymmetric: sidecar false positives are mostly an
+efficiency risk for hot reference traffic, not an exact-recall risk in this
+stress set. A target around 1-10% looks plausible; 25% is too loose for the HCA
+hot path.
+
 The HCA-like global summary is now measured separately. At threshold 8:
 
 ```text
