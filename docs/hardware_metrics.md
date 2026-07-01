@@ -202,6 +202,22 @@ score cells/topic with 93.3% retention. This is not a dramatic new minimum, but
 it proves the maintenance decision can be made from local dirty bits and an age
 counter rather than from a global scheduler.
 
+## Wiki-Memory Metrics
+
+For the CA wiki-memory path, track separate read and update costs because the
+goal is not only retrieval speed. Mutable knowledge must be cheap to edit. The
+first prototype uses 256 pages, four facts per page, four links per page,
+16-page groups, and 4x256x4-bit summaries. It keeps about 146.5KB of page,
+group, fact, link, version, and dirty metadata.
+
+The exact-update policy reaches perfect recall but writes about 18,452
+score-equivalent cells per fact edit. The `trigger16_age16` local policy keeps
+99.02% recall with 0.39% stale misses and writes about 11,651 cells/update.
+Reads stay about 359 cells/query, compared with 1,024 exact fact cells for a
+flat scan. The no-refresh control proves the failure mode: writes fall to four
+metadata cells/update, but stale misses climb to 16.8%. This makes stale miss
+rate the main safety metric for any more aggressive write-saving policy.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

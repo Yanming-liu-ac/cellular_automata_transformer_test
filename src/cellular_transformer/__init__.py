@@ -241,6 +241,13 @@ from .synthetic_lm import (
     run_synthetic_lm_trial,
     train_synthetic_lm_phased_demand_gate_lut,
 )
+from .wiki_memory import (
+    WikiMemoryConfig,
+    WikiMemoryRefreshPolicy,
+    WikiMemorySweepResult,
+    WikiMemoryTrialPoint,
+    run_wiki_memory_sweep,
+)
 
 __all__ = [
     "CellularMoE",
@@ -373,6 +380,10 @@ __all__ = [
     "TieredHashRouteCAMConfig",
     "TieredLookupResult",
     "TileConfig",
+    "WikiMemoryConfig",
+    "WikiMemoryRefreshPolicy",
+    "WikiMemorySweepResult",
+    "WikiMemoryTrialPoint",
     "harc_ca_edges",
     "line_edges",
     "make_exact_query_demand_trace",
@@ -455,6 +466,7 @@ __all__ = [
     "run_synthetic_lm_candidate_reducer_sweep",
     "run_synthetic_lm_candidate_demand_sparsity_sweep",
     "run_synthetic_lm_demand_gate_sweep",
+    "run_wiki_memory_sweep",
     "shortest_propagation_steps",
     "sweep_memory_tasks",
     "train_repeat_admission_lut",

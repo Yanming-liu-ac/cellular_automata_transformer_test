@@ -104,6 +104,31 @@ Baselines:
 - graph/wiki retrieval with CPU-style global search;
 - full-context attention over the same pages when small enough to run.
 
+## First Prototype Result
+
+The first NumPy prototype is `experiments/wiki_memory_demo.py`. It builds a
+256-page synthetic wiki with four facts per page, four links per page, 16-page
+groups, and 4x256x4-bit page/group summaries. Queries mix single-hop fact reads
+and two-hop link reads; updates mutate fact keys and values, then mark only the
+local page and group as dirty.
+
+The exact-update baseline refreshes page and group summaries after every fact
+edit. It reaches 100.0% recall, but writes about 18,452 score-equivalent cells
+per update. The conservative triggered policy, `trigger16_age16`, refreshes
+when 16 pages are dirty or the summary is 16 update steps old. On the same
+event stream it reaches 99.02% overall recall, 98.22% recall on recently updated
+pages, and 0.39% stale misses. It reads about 359 cells/query versus 1,024 for
+a flat exact page-fact scan, a 64.9% read reduction, while update writes fall to
+about 11,651 cells/update. With no refresh, recall drops to 80.27% and stale
+misses rise to 16.80%.
+
+This is not yet a learned memory system, but it establishes the first measurable
+wiki-memory claim: local dirty/age summary refresh can keep mutable facts mostly
+queryable while avoiding full-wiki scans. The error-book repair path is present
+but still weak in this trace: it repairs five failed probes and immediately
+recovers two of them, so the next benchmark should make repeated failed probes
+and contradiction clusters explicit.
+
 ## Kill Criteria
 
 This track is not useful if:

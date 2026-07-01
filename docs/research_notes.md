@@ -302,6 +302,26 @@ the current lesson is conservative: refresh pressure should be driven by
 dirty-count and age first, with learned top-dirty shortcuts treated as a later
 risk/reward optimization.
 
+## First Wiki-Memory Prototype
+
+The CA wiki-memory prototype turns the mutable-knowledge idea into a measured
+task. It builds a 256-page synthetic wiki with local facts, page links, 16-page
+groups, and low-bit page/group summaries. A query first scores group summaries,
+then page summaries, then reads exact facts from selected pages; a multi-hop
+query also follows page links. A fact update changes only one page, marks its
+page and group summaries dirty, and relies on a local refresh policy.
+
+The exact-update policy reaches 100.0% recall but writes about 18,452
+score-equivalent cells/update because it refreshes summaries after every fact
+edit. The `trigger16_age16` policy reaches 99.02% overall recall and 98.22%
+recent-update recall with 0.39% stale misses, while cutting writes to about
+11,651 cells/update. Query work is about 359 cells/query versus 1,024 for a flat
+exact fact scan, a 64.9% read reduction. The no-refresh control reaches only
+80.27% recall and 16.80% stale misses. This is the strongest evidence so far
+that CA is naturally aligned with external mutable knowledge: local state can
+remain mostly stale, as long as dirty/version pressure triggers local summary
+maintenance before route quality collapses.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
