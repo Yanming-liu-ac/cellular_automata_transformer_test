@@ -1626,6 +1626,17 @@ should measure whether the same regime LUT holds under randomized mixed shifts,
 because a named-scenario table that fails interpolated noise would not be a
 chip primitive yet.
 
+That randomized metric now exists. Four deterministic held-out scenarios mix
+parser, omission, distractor, and scale shifts. On those 8 eval rows,
+`factor_vote80b` fails 5/8: mean accuracy is about 72.26%, strict recall is
+97.85%, under-strict is 1.57%, and over-strict is 26.17%. The coverage-repair
+branch passes 8/8, and the updated `regime_counter_selector` also passes 8/8
+after adding a highest-coverage-bucket gate. Its random-matrix mean accuracy is
+about 68.66%, strict recall is 99.46%, under-strict is 0.74%, and over-strict
+is 30.60%. This preserves the safety target but spends more repair traffic, so
+the next hardware metric is explicit: recover traffic without losing zero
+failures on randomized mixed shifts.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

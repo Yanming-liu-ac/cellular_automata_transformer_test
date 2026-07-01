@@ -10475,7 +10475,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         "omit_x2",
         "distractor_x2",
         "large_2k",
+        "random_mix",
     ),
+    regime_counter_random_train_count: int = 4,
+    regime_counter_random_seed: int = 8801,
     learned_shift_selector_profiles: Tuple[str, ...] = (
         "default",
         "parser_x2",
@@ -10655,6 +10658,8 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("regime_counter_target_penalty_weight must be non-negative")
     if regime_counter_repair_bias_weight < 0.0:
         raise ValueError("regime_counter_repair_bias_weight must be non-negative")
+    if regime_counter_random_train_count < 0:
+        raise ValueError("regime_counter_random_train_count must be non-negative")
     if not 0.0 <= min_accuracy <= 1.0:
         raise ValueError("min_accuracy must be in [0, 1]")
     if not 0.0 <= min_strict_recall <= 1.0:
@@ -10696,6 +10701,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         "omit_x2",
         "distractor_x2",
         "large_2k",
+        "random_mix",
     }
     unknown_regime_profiles = [
         name for name in clean_regime_profiles if name not in allowed_regime_profiles
@@ -11494,20 +11500,100 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
         dtype=np.int64,
     )
+    regime_training_specs = []
     for profile in clean_regime_profiles:
+        if profile == "random_mix":
+            random_rng = np.random.default_rng(int(regime_counter_random_seed))
+            for mix_index in range(int(regime_counter_random_train_count)):
+                scale = float(
+                    random_rng.choice(np.array([1.0, 1.5, 2.0], dtype=np.float64))
+                )
+                parser_multiplier = float(random_rng.uniform(0.75, 2.25))
+                parser_drop_multiplier = float(
+                    np.clip(
+                        parser_multiplier * random_rng.uniform(0.85, 1.15),
+                        0.5,
+                        2.75,
+                    )
+                )
+                source_omit_multiplier = float(random_rng.uniform(0.75, 2.75))
+                summary_omit_multiplier = float(
+                    np.clip(
+                        source_omit_multiplier * random_rng.uniform(0.70, 1.30),
+                        0.5,
+                        3.0,
+                    )
+                )
+                distractor_multiplier = float(random_rng.uniform(0.50, 2.50))
+                regime_claim_count = int(round(claim_count * scale))
+                event_scale = regime_claim_count / float(claim_count)
+                regime_training_specs.append(
+                    (
+                        f"random_mix_{mix_index}",
+                        regime_claim_count,
+                        int(round(query_events * event_scale)),
+                        int(round(update_events * event_scale)),
+                        int(round(compile_events * event_scale)),
+                        (
+                            min(1.0, clean_train_parser_misread_rate * parser_multiplier),
+                            min(1.0, clean_train_parser_drop_rate * parser_drop_multiplier),
+                            min(
+                                1.0,
+                                clean_train_source_core_omit_rate
+                                * source_omit_multiplier,
+                            ),
+                            min(
+                                1.0,
+                                clean_train_source_weak_omit_rate
+                                * source_omit_multiplier,
+                            ),
+                            min(
+                                1.0,
+                                clean_train_summary_core_omit_rate
+                                * summary_omit_multiplier,
+                            ),
+                            min(
+                                1.0,
+                                clean_train_summary_weak_omit_rate
+                                * summary_omit_multiplier,
+                            ),
+                            min(1.0, clean_train_distractor_rate * distractor_multiplier),
+                        ),
+                    )
+                )
+            continue
+        if profile == "large_2k":
+            regime_training_specs.append(
+                (
+                    profile,
+                    max(2048, claim_count * 2),
+                    query_events * 2,
+                    update_events * 2,
+                    compile_events * 2,
+                    selector_profile_params["default"],
+                )
+            )
+            continue
+        regime_training_specs.append(
+            (
+                profile,
+                claim_count,
+                query_events,
+                update_events,
+                compile_events,
+                selector_profile_params[profile],
+            )
+        )
+
+    for (
+        profile,
+        regime_claim_count,
+        regime_query_events,
+        regime_update_events,
+        regime_compile_events,
+        profile_params,
+    ) in regime_training_specs:
         for seed in clean_train_seeds:
-            regime_claim_count = claim_count
-            regime_query_events = query_events
-            regime_update_events = update_events
-            regime_compile_events = compile_events
-            if profile == "large_2k":
-                regime_claim_count = max(2048, claim_count * 2)
-                regime_query_events = query_events * 2
-                regime_update_events = update_events * 2
-                regime_compile_events = compile_events * 2
-                profile_params = selector_profile_params["default"]
-            else:
-                profile_params = selector_profile_params[profile]
             features = _ca_wiki_metadata_features(regime_claim_count, seed + 131)
             trace = _ca_wiki_paragraph_text_trace_labels(
                 features,
@@ -11535,14 +11621,17 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         dtype=np.int64,
     )
     for index in np.ndindex(regime_counter_selector.shape):
+        parser_bucket, coverage_bucket, agreement_bucket, error_bucket, scale_bucket = (
+            int(value) for value in index
+        )
+        if coverage_bucket >= 3:
+            regime_counter_selector[index] = 1
+            continue
         if int(regime_counter_seen[index]) > 0:
             regime_counter_selector[index] = int(
                 np.argmin(regime_counter_losses[index])
             )
             continue
-        parser_bucket, _coverage_bucket, agreement_bucket, error_bucket, scale_bucket = (
-            int(value) for value in index
-        )
         regime_counter_selector[index] = 0 if (
             parser_bucket >= 3
             and agreement_bucket >= 3
@@ -12098,7 +12187,10 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "omit_x2",
         "distractor_x2",
         "large_2k",
+        "random_mix",
     ),
+    regime_counter_random_train_count: int = 4,
+    regime_counter_random_seed: int = 8801,
 ) -> CAWikiCellParagraphFactorizedGuardStressResult:
     """Stress factorized guards under eval-only paragraph distribution shifts."""
 
@@ -12237,6 +12329,8 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
             ),
             regime_counter_repair_bias_weight=regime_counter_repair_bias_weight,
             regime_counter_profiles=regime_counter_profiles,
+            regime_counter_random_train_count=regime_counter_random_train_count,
+            regime_counter_random_seed=regime_counter_random_seed,
         )
         for variant in clean_variants:
             variant_points = [
@@ -12302,6 +12396,173 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         train_seeds=tuple(dict.fromkeys(int(value) for value in train_seeds)),
         eval_seeds=tuple(dict.fromkeys(int(value) for value in eval_seeds)),
         scenarios=clean_scenarios,
+        variants=clean_variants,
+        points=tuple(stress_points),
+    )
+
+
+def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
+    *,
+    random_seed: int = 7901,
+    scenario_count: int = 4,
+    train_parser_misread_rate: float = 0.06,
+    train_parser_drop_rate: float = 0.03,
+    train_source_core_omit_rate: float = 0.03,
+    train_source_weak_omit_rate: float = 0.06,
+    train_summary_core_omit_rate: float = 0.01,
+    train_summary_weak_omit_rate: float = 0.03,
+    train_distractor_rate: float = 0.12,
+    train_seeds: Tuple[int, ...] = (6701, 6801, 6901),
+    eval_seeds: Tuple[int, ...] = (7601, 7701),
+    variants: Tuple[str, ...] = (
+        "factor_vote80b",
+        "two_branch_factor_selector",
+        "regime_counter_selector",
+    ),
+    min_accuracy: float = 0.66,
+    min_strict_recall: float = 0.98,
+    max_under_strict_rate: float = 0.015,
+) -> CAWikiCellParagraphFactorizedGuardStressResult:
+    """Randomized held-out paragraph shifts for regime-counter validation."""
+
+    if scenario_count <= 0:
+        raise ValueError("scenario_count must be positive")
+    clean_variants = tuple(dict.fromkeys(str(value) for value in variants))
+    if len(clean_variants) == 0:
+        raise ValueError("variants must not be empty")
+
+    rng = np.random.default_rng(int(random_seed))
+    stress_points: List[CAWikiCellParagraphFactorizedGuardStressPoint] = []
+    for scenario_index in range(int(scenario_count)):
+        scale = float(rng.choice(np.array([1.0, 1.5, 2.0], dtype=np.float64)))
+        parser_multiplier = float(rng.uniform(0.75, 2.25))
+        parser_drop_multiplier = float(
+            np.clip(parser_multiplier * rng.uniform(0.85, 1.15), 0.5, 2.75)
+        )
+        source_omit_multiplier = float(rng.uniform(0.75, 2.75))
+        summary_omit_multiplier = float(
+            np.clip(source_omit_multiplier * rng.uniform(0.70, 1.30), 0.5, 3.0)
+        )
+        distractor_multiplier = float(rng.uniform(0.50, 2.50))
+        claim_count = int(round(1024 * scale))
+        event_scale = claim_count / 1024.0
+        scenario = (
+            f"random_{scenario_index:02d}_"
+            f"p{parser_multiplier:0.2f}_"
+            f"o{source_omit_multiplier:0.2f}_"
+            f"d{distractor_multiplier:0.2f}_"
+            f"s{scale:0.1f}"
+        )
+        result = run_ca_wiki_cell_paragraph_factorized_guard_sweep(
+            claim_count=claim_count,
+            train_claim_count=4096,
+            query_events=int(round(4096 * event_scale)),
+            update_events=int(round(2048 * event_scale)),
+            compile_events=int(round(512 * event_scale)),
+            parser_misread_rate=min(
+                1.0,
+                train_parser_misread_rate * parser_multiplier,
+            ),
+            parser_drop_rate=min(
+                1.0,
+                train_parser_drop_rate * parser_drop_multiplier,
+            ),
+            source_core_omit_rate=min(
+                1.0,
+                train_source_core_omit_rate * source_omit_multiplier,
+            ),
+            source_weak_omit_rate=min(
+                1.0,
+                train_source_weak_omit_rate * source_omit_multiplier,
+            ),
+            summary_core_omit_rate=min(
+                1.0,
+                train_summary_core_omit_rate * summary_omit_multiplier,
+            ),
+            summary_weak_omit_rate=min(
+                1.0,
+                train_summary_weak_omit_rate * summary_omit_multiplier,
+            ),
+            distractor_rate=min(1.0, train_distractor_rate * distractor_multiplier),
+            train_parser_misread_rate=train_parser_misread_rate,
+            train_parser_drop_rate=train_parser_drop_rate,
+            train_source_core_omit_rate=train_source_core_omit_rate,
+            train_source_weak_omit_rate=train_source_weak_omit_rate,
+            train_summary_core_omit_rate=train_summary_core_omit_rate,
+            train_summary_weak_omit_rate=train_summary_weak_omit_rate,
+            train_distractor_rate=train_distractor_rate,
+            train_seeds=train_seeds,
+            eval_seeds=eval_seeds,
+            min_accuracy=min_accuracy,
+            min_strict_recall=min_strict_recall,
+            max_under_strict_rate=max_under_strict_rate,
+        )
+        for variant in clean_variants:
+            variant_points = [
+                point for point in result.points if point.variant == variant
+            ]
+            if len(variant_points) == 0:
+                raise ValueError(f"variant {variant!r} is not produced by the sweep")
+            count = float(len(variant_points))
+            failures = sum(1 for point in variant_points if not point.target_met)
+            first = variant_points[0]
+            stress_points.append(
+                CAWikiCellParagraphFactorizedGuardStressPoint(
+                    scenario=scenario,
+                    variant=variant,
+                    claim_count=result.claim_count,
+                    train_claim_count=result.train_claim_count,
+                    query_events=result.query_events,
+                    update_events=result.update_events,
+                    compile_events=result.compile_events,
+                    parser_misread_rate=result.parser_misread_rate,
+                    parser_drop_rate=result.parser_drop_rate,
+                    source_core_omit_rate=result.source_core_omit_rate,
+                    source_weak_omit_rate=result.source_weak_omit_rate,
+                    summary_core_omit_rate=result.summary_core_omit_rate,
+                    summary_weak_omit_rate=result.summary_weak_omit_rate,
+                    distractor_rate=result.distractor_rate,
+                    eval_seed_count=len(variant_points),
+                    classifier_lut_bytes=first.classifier_lut_bytes,
+                    guard_lut_bytes=first.guard_lut_bytes,
+                    local_signal_bits_per_claim=first.local_signal_bits_per_claim,
+                    accuracy=sum(point.accuracy for point in variant_points) / count,
+                    strict_recall=(
+                        sum(point.strict_recall for point in variant_points) / count
+                    ),
+                    under_strict_rate=(
+                        sum(point.under_strict_rate for point in variant_points) / count
+                    ),
+                    over_strict_rate=(
+                        sum(point.over_strict_rate for point in variant_points) / count
+                    ),
+                    strict_rate=sum(point.strict_rate for point in variant_points) / count,
+                    estimated_touch_per_event=(
+                        sum(point.estimated_touch_per_event for point in variant_points)
+                        / count
+                    ),
+                    downgraded_strict_claims=(
+                        sum(point.downgraded_strict_claims for point in variant_points)
+                        / count
+                    ),
+                    failures=failures,
+                    target_met=failures == 0,
+                )
+            )
+
+    return CAWikiCellParagraphFactorizedGuardStressResult(
+        train_parser_misread_rate=train_parser_misread_rate,
+        train_parser_drop_rate=train_parser_drop_rate,
+        train_source_core_omit_rate=train_source_core_omit_rate,
+        train_source_weak_omit_rate=train_source_weak_omit_rate,
+        train_summary_core_omit_rate=train_summary_core_omit_rate,
+        train_summary_weak_omit_rate=train_summary_weak_omit_rate,
+        train_distractor_rate=train_distractor_rate,
+        train_seeds=tuple(dict.fromkeys(int(value) for value in train_seeds)),
+        eval_seeds=tuple(dict.fromkeys(int(value) for value in eval_seeds)),
+        scenarios=tuple(
+            dict.fromkeys(point.scenario for point in stress_points)
+        ),
         variants=clean_variants,
         points=tuple(stress_points),
     )

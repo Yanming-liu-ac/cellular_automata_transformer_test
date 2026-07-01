@@ -724,6 +724,16 @@ variant; it is a randomized held-out stress matrix with mixed parser,
 omission, distractor, and scale shifts to test whether the regime counter
 generalizes beyond the named scenarios.
 
+The first randomized held-out matrix is now in place. It generates deterministic
+mixed shifts from a separate random seed and evaluates seeds 7601 and 7701.
+The original regime counter failed the first mixed high-parser/high-coverage
+case by selecting the factor branch. Adding a highest-coverage-bucket gate fixes
+that and keeps the named parser_x2 row passing. The updated
+`regime_counter_selector` passes all four random scenarios, 8/8 rows total, but
+it mostly follows the conservative coverage-repair branch on mixed shifts. The
+next roadmap item is a traffic-aware regime counter that can pass randomized
+mixed shifts while reducing the 30% over-strict level.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

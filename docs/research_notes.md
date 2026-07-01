@@ -750,6 +750,21 @@ branch and preserve strict recall above 99%. This is still a small synthetic
 matrix, so the next proof point should be a held-out randomized noise matrix
 that varies parser, omission, distractor, and scale together.
 
+The first randomized held-out matrix is now implemented. It uses a separate
+random seed to mix parser, omission, distractor, and scale shifts, then evaluates
+held-out seeds 7601 and 7701. The first random case exposed the exact weakness
+the named matrix could hide: parser and coverage pressure were both high, and
+the regime LUT originally picked the factor branch, failing strict recall at
+96.96%. Adding a simple CA-style hard gate for the highest tile-level
+coverage-gap bucket fixed that case without breaking parser_x2. On the four
+random scenarios, `factor_vote80b` fails 5/8 rows. Both
+`two_branch_factor_selector` and the updated `regime_counter_selector` pass
+8/8 rows, with mean strict recall near 99.46% and under-strict around 0.74%.
+The cost is visible: mean accuracy falls to about 68.66% and over-strict rises
+to about 30.60%. The next target is therefore not just more robustness; it is a
+traffic-aware regime counter that keeps the same zero-failure safety while
+recovering some of the factor branch's lower over-strict traffic.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

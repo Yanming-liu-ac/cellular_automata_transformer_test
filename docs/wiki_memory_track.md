@@ -630,6 +630,17 @@ omit_x2, distractor_x2, and large_2k route to coverage repair. This is the
 first version where a small CA-native state variable, not a bigger per-claim
 table, resolves the parser-vs-coverage branch conflict.
 
+The randomized held-out matrix makes that result less fragile and also exposes
+the next bottleneck. Four deterministic random scenarios mix parser, omission,
+distractor, and scale shifts over held-out seeds 7601 and 7701. The raw
+`factor_vote80b` branch fails 5/8 rows. The coverage-repair branch passes all
+8/8, and the updated `regime_counter_selector` also passes 8/8 after adding a
+hard gate for the highest aggregate coverage-gap bucket. This says the
+regime-counter idea is real, but the first robust version is conservative:
+random-matrix mean accuracy is about 68.66% and over-strict is about 30.60%.
+The next version should learn a traffic-aware regime policy, not merely a
+safety-first one.
+
 ## Kill Criteria
 
 This track is not useful if:
