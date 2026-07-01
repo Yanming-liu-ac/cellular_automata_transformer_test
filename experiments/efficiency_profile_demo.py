@@ -159,7 +159,7 @@ def main() -> None:
     print("- retire128c4 adds the original 4-bit counting Bloom sidecar.")
     print("- retire128c2 is the normal-stress compressed 2-bit sidecar.")
     print("- retire128c3 is the adversarial-collision robust sidecar before the fanout guard.")
-    print("- retire128c3g3 is the current budget: it adds the repeated-key three-entry fanout guard.")
+    print("- retire128c3g3 is the current budget: it adds the selective zero-overlap three-entry fanout guard.")
     print("- The g3 guard does not change normal reference traffic in this profile.")
     print("- Transformer KV is KV-cache read volume, not full model traffic.")
     print("- The ratio is a design target indicator, not a measured energy claim.")

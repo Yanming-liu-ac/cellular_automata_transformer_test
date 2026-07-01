@@ -701,27 +701,27 @@ fixes the sidecar at `retire128c3`, keeps the repeated-key 8-collider stress,
 and sweeps the low-bit fanout LUT's minimum directory read count. Raising the
 coverage target from 95% to 100% while keeping `min_read=2` does not move the
 result: coverage remains 95.3%, with 2.00 directory entries and 6.88B of
-directory traffic per query. Raising the hardware guard to `min_read=3` restores
-100.0% repaired coverage, reads 3.00 directory entries, raises directory traffic
-to 10.12B/query, and only reduces token-read reduction from 78.2x to 76.6x.
-This makes the next robust candidate `retire128c3` plus a three-entry
-repeated-key fanout guard. It is a clean CA-chip trade: one extra local metadata
-entry read closes the adversarial coverage hole without changing the sidecar
-state format.
+directory traffic per query. A global `min_read=3` guard restores 100.0%
+coverage at 10.12B/query. The better guard uses an existing LUT feature: when
+CSA-selected blocks overlap zero directory entries, floor the read at three
+entries. This zero-overlap guard also restores 100.0% coverage but needs only
+7.33B/query, so the robust candidate becomes `retire128c3` plus a zero-overlap
+three-entry fanout guard. It is a clean CA-chip trade: a tiny local comparator
+closes the adversarial coverage hole without changing the sidecar state format
+or expanding the LUT dimensions.
 
 The forty-ninth sweep checks that guard against the normal threshold-15 fanout
-profile before promoting it into the unified event budget. `min_read=3` leaves
-reference traffic unchanged at 3.25B/query, rare-burst traffic unchanged at
-3.25B/query, and repeated-name traffic unchanged at 12.87B/query. It changes
-only the split-rare path in this sweep: coverage moves from 99.7% to 100.0%,
-average directory entries per hit move from 2.00 to 3.00, directory traffic
-moves from 6.50B/query to 9.75B/query, and token-read reduction barely moves
-from 84.8x to 84.7x. The unified profile therefore adds a new
-`retire128c3g3` budget point with the same measured normal reference event
-traffic and state as `retire128c3`: about 52.28KB/event and about 392.8KB
-on-chip state. The next policy target is not more SRAM; it is a context-aware
-fanout LUT that triggers the third read only for repeated-key or spread-out rare
-cases.
+profile before promoting it into the unified event budget. The zero-overlap
+guard leaves reference traffic unchanged at 3.25B/query, rare-burst traffic
+unchanged at 3.25B/query, and repeated-name traffic unchanged at 12.87B/query.
+It changes only the split-rare zero-overlap corner in this sweep: coverage moves
+from 99.7% to 100.0%, average directory entries per hit move from 2.00 to 2.01,
+directory traffic moves from 6.50B/query to 6.53B/query, and token-read
+reduction barely moves from 84.8x to 84.7x. The unified profile therefore keeps
+the same measured normal reference event traffic and state as `retire128c3`:
+about 52.28KB/event and about 392.8KB on-chip state. The next policy target is
+not more SRAM; it is richer context metadata for deciding when zero-overlap is a
+real rare-token miss rather than harmless CSA disagreement.
 
 A related accounting correction remains important: candidate shortlist ranking
 reads dense-sketch counters. In the gated synthetic LM this adds about 179.6

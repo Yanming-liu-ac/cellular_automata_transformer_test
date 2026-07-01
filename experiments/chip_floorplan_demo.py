@@ -106,7 +106,7 @@ def main() -> None:
     print("Interpretation:")
     print("- This is a floorplan proxy, not area/timing closure.")
     print("- SRAM and bandwidth are local on-chip budgets.")
-    print("- retire128c3g3 adds the adversarial-collision robust counting Bloom sidecar and three-entry fanout guard.")
+    print("- retire128c3g3 adds the robust counting Bloom sidecar and selective zero-overlap fanout guard.")
     print("- The table helps track whether future learned rules break the local budget.")
 
 

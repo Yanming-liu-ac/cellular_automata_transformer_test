@@ -251,9 +251,9 @@ Unified efficiency profile:
   rare128. It keeps local traffic about 52.28KB/event and raises on-chip state
   only to about 356.9KB.
 - The current retire128c3g3 profile adds the online `count1_retire15` counting
-  Bloom sidecar with 3-bit counters and the three-entry repeated-key fanout
-  guard. It still keeps normal reference local traffic about 52.28KB/event, and
-  keeps on-chip state about 392.8KB.
+  Bloom sidecar with 3-bit counters and the selective zero-overlap three-entry
+  fanout guard. It still keeps normal reference local traffic about
+  52.28KB/event, and keeps on-chip state about 392.8KB.
 - The tiny Transformer KV reference at 16k context reads about 384MB per token.
 - This is a design-budget signal, not an energy or quality-equivalence claim.
 
@@ -307,9 +307,10 @@ Next retrieval work:
 - train a delayed-promotion gate against the retire128c3 budget so one-hit rare
   tokens, hot-token retirement, and sidecar update pressure are optimized
   jointly rather than by hand thresholds.
-- add recency/query-context features to the trained fanout LUT so the three-entry
-  read guard triggers only for repeated-key or spread-out rare-token cases; the
-  current `retire128c3g3` budget proves the guard fits normal reference traffic.
+- add recency/query-context features to the trained fanout LUT so the
+  zero-overlap guard can distinguish true repeated-key/spread rare misses from
+  harmless CSA disagreement; the current `retire128c3g3` budget proves the
+  guard fits normal reference traffic.
 - improve the trained HCA route table with recency/topic/context metadata or a
   recall-weighted objective after the presence-bit baseline is fixed.
 - train a joint admission/probe/fanout policy so HCA threshold, exact-directory

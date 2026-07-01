@@ -484,12 +484,13 @@ def robust_retiring_sidecar_csa_hca_context_budget() -> ContextSummaryBudget:
 
 
 def fanout_guard_retiring_sidecar_csa_hca_context_budget() -> ContextSummaryBudget:
-    """Robust sidecar budget with the repeated-key three-entry fanout guard.
+    """Robust sidecar budget with the selective zero-overlap fanout guard.
 
-    The guard raises the rare-directory minimum read fanout from two to three in
-    the learned fanout LUT. The normal reference path still skips directory
-    entries through the HCA/directory control plane, so the unified event-profile
-    state and reference traffic remain equal to ``retire128c3``.
+    The guard floors rare-directory reads at three only when CSA-selected blocks
+    overlap none of the exact rare-directory entries. The normal reference path
+    still skips directory entries through the HCA/directory control plane, so
+    the unified event-profile state and reference traffic remain equal to
+    ``retire128c3``.
     """
 
     return robust_retiring_sidecar_csa_hca_context_budget()

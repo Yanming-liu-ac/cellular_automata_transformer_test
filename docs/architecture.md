@@ -449,11 +449,15 @@ raising the minimum directory read count from two to three restores 100.0%
 repaired coverage in the repeated-key 8-collider stress. Directory metadata
 traffic rises from 6.88B/query to 10.12B/query, while token-read reduction only
 falls from 78.2x to 76.6x.
-At threshold 15 on the normal fanout sweep, the same guard leaves reference,
-rare-burst, and repeated-name directory traffic unchanged; it only raises
-split-rare reads from 6.50B/query to 9.75B/query while restoring split coverage
-from 99.7% to 100.0%. This makes `retire128c3g3` the current robust candidate:
-it is c3 plus a three-entry minimum fanout guard, not a new sidecar format.
+A more selective guard is better: if CSA-selected blocks overlap none of the
+exact rare-directory entries, floor the read at three entries. This zero-overlap
+guard also restores 100.0% repeated-key coverage, but cuts repeated-key
+directory traffic to 7.33B/query instead of the global guard's 10.12B/query. At
+threshold 15 on the normal fanout sweep, the same guard leaves reference,
+rare-burst, and repeated-name directory traffic unchanged; it raises split-rare
+reads only from 6.50B/query to 6.53B/query while restoring split coverage from
+99.7% to 100.0%. This makes the selective zero-overlap guard the current robust
+candidate: it is c3 plus one tiny overlap comparator, not a new sidecar format.
 
 The first HCA-summary quality check weakens that assumption in a useful way. A
 4KB global 4-bit summary is good enough for the threshold-8 routing decision in
@@ -786,9 +790,10 @@ on-chip state falls to about 354.6KB. The current joint128 profile adds the
 learned probe/fanout control state to rare128 and still keeps local traffic about
 52.28KB/event, with on-chip state about 356.9KB. The current retire128c3g3
 profile adds the online `count1_retire15` counting Bloom sidecar plus the
-three-entry fanout guard. It keeps local traffic at about 52.28KB/event because
-sidecar read/update traffic is below 1B/event and the guard does not increase
-normal reference directory traffic, while on-chip state rises to about 392.8KB.
+selective zero-overlap three-entry fanout guard. It keeps local traffic at about
+52.28KB/event because sidecar read/update traffic is below 1B/event and the
+guard does not increase normal reference directory traffic, while on-chip state
+rises to about 392.8KB.
 
 This is a proxy comparison, not a performance claim. It ignores model quality,
 full vocabulary output cost, real SRAM/HBM energy, clocking, routing contention,

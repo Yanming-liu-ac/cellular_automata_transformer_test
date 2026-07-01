@@ -517,6 +517,7 @@ def main() -> None:
     print("Threshold-15 normal fanout guard sweep")
     headers = [
         "min_read",
+        "zfloor",
         "scenario",
         "coverage",
         "avg_rd",
@@ -525,11 +526,12 @@ def main() -> None:
         "reduct",
     ]
     print(" | ".join(f"{header:>14}" for header in headers))
-    print("-" * 108)
-    for min_read in (2, 3):
+    print("-" * 122)
+    for min_read, zero_overlap_read_floor in ((2, 0), (2, 3), (3, 0)):
         guard_fanout = run_csa_hca_rare_directory_learned_fanout_sweep(
             hca_threshold=15,
             min_read_blocks_per_token=min_read,
+            zero_overlap_read_floor=zero_overlap_read_floor,
             coverage_target=0.95,
         )
         for point in guard_fanout.points:
@@ -537,6 +539,7 @@ def main() -> None:
                 continue
             row = [
                 str(min_read),
+                str(zero_overlap_read_floor),
                 point.scenario,
                 fmt_pct(point.repaired_relevant_coverage),
                 f"{point.avg_directory_read_blocks_per_hit:0.2f}",
@@ -548,9 +551,9 @@ def main() -> None:
 
     print()
     print("Threshold-15 fanout guard interpretation:")
-    print("- The min_read=3 guard leaves zipf_reference, rare_burst, and repeated_name traffic unchanged.")
-    print("- It raises split_rare directory reads from 6.50B/query to 9.75B/query and restores 100% split coverage.")
-    print("- This supports promoting the g3 guard into the unified event profile without changing normal reference traffic.")
+    print("- The zero-overlap zfloor=3 guard leaves zipf_reference, rare_burst, and repeated_name traffic unchanged.")
+    print("- It restores 100% split coverage with 6.53B/query, much lower than the global min_read=3 point.")
+    print("- This is the better hardware guard candidate because it triggers only when CSA misses all directory entries.")
     print()
 
     joint = run_csa_hca_rare_directory_joint_policy_sweep()
@@ -1158,7 +1161,11 @@ def main() -> None:
     print("- Any remaining repeated-key coverage loss is now a fanout/directory target, not a sidecar deletion target.")
     print()
 
-    fanout_collision = run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep()
+    fanout_collision = run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
+        min_read_blocks_per_token_values=(2, 3),
+        zero_overlap_read_floor_values=(0, 3),
+        coverage_targets=(0.95,),
+    )
     print("Repeated-key collision fanout budget")
     print(
         f"rare_occ={fanout_collision.rare_occurrences_per_token}, "
@@ -1168,6 +1175,7 @@ def main() -> None:
     )
     headers = [
         "min_read",
+        "zfloor",
         "target",
         "lut",
         "train",
@@ -1179,10 +1187,11 @@ def main() -> None:
         "reduct",
     ]
     print(" | ".join(f"{header:>12}" for header in headers))
-    print("-" * 135)
+    print("-" * 148)
     for point in fanout_collision.points:
         row = [
             str(point.min_read_blocks_per_token),
+            str(point.zero_overlap_read_floor),
             fmt_pct(point.coverage_target),
             format_bytes(point.fanout_lut_state_bytes),
             str(point.fanout_training_samples),
@@ -1197,9 +1206,9 @@ def main() -> None:
 
     print()
     print("Repeated-key fanout interpretation:")
-    print("- Raising the coverage target alone does not fix the repeated-key gap.")
-    print("- Raising minimum directory reads from 2 to 3 restores 100% coverage in this stress.")
-    print("- The cost is a small read-efficiency drop, so min_read=3 is the next robust target.")
+    print("- Raising the global minimum directory read from 2 to 3 fixes coverage but over-reads.")
+    print("- A zero-overlap zfloor=3 guard also restores 100% coverage with lower directory traffic.")
+    print("- The next robust target is the selective zero-overlap guard, not a global min_read=3 rule.")
     print()
 
     quality = run_hca_summary_quality_sweep(threshold=8)

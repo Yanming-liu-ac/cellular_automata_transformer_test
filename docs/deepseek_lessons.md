@@ -556,11 +556,15 @@ the same lesson: raising the abstract coverage target from 95% to 100% does not
 move the repeated-key corner, but raising the minimum directory read guard from
 two entries to three restores 100.0% coverage. The cost is local and explicit:
 directory traffic rises from 6.88B/query to 10.12B/query, and token-read
-reduction moves from 78.2x to 76.6x. Checking the same guard under the normal
-threshold-15 fanout profile keeps reference, rare-burst, and repeated-name
-traffic unchanged; only split-rare moves from 6.50B/query to 9.75B/query while
-coverage reaches 100.0%. This is the right hardware pattern: make the robust
-case explicit, then verify that the hot reference path does not pay for it.
+reduction moves from 78.2x to 76.6x. The next refinement is even more
+DeepSeek-like: price the exact failure mode, not the whole path. A
+zero-overlap guard restores the same repeated-key 100.0% coverage at
+7.33B/query, because it triggers only when CSA selected none of the exact
+rare-directory entries. Under the normal threshold-15 fanout profile it keeps
+reference, rare-burst, and repeated-name traffic unchanged; split-rare moves
+only from 6.50B/query to 6.53B/query while coverage reaches 100.0%. This is the
+right hardware pattern: make the robust case explicit, then verify that the hot
+reference path does not pay for it.
 
 The first HCA-summary quality check is the cautionary half of the lesson. The
 4KB 4-bit global summary is good enough for the current threshold gate, but not

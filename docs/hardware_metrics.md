@@ -670,37 +670,40 @@ adversarial visible rare-token rate at 100% through the repeated-key
 sidecar deletion problem; it points to the directory/fanout read budget.
 
 The repeated-key fanout-budget sweep keeps the same `retire128c3` sidecar and
-the same low-bit fanout LUT, then varies only the minimum directory reads:
+the same low-bit fanout LUT, then varies the minimum directory reads and the
+zero-overlap guard:
 
 ```text
-min_read=2  target=95%   lut=42B  dir_entries/q=2.00  dir_read=6.88B/q   visible_rare=100.0%  coverage=95.3%   token_read_reduction=78.2x
-min_read=2  target=100%  lut=42B  dir_entries/q=2.00  dir_read=6.88B/q   visible_rare=100.0%  coverage=95.3%   token_read_reduction=78.2x
-min_read=3  target=95%   lut=42B  dir_entries/q=3.00  dir_read=10.12B/q  visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
-min_read=3  target=100%  lut=42B  dir_entries/q=3.00  dir_read=10.12B/q  visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
+min_read=2  zfloor=0  target=95%  lut=42B  dir_entries/q=2.00  dir_read=6.88B/q   visible_rare=100.0%  coverage=95.3%   token_read_reduction=78.2x
+min_read=2  zfloor=3  target=95%  lut=42B  dir_entries/q=2.14  dir_read=7.33B/q   visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
+min_read=3  zfloor=0  target=95%  lut=42B  dir_entries/q=3.00  dir_read=10.12B/q  visible_rare=100.0%  coverage=100.0%  token_read_reduction=76.6x
 ```
 
 Raising the training target alone does not fix this repeated-key corner. A
-three-entry minimum directory read is the simple robust guard: it restores 100%
-coverage with about 3.24B/query more directory traffic and only a small drop in
-token-read reduction.
+global three-entry minimum directory read is robust but over-reads. The better
+hardware guard is zero-overlap floor 3: when CSA-selected blocks overlap none of
+the exact rare-directory entries, read at least three entries. It restores 100%
+coverage with only about 0.45B/query more directory traffic in this stress.
 
 The threshold-15 normal fanout-guard sweep checks whether that guard is too
 expensive on non-adversarial cases:
 
 ```text
-min_read=2  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
-min_read=3  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
-min_read=2  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
-min_read=3  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
-min_read=2  split_rare     coverage=99.7%   avg_read=2.00  dir_read=6.50B/query   token_read_reduction=84.8x
-min_read=3  split_rare     coverage=100.0%  avg_read=3.00  dir_read=9.75B/query   token_read_reduction=84.7x
-min_read=2  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
-min_read=3  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
+min_read=2  zfloor=0  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
+min_read=2  zfloor=3  reference      coverage=2.5%    avg_read=1.05  dir_read=3.25B/query   token_read_reduction=195.6x
+min_read=2  zfloor=0  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
+min_read=2  zfloor=3  rare_burst     coverage=100.0%  avg_read=1.00  dir_read=3.25B/query   token_read_reduction=85.4x
+min_read=2  zfloor=0  split_rare     coverage=99.7%   avg_read=2.00  dir_read=6.50B/query   token_read_reduction=84.8x
+min_read=2  zfloor=3  split_rare     coverage=100.0%  avg_read=2.01  dir_read=6.53B/query   token_read_reduction=84.7x
+min_read=3  zfloor=0  split_rare     coverage=100.0%  avg_read=3.00  dir_read=9.75B/query   token_read_reduction=84.7x
+min_read=2  zfloor=0  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
+min_read=2  zfloor=3  repeated_name  coverage=98.4%   avg_read=3.96  dir_read=12.87B/query  token_read_reduction=52.4x
 ```
 
-The g3 guard therefore enters the unified profile as `retire128c3g3`: it fixes
-the repeated-key collision corner and split-rare coverage, while the reference
-normal path remains at the same directory traffic.
+The selective zero-overlap guard therefore supersedes the earlier global g3
+rule: it fixes the repeated-key collision corner and split-rare coverage while
+the reference and repeated-name normal paths remain at the same directory
+traffic.
 
 The HCA-like global summary is now measured separately. At threshold 8:
 

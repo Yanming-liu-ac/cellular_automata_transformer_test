@@ -428,7 +428,9 @@ class LowBitRareDirectoryFanoutLUT:
 
     The LUT is indexed by metadata visible to a CA memory tile: stored directory
     entry count, coarse block-span class, and overlap with the CSA-selected
-    blocks. Values are fanout counts, not scores.
+    blocks. Values are fanout counts, not scores. ``zero_overlap_read_floor`` is
+    a tiny optional guard for buckets where CSA selected none of the exact rare
+    blocks.
     """
 
     fanouts: Tuple[int, ...]
@@ -436,12 +438,17 @@ class LowBitRareDirectoryFanoutLUT:
     span_thresholds: Tuple[int, ...] = (64, 128, 256)
     max_overlap_bucket: int = 3
     fanout_bits: int = 3
+    zero_overlap_read_floor: int = 0
 
     def __post_init__(self) -> None:
         if self.max_entries < 0:
             raise ValueError("max_entries must be non-negative")
         if self.max_overlap_bucket < 0:
             raise ValueError("max_overlap_bucket must be non-negative")
+        if self.zero_overlap_read_floor < 0:
+            raise ValueError("zero_overlap_read_floor must be non-negative")
+        if self.zero_overlap_read_floor > self.max_entries:
+            raise ValueError("zero_overlap_read_floor cannot exceed max_entries")
         if self.fanout_bits not in (2, 3, 4, 8):
             raise ValueError("fanout_bits must be one of 2, 3, 4, 8")
         if any(int(threshold) < 0 for threshold in self.span_thresholds):
@@ -471,7 +478,16 @@ class LowBitRareDirectoryFanoutLUT:
             max_overlap_bucket=self.max_overlap_bucket,
         )
         entry_count = min(len(directory_blocks), self.max_entries)
-        return min(int(self.fanouts[index]), entry_count)
+        fanout = min(int(self.fanouts[index]), entry_count)
+        if self.zero_overlap_read_floor > 0 and entry_count > 0:
+            _, _, overlap_bucket = _decode_rare_fanout_lut_index(
+                index,
+                span_bucket_count=len(self.span_thresholds) + 1,
+                overlap_bucket_count=self.max_overlap_bucket + 1,
+            )
+            if overlap_bucket == 0:
+                fanout = max(fanout, min(entry_count, self.zero_overlap_read_floor))
+        return fanout
 
 
 @dataclass(frozen=True)
@@ -1270,6 +1286,7 @@ class CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint:
 
     scenario: str
     min_read_blocks_per_token: int
+    zero_overlap_read_floor: int
     coverage_target: float
     directory_blocks_per_token: int
     bits_per_entry: int
@@ -1317,6 +1334,7 @@ class CsaHcaRareDirectoryBloomRetirementCollisionFanoutResult:
     bank_mode: str
     sidecar_salt: int
     min_read_blocks_per_token_values: Tuple[int, ...]
+    zero_overlap_read_floor_values: Tuple[int, ...]
     coverage_targets: Tuple[float, ...]
     train_scenarios: Tuple[str, ...]
     route_training_samples: int
@@ -2586,6 +2604,7 @@ def train_rare_directory_fanout_lut(
     directory_guard: bool = True,
     directory_blocks_per_token: int = 6,
     min_read_blocks_per_token: int = 2,
+    zero_overlap_read_floor: int = 0,
     coverage_target: float = 0.95,
     span_thresholds: Tuple[int, ...] = (64, 128, 256),
     max_overlap_bucket: int = 3,
@@ -2608,6 +2627,10 @@ def train_rare_directory_fanout_lut(
         raise ValueError("directory_blocks_per_token must be non-negative")
     if min_read_blocks_per_token < 0:
         raise ValueError("min_read_blocks_per_token must be non-negative")
+    if zero_overlap_read_floor < 0:
+        raise ValueError("zero_overlap_read_floor must be non-negative")
+    if zero_overlap_read_floor > directory_blocks_per_token:
+        raise ValueError("zero_overlap_read_floor cannot exceed directory_blocks_per_token")
     if not 0.0 <= coverage_target <= 1.0:
         raise ValueError("coverage_target must be in [0, 1]")
 
@@ -2715,6 +2738,7 @@ def train_rare_directory_fanout_lut(
             max_entries=directory_blocks_per_token,
             span_thresholds=span_thresholds,
             max_overlap_bucket=max_overlap_bucket,
+            zero_overlap_read_floor=zero_overlap_read_floor,
         ),
         training_samples,
     )
@@ -3050,6 +3074,7 @@ def run_csa_hca_rare_directory_learned_fanout_sweep(
     directory_guard: bool = True,
     directory_blocks_per_token: int = 6,
     min_read_blocks_per_token: int = 2,
+    zero_overlap_read_floor: int = 0,
     coverage_target: float = 0.95,
     span_thresholds: Tuple[int, ...] = (64, 128, 256),
     max_overlap_bucket: int = 3,
@@ -3071,6 +3096,7 @@ def run_csa_hca_rare_directory_learned_fanout_sweep(
         directory_guard=directory_guard,
         directory_blocks_per_token=directory_blocks_per_token,
         min_read_blocks_per_token=min_read_blocks_per_token,
+        zero_overlap_read_floor=zero_overlap_read_floor,
         coverage_target=coverage_target,
         span_thresholds=span_thresholds,
         max_overlap_bucket=max_overlap_bucket,
@@ -5447,6 +5473,7 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_sweep(
 
 def run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
     min_read_blocks_per_token_values: Tuple[int, ...] = (2, 3),
+    zero_overlap_read_floor_values: Tuple[int, ...] = (0,),
     coverage_targets: Tuple[float, ...] = (0.95, 1.0),
     bits_per_entry: int = 8,
     counter_bits: int = 3,
@@ -5489,6 +5516,13 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
         raise ValueError("min_read_blocks_per_token_values must be non-negative")
     if any(value > directory_blocks_per_token for value in clean_min_reads):
         raise ValueError("min_read_blocks_per_token_values cannot exceed directory_blocks_per_token")
+    if len(zero_overlap_read_floor_values) == 0:
+        raise ValueError("zero_overlap_read_floor_values must not be empty")
+    clean_zero_floors = tuple(sorted({int(value) for value in zero_overlap_read_floor_values}))
+    if any(value < 0 for value in clean_zero_floors):
+        raise ValueError("zero_overlap_read_floor_values must be non-negative")
+    if any(value > directory_blocks_per_token for value in clean_zero_floors):
+        raise ValueError("zero_overlap_read_floor_values cannot exceed directory_blocks_per_token")
     if len(coverage_targets) == 0:
         raise ValueError("coverage_targets must not be empty")
     clean_targets = tuple(sorted({float(value) for value in coverage_targets}))
@@ -5585,83 +5619,86 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
     points = []
     fanout_train_scenarios = tuple(s for s in train_scenarios if s != "zipf_reference") or train_scenarios
     for min_read_blocks_per_token in clean_min_reads:
-        for coverage_target in clean_targets:
-            fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
-                train_scenarios=fanout_train_scenarios,
-                hca_threshold=hca_threshold,
-                directory_guard=True,
-                directory_blocks_per_token=directory_blocks_per_token,
-                min_read_blocks_per_token=min_read_blocks_per_token,
-                coverage_target=coverage_target,
-                span_thresholds=span_thresholds,
-                max_overlap_bucket=max_overlap_bucket,
-                block_size=block_size,
-                summary_width=summary_width,
-                csa_blocks=csa_blocks,
-                global_width=global_width,
-                tail_blocks=tail_blocks,
-                context_length=context_length,
-                queries=queries,
-                seed=train_seed + 4096,
-            )
-            point = _evaluate_rare_directory_bloom_retirement_point(
-                insert_count_threshold=1,
-                retire_count_threshold=retire_count_threshold,
-                scenario="adversarial_collision_fanout",
-                config=config,
-                index=index,
-                global_summary=global_summary,
-                exact_counts=exact_counts,
-                directory=directory,
-                directory_blocks_per_token=directory_blocks_per_token,
-                directory_entry_bytes=directory_entry_bytes,
-                hca_threshold=hca_threshold,
-                route_lut=route_lut,
-                fanout_lut=fanout_lut,
-                min_read_blocks_per_token=min_read_blocks_per_token,
-                recent_blocks=recent_blocks,
-                query_tokens=query_tokens,
-                stream=stream,
-                bits_per_entry=bits_per_entry,
-                hash_count=hash_count,
-                counter_bits=counter_bits,
-                bank_count=bank_count,
-                bank_mode=bank_mode,
-                sidecar_salt=sidecar_salt,
-            )
-            directory_entries_read = _safe_divide(
-                max(0.0, point.directory_read_bytes_per_query - sidecar_read_bytes_per_query),
-                directory_entry_bytes,
-            )
-            points.append(
-                CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint(
-                    scenario=point.scenario,
-                    min_read_blocks_per_token=min_read_blocks_per_token,
-                    coverage_target=coverage_target,
+        for zero_overlap_read_floor in clean_zero_floors:
+            for coverage_target in clean_targets:
+                fanout_lut, fanout_training_samples = train_rare_directory_fanout_lut(
+                    train_scenarios=fanout_train_scenarios,
+                    hca_threshold=hca_threshold,
+                    directory_guard=True,
                     directory_blocks_per_token=directory_blocks_per_token,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    zero_overlap_read_floor=zero_overlap_read_floor,
+                    coverage_target=coverage_target,
+                    span_thresholds=span_thresholds,
+                    max_overlap_bucket=max_overlap_bucket,
+                    block_size=block_size,
+                    summary_width=summary_width,
+                    csa_blocks=csa_blocks,
+                    global_width=global_width,
+                    tail_blocks=tail_blocks,
+                    context_length=context_length,
+                    queries=queries,
+                    seed=train_seed + 4096,
+                )
+                point = _evaluate_rare_directory_bloom_retirement_point(
+                    insert_count_threshold=1,
+                    retire_count_threshold=retire_count_threshold,
+                    scenario="adversarial_collision_fanout",
+                    config=config,
+                    index=index,
+                    global_summary=global_summary,
+                    exact_counts=exact_counts,
+                    directory=directory,
+                    directory_blocks_per_token=directory_blocks_per_token,
+                    directory_entry_bytes=directory_entry_bytes,
+                    hca_threshold=hca_threshold,
+                    route_lut=route_lut,
+                    fanout_lut=fanout_lut,
+                    min_read_blocks_per_token=min_read_blocks_per_token,
+                    recent_blocks=recent_blocks,
+                    query_tokens=query_tokens,
+                    stream=stream,
                     bits_per_entry=bits_per_entry,
                     hash_count=hash_count,
                     counter_bits=counter_bits,
                     bank_count=bank_count,
                     bank_mode=bank_mode,
                     sidecar_salt=sidecar_salt,
-                    rare_occurrences_per_token=rare_occurrences_per_token,
-                    colliders_per_rare=colliders_per_rare,
-                    rare_tokens=point.final_rare_tokens,
-                    collider_tokens=found_colliders,
-                    missing_colliders=missing_colliders,
-                    mean_slot_overlap=mean_overlap,
-                    sidecar_state_bytes=point.sidecar_state_bytes,
-                    fanout_lut_state_bytes=fanout_lut.state_bytes,
-                    fanout_training_samples=fanout_training_samples,
-                    visible_active_rare_rate=point.visible_active_rare_rate,
-                    rare_false_hca_rate=point.rare_false_hca_rate,
-                    repaired_relevant_coverage=point.repaired_relevant_coverage,
-                    directory_read_bytes_per_query=point.directory_read_bytes_per_query,
-                    directory_entries_read_per_query=directory_entries_read,
-                    token_read_reduction=point.token_read_reduction,
                 )
-            )
+                directory_entries_read = _safe_divide(
+                    max(0.0, point.directory_read_bytes_per_query - sidecar_read_bytes_per_query),
+                    directory_entry_bytes,
+                )
+                points.append(
+                    CsaHcaRareDirectoryBloomRetirementCollisionFanoutPoint(
+                        scenario=point.scenario,
+                        min_read_blocks_per_token=min_read_blocks_per_token,
+                        zero_overlap_read_floor=zero_overlap_read_floor,
+                        coverage_target=coverage_target,
+                        directory_blocks_per_token=directory_blocks_per_token,
+                        bits_per_entry=bits_per_entry,
+                        hash_count=hash_count,
+                        counter_bits=counter_bits,
+                        bank_count=bank_count,
+                        bank_mode=bank_mode,
+                        sidecar_salt=sidecar_salt,
+                        rare_occurrences_per_token=rare_occurrences_per_token,
+                        colliders_per_rare=colliders_per_rare,
+                        rare_tokens=point.final_rare_tokens,
+                        collider_tokens=found_colliders,
+                        missing_colliders=missing_colliders,
+                        mean_slot_overlap=mean_overlap,
+                        sidecar_state_bytes=point.sidecar_state_bytes,
+                        fanout_lut_state_bytes=fanout_lut.state_bytes,
+                        fanout_training_samples=fanout_training_samples,
+                        visible_active_rare_rate=point.visible_active_rare_rate,
+                        rare_false_hca_rate=point.rare_false_hca_rate,
+                        repaired_relevant_coverage=point.repaired_relevant_coverage,
+                        directory_read_bytes_per_query=point.directory_read_bytes_per_query,
+                        directory_entries_read_per_query=directory_entries_read,
+                        token_read_reduction=point.token_read_reduction,
+                    )
+                )
 
     return CsaHcaRareDirectoryBloomRetirementCollisionFanoutResult(
         context_length=context_length,
@@ -5682,6 +5719,7 @@ def run_csa_hca_rare_directory_bloom_retirement_collision_fanout_sweep(
         bank_mode=bank_mode,
         sidecar_salt=sidecar_salt,
         min_read_blocks_per_token_values=clean_min_reads,
+        zero_overlap_read_floor_values=clean_zero_floors,
         coverage_targets=clean_targets,
         train_scenarios=train_scenarios,
         route_training_samples=route_training_samples,
