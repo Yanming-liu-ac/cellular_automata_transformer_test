@@ -679,6 +679,18 @@ strict recall at 98.32% with 1.15% under-strict, and lowers mean over-strict to
 use factorized local confidence rules rather than a monolithic high-dimensional
 table.
 
+The first stress sweep turns that positive result into a sharper requirement.
+It trains on the default paragraph distribution and evaluates shifted
+distributions with two held-out seeds each. `factor_vote80b` still passes the
+doubled-parser-noise scenario, where the baseline fails both rows; its mean
+accuracy is 66.60%, strict recall is 98.47%, under-strict is 0.83%, and
+over-strict is 32.57%. The same controller fails under doubled field omission:
+strict recall falls to 97.01% and under-strict rises to 2.15%. It also passes
+only 1/2 rows under doubled distractors and 2k claims. The lesson is useful:
+the 144B factorized guard is an efficient default-distribution controller, but
+its downgrade votes need distribution-shift protection before being promoted to
+a hardware primitive.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

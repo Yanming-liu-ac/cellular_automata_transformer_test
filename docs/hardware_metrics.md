@@ -1558,6 +1558,22 @@ full 7D guard on this synthetic paragraph workload: `factor_vote80b` uses only
 144B total control state, keeps strict recall at 98.32%, and lowers mean
 over-strict to 23.83%.
 
+The stress metric keeps the same training distribution and shifts eval only
+over two held-out seeds per scenario:
+
+```text
+factor_vote80b default_1k:     75.34% accuracy, 98.18% strict recall, 1.17% under, 23.49% over, 2/2 pass
+factor_vote80b parser_x2:      66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+factor_vote80b omit_x2:        76.37% accuracy, 97.01% strict recall, 2.15% under, 21.48% over, 0/2 pass
+factor_vote80b distractor_x2:  73.24% accuracy, 98.21% strict recall, 1.32% under, 25.44% over, 1/2 pass
+factor_vote80b large_2k:       73.85% accuracy, 98.12% strict recall, 1.29% under, 24.85% over, 1/2 pass
+```
+
+This separates efficiency from robustness. The 144B guard is efficient and
+survives parser-noise shift, but field-coverage shift can make it downgrade too
+many strict claims. A chip-facing version should therefore train or gate
+against shifted omission statistics before fixing the projection tables.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

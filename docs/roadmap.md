@@ -674,9 +674,15 @@ The first compression version is now implemented. `factor_vote56b` and
 tables. The current best point is `factor_vote80b`: 144B total controller state
 including the 64B baseline classifier, 4/4 held-out passes, 98.32% strict
 recall, 1.15% under-strict, 23.83% over-strict, and 9.32 touched cells/event.
-The next roadmap item is to stress this factorization across shifted parser
-noise, larger claim counts, and a less synthetic wiki compilation trace before
-treating it as a chip primitive.
+
+That stress test now exists. It keeps training on the default paragraph
+distribution and evaluates shifted parser noise, doubled omissions, doubled
+distractors, and 2k claims over two held-out seeds. `factor_vote80b` passes
+default and doubled-parser-noise rows, but fails doubled omissions at 0/2 and
+passes only 1/2 for doubled distractors and 2k claims. The next roadmap item is
+therefore not a larger monolithic table; it is a shift-aware factorized guard:
+noise-augmented training, a conservative second threshold, or a small local
+coverage-shift detector before strict repair is downgraded.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

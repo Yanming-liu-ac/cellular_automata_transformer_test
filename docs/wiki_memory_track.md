@@ -564,6 +564,19 @@ over-strict, and 9.32 touched cells/event, with 0/4 held-out failures. This is
 the first result where the more hardware-natural factorization beats the full
 2.06KB 7D guard on both state size and over-repair traffic.
 
+The first distribution-shift stress test keeps training on the default
+paragraph distribution and evaluates only two held-out seeds per shifted
+scenario. `factor_vote80b` is robust to doubled parser noise in this small
+stress set: 66.60% mean accuracy, 98.47% strict recall, 0.83% under-strict, and
+32.57% over-strict, with 2/2 rows passing where the baseline fails 0/2.
+However it is not yet a final chip primitive. Doubling omitted fields drops it
+to 97.01% strict recall and 2.15% under-strict, and the doubled-distractor and
+2k-claim cases pass only 1/2 rows. The failure mode is now concrete: the
+factorized guard can be too eager to downgrade strict repair under shifted
+coverage statistics. The next version needs noise-augmented training,
+shift-aware thresholds, or a second conservative guard mode before this
+controller should be treated as robust.
+
 ## Kill Criteria
 
 This track is not useful if:
