@@ -9,12 +9,15 @@ refresh keep mutable knowledge queryable without scanning the whole wiki?
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Tuple
 
 import numpy as np
 
 from .retrieval import keyed_hash
+
+
+_DEFAULT_FANOUT_TRAIN_SEEDS = tuple(range(11, 11 + 64 * 18, 18))
 
 
 @dataclass(frozen=True)
@@ -281,6 +284,85 @@ class WikiMemoryDensityResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryFanoutLUT:
+    """Low-bit local policy table for wiki group read fanout."""
+
+    base_groups: int
+    max_groups: int
+    target_route_coverage: float
+    top_score_buckets: int
+    base_score_buckets: int
+    gap_buckets: int
+    exact_tie_bounds: Tuple[int, ...]
+    near_tie_bounds: Tuple[int, ...]
+    fanout_bits: int
+    fanouts: Tuple[int, ...]
+    training_examples: int
+    train_seeds: Tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if self.base_groups <= 0:
+            raise ValueError("base_groups must be positive")
+        if self.max_groups < self.base_groups:
+            raise ValueError("max_groups must be >= base_groups")
+        if not 0.0 < self.target_route_coverage <= 1.0:
+            raise ValueError("target_route_coverage must be in (0, 1]")
+        if self.top_score_buckets <= 0:
+            raise ValueError("top_score_buckets must be positive")
+        if self.base_score_buckets <= 0:
+            raise ValueError("base_score_buckets must be positive")
+        if self.gap_buckets <= 0:
+            raise ValueError("gap_buckets must be positive")
+        if len(self.exact_tie_bounds) == 0:
+            raise ValueError("exact_tie_bounds must not be empty")
+        if any(bound <= 0 for bound in self.exact_tie_bounds):
+            raise ValueError("exact_tie_bounds must be positive")
+        if tuple(sorted(self.exact_tie_bounds)) != self.exact_tie_bounds:
+            raise ValueError("exact_tie_bounds must be sorted")
+        if len(self.near_tie_bounds) == 0:
+            raise ValueError("near_tie_bounds must not be empty")
+        if any(bound <= 0 for bound in self.near_tie_bounds):
+            raise ValueError("near_tie_bounds must be positive")
+        if tuple(sorted(self.near_tie_bounds)) != self.near_tie_bounds:
+            raise ValueError("near_tie_bounds must be sorted")
+        if self.fanout_bits <= 0:
+            raise ValueError("fanout_bits must be positive")
+        expected = (
+            self.top_score_buckets
+            * self.base_score_buckets
+            * self.gap_buckets
+            * len(self.exact_tie_bounds)
+            * len(self.near_tie_bounds)
+        )
+        if len(self.fanouts) != expected:
+            raise ValueError("fanouts length does not match feature dimensions")
+        for fanout in self.fanouts:
+            if not self.base_groups <= int(fanout) <= self.max_groups:
+                raise ValueError("fanout outside configured bounds")
+        if self.training_examples < 0:
+            raise ValueError("training_examples must be non-negative")
+
+    @property
+    def state_bytes(self) -> float:
+        return len(self.fanouts) * self.fanout_bits / 8.0
+
+    def predict(self, group_scores: np.ndarray, group_order: np.ndarray) -> int:
+        if len(group_order) == 0:
+            return self.base_groups
+        index = _fanout_lut_index(
+            group_scores=group_scores,
+            group_order=group_order,
+            base_groups=self.base_groups,
+            top_score_buckets=self.top_score_buckets,
+            base_score_buckets=self.base_score_buckets,
+            gap_buckets=self.gap_buckets,
+            exact_tie_bounds=self.exact_tie_bounds,
+            near_tie_bounds=self.near_tie_bounds,
+        )
+        return int(self.fanouts[index])
+
+
+@dataclass(frozen=True)
 class WikiMemoryFanoutPoint:
     """One fixed or adaptive group-fanout route point."""
 
@@ -297,6 +379,9 @@ class WikiMemoryFanoutPoint:
     ca_cells_written_per_update: float
     ca_read_reduction_vs_flat: float
     ca_read_reduction_vs_exact_scan: float
+    target_route_coverage: float = 0.0
+    fanout_lut_state_bytes: float = 0.0
+    fanout_training_examples: int = 0
 
 
 @dataclass(frozen=True)
@@ -635,6 +720,20 @@ class _SyntheticWikiMemory:
             group_scan_cells,
         )
 
+    def lut_route_key(self, key: int, fanout_lut: WikiMemoryFanoutLUT) -> _RouteResult:
+        group_scores = self._score_groups(key)
+        group_scan_cells = self.config.group_count * self.config.summary_banks
+        group_order = self._top_indices(group_scores, len(group_scores))
+        selected_count = min(
+            len(group_order),
+            max(self.config.selected_groups, fanout_lut.predict(group_scores, group_order)),
+        )
+        return self._hierarchical_route_from_groups(
+            key,
+            group_order[:selected_count],
+            group_scan_cells,
+        )
+
     def flat_route_key(self, key: int) -> _RouteResult:
         page_array = np.arange(self.config.page_count, dtype=np.int32)
         page_scores = self._score_pages(key, page_array)
@@ -779,15 +878,24 @@ class _SyntheticWikiMemory:
             return bool(np.any(self.dirty_pages[pages]))
         return bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
 
-    def answer_query(self, query: _WikiQuery, route_mode: str = "hierarchical") -> _AnswerResult:
+    def answer_query(
+        self,
+        query: _WikiQuery,
+        route_mode: str = "hierarchical",
+        fanout_lut: WikiMemoryFanoutLUT | None = None,
+    ) -> _AnswerResult:
         if route_mode == "hierarchical":
             routed = self.route_key(query.route_key)
         elif route_mode == "adaptive":
             routed = self.adaptive_route_key(query.route_key)
+        elif route_mode == "lut":
+            if fanout_lut is None:
+                raise ValueError("fanout_lut is required for route_mode=lut")
+            routed = self.lut_route_key(query.route_key, fanout_lut)
         elif route_mode == "flat":
             routed = self.flat_route_key(query.route_key)
         else:
-            raise ValueError("route_mode must be hierarchical, adaptive, or flat")
+            raise ValueError("route_mode must be hierarchical, adaptive, lut, or flat")
         cells_read = routed.cells_read
         if not routed.found:
             return _AnswerResult(False, self._query_stale(query), False, cells_read, False)
@@ -823,6 +931,7 @@ def _trial(
     config: WikiMemoryConfig,
     seed: int,
     route_mode: str = "hierarchical",
+    fanout_lut: WikiMemoryFanoutLUT | None = None,
 ) -> WikiMemoryTrialPoint:
     wiki = _SyntheticWikiMemory(config, seed)
     event_types = np.array(["query"] * config.query_events + ["update"] * config.update_events)
@@ -890,7 +999,7 @@ def _trial(
             )
         else:
             query = wiki.sample_query()
-        answer = wiki.answer_query(query, route_mode=route_mode)
+        answer = wiki.answer_query(query, route_mode=route_mode, fanout_lut=fanout_lut)
         queries += 1
         total_cells_read += answer.cells_read
         total_flat_cells_read += config.page_count * config.facts_per_page
@@ -922,7 +1031,7 @@ def _trial(
             groups_refreshed += repair_groups
             error_repairs += 1
             cluster_repair_events += int(cluster_repair)
-            repaired = wiki.answer_query(query, route_mode=route_mode)
+            repaired = wiki.answer_query(query, route_mode=route_mode, fanout_lut=fanout_lut)
             recovered = repaired.hit
             error_recoveries += int(recovered)
 
@@ -1119,6 +1228,205 @@ def _density_config(
     )
 
 
+def _fanout_near_tie_bucket(count: int, bounds: Tuple[int, ...]) -> int:
+    for index, bound in enumerate(bounds):
+        if count <= bound:
+            return index
+    return len(bounds) - 1
+
+
+def _fanout_lut_index(
+    group_scores: np.ndarray,
+    group_order: np.ndarray,
+    base_groups: int,
+    top_score_buckets: int,
+    base_score_buckets: int,
+    gap_buckets: int,
+    exact_tie_bounds: Tuple[int, ...],
+    near_tie_bounds: Tuple[int, ...],
+) -> int:
+    if len(group_order) == 0:
+        return 0
+    base_count = min(base_groups, len(group_order))
+    top_score = max(0, int(group_scores[group_order[0]]))
+    base_score = max(0, int(group_scores[group_order[base_count - 1]]))
+    score_gap = max(0, top_score - base_score)
+    exact_tie_count = int(np.count_nonzero(group_scores[group_order] >= base_score))
+    near_threshold = max(1, base_score - 1)
+    near_tie_count = int(np.count_nonzero(group_scores[group_order] >= near_threshold))
+
+    top_bucket = min(top_score, top_score_buckets - 1)
+    base_bucket = min(base_score, base_score_buckets - 1)
+    gap_bucket = min(score_gap, gap_buckets - 1)
+    exact_bucket = _fanout_near_tie_bucket(exact_tie_count, exact_tie_bounds)
+    near_bucket = _fanout_near_tie_bucket(near_tie_count, near_tie_bounds)
+    return (
+        (
+            ((top_bucket * base_score_buckets + base_bucket) * gap_buckets + gap_bucket)
+            * len(exact_tie_bounds)
+            + exact_bucket
+        )
+        * len(near_tie_bounds)
+        + near_bucket
+    )
+
+
+def _minimum_route_fanout(
+    wiki: _SyntheticWikiMemory,
+    key: int,
+    group_order: np.ndarray,
+    fanout_values: Tuple[int, ...],
+) -> int | None:
+    group_scan_cells = wiki.config.group_count * wiki.config.summary_banks
+    for fanout in fanout_values:
+        result = wiki._hierarchical_route_from_groups(
+            key,
+            group_order[: min(int(fanout), len(group_order))],
+            group_scan_cells,
+        )
+        if result.found:
+            return int(fanout)
+    return None
+
+
+def train_wiki_memory_fanout_lut(
+    config: WikiMemoryConfig,
+    policy: WikiMemoryRefreshPolicy,
+    train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
+    base_groups: int = 4,
+    max_groups: int = 32,
+    target_route_coverage: float = 0.95,
+    fanout_values: Tuple[int, ...] = (4, 8, 16, 32),
+    top_score_buckets: int = 1,
+    base_score_buckets: int = 8,
+    gap_buckets: int = 4,
+    exact_tie_bounds: Tuple[int, ...] = (4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 64),
+    near_tie_bounds: Tuple[int, ...] = (4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 64),
+) -> WikiMemoryFanoutLUT:
+    """Train a low-bit fanout table from minimal-route self-supervision."""
+
+    if base_groups <= 0:
+        raise ValueError("base_groups must be positive")
+    if max_groups < base_groups:
+        raise ValueError("max_groups must be >= base_groups")
+    clean_fanouts = tuple(
+        value
+        for value in sorted(set(int(item) for item in fanout_values))
+        if base_groups <= value <= max_groups
+    )
+    if base_groups not in clean_fanouts:
+        clean_fanouts = tuple(sorted(set(clean_fanouts + (base_groups,))))
+    if max_groups not in clean_fanouts:
+        clean_fanouts = tuple(sorted(set(clean_fanouts + (max_groups,))))
+    if len(clean_fanouts) == 0:
+        raise ValueError("fanout_values must include at least one usable value")
+
+    table_size = (
+        top_score_buckets
+        * base_score_buckets
+        * gap_buckets
+        * len(exact_tie_bounds)
+        * len(near_tie_bounds)
+    )
+    label_counts = np.zeros((table_size, len(clean_fanouts)), dtype=np.int32)
+    label_index = {fanout: index for index, fanout in enumerate(clean_fanouts)}
+    training_examples = 0
+    training_config = replace(
+        config,
+        selected_groups=base_groups,
+        adaptive_max_groups=max_groups,
+        adaptive_score_margin=1,
+    )
+
+    for seed in train_seeds:
+        wiki = _SyntheticWikiMemory(training_config, int(seed))
+        event_types = np.array(
+            ["query"] * training_config.query_events
+            + ["update"] * training_config.update_events
+        )
+        wiki.rng.shuffle(event_types)
+        error_book: List[_WikiQuery] = []
+
+        for event_type in event_types:
+            if event_type == "update":
+                wiki.update_fact(policy)
+                continue
+
+            wiki.maybe_refresh(policy)
+            if len(error_book) > 0 and wiki.rng.random() < training_config.error_probe_query_rate:
+                query = wiki.refresh_error_probe_query(
+                    error_book[int(wiki.rng.integers(0, len(error_book)))]
+                )
+            else:
+                query = wiki.sample_query()
+
+            group_scores = wiki._score_groups(query.route_key)
+            group_order = wiki._top_indices(group_scores, len(group_scores))
+            label = _minimum_route_fanout(
+                wiki,
+                query.route_key,
+                group_order,
+                clean_fanouts,
+            )
+            if label is not None:
+                index = _fanout_lut_index(
+                    group_scores=group_scores,
+                    group_order=group_order,
+                    base_groups=base_groups,
+                    top_score_buckets=top_score_buckets,
+                    base_score_buckets=base_score_buckets,
+                    gap_buckets=gap_buckets,
+                    exact_tie_bounds=exact_tie_bounds,
+                    near_tie_bounds=near_tie_bounds,
+                )
+                label_counts[index, label_index[label]] += 1
+                training_examples += 1
+
+            answer = wiki.answer_query(query, route_mode="adaptive")
+            if (not answer.hit) and policy.error_book_repair:
+                wiki.repair_query_pages(query, policy)
+            if (
+                query.cluster_id >= 0
+                and policy.cluster_repair
+                and not wiki.cluster_consistent(query.cluster_id)
+            ):
+                wiki.repair_pages(tuple(int(page) for page in wiki.cluster_pages[query.cluster_id]))
+            if not answer.hit:
+                error_book.append(query)
+                if len(error_book) > 128:
+                    error_book = error_book[-128:]
+
+    fanouts = np.full(table_size, max_groups, dtype=np.int32)
+    for index, counts in enumerate(label_counts):
+        total = int(np.sum(counts))
+        if total == 0:
+            continue
+        cumulative = 0
+        chosen = max_groups
+        for fanout, count in zip(clean_fanouts, counts):
+            cumulative += int(count)
+            if cumulative / float(total) >= target_route_coverage:
+                chosen = int(fanout)
+                break
+        fanouts[index] = chosen
+
+    fanout_bits = max(1, (len(clean_fanouts) - 1).bit_length())
+    return WikiMemoryFanoutLUT(
+        base_groups=base_groups,
+        max_groups=max_groups,
+        target_route_coverage=target_route_coverage,
+        top_score_buckets=top_score_buckets,
+        base_score_buckets=base_score_buckets,
+        gap_buckets=gap_buckets,
+        exact_tie_bounds=exact_tie_bounds,
+        near_tie_bounds=near_tie_bounds,
+        fanout_bits=fanout_bits,
+        fanouts=tuple(int(value) for value in fanouts),
+        training_examples=training_examples,
+        train_seeds=tuple(int(seed) for seed in train_seeds),
+    )
+
+
 def run_wiki_memory_scaling_sweep(
     page_counts: Tuple[int, ...] = (256, 512, 1024, 2048),
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
@@ -1290,6 +1598,8 @@ def run_wiki_memory_fanout_sweep(
         (4, 32, 0),
         (4, 32, 1),
     ),
+    learned_targets: Tuple[float, ...] = (0.98, 1.0),
+    train_seeds: Tuple[int, ...] = _DEFAULT_FANOUT_TRAIN_SEEDS,
     policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
         "trigger16_age16_clusterbook",
         dirty_threshold=16,
@@ -1312,30 +1622,11 @@ def run_wiki_memory_fanout_sweep(
     exact_scan = float(flat_config.page_count * flat_config.facts_per_page)
 
     for selected_groups in tuple(dict.fromkeys(int(value) for value in fixed_group_values)):
-        config = _density_config(page_count, facts_per_page, summary_width)
-        config = WikiMemoryConfig(
-            page_count=config.page_count,
-            facts_per_page=config.facts_per_page,
-            topic_count=config.topic_count,
-            links_per_page=config.links_per_page,
-            group_size=config.group_size,
+        base_config = _density_config(page_count, facts_per_page, summary_width)
+        config = replace(
+            base_config,
             selected_groups=selected_groups,
-            selected_pages=config.selected_pages,
-            adaptive_max_groups=max(selected_groups, config.adaptive_max_groups),
-            adaptive_score_margin=config.adaptive_score_margin,
-            summary_banks=config.summary_banks,
-            summary_width=config.summary_width,
-            summary_bits=config.summary_bits,
-            query_events=config.query_events,
-            update_events=config.update_events,
-            multihop_query_rate=config.multihop_query_rate,
-            recent_update_query_rate=config.recent_update_query_rate,
-            revision_update_rate=config.revision_update_rate,
-            error_probe_query_rate=config.error_probe_query_rate,
-            contradiction_clusters=config.contradiction_clusters,
-            cluster_sources=config.cluster_sources,
-            cluster_update_rate=config.cluster_update_rate,
-            cluster_query_rate=config.cluster_query_rate,
+            adaptive_max_groups=max(selected_groups, base_config.adaptive_max_groups),
         )
         ca_point = _trial(
             policy=policy,
@@ -1375,30 +1666,12 @@ def run_wiki_memory_fanout_sweep(
             for base, maximum, score_margin in adaptive_settings
         )
     ):
-        config = _density_config(page_count, facts_per_page, summary_width)
-        config = WikiMemoryConfig(
-            page_count=config.page_count,
-            facts_per_page=config.facts_per_page,
-            topic_count=config.topic_count,
-            links_per_page=config.links_per_page,
-            group_size=config.group_size,
+        base_config = _density_config(page_count, facts_per_page, summary_width)
+        config = replace(
+            base_config,
             selected_groups=base_groups,
-            selected_pages=config.selected_pages,
             adaptive_max_groups=max_groups,
             adaptive_score_margin=margin,
-            summary_banks=config.summary_banks,
-            summary_width=config.summary_width,
-            summary_bits=config.summary_bits,
-            query_events=config.query_events,
-            update_events=config.update_events,
-            multihop_query_rate=config.multihop_query_rate,
-            recent_update_query_rate=config.recent_update_query_rate,
-            revision_update_rate=config.revision_update_rate,
-            error_probe_query_rate=config.error_probe_query_rate,
-            contradiction_clusters=config.contradiction_clusters,
-            cluster_sources=config.cluster_sources,
-            cluster_update_rate=config.cluster_update_rate,
-            cluster_query_rate=config.cluster_query_rate,
         )
         ca_point = _trial(
             policy=policy,
@@ -1429,6 +1702,59 @@ def run_wiki_memory_fanout_sweep(
                     if exact_scan > 0.0
                     else 0.0
                 ),
+            )
+        )
+
+    for target in tuple(dict.fromkeys(float(value) for value in learned_targets)):
+        base_groups = 4
+        max_groups = 32
+        config = replace(
+            _density_config(page_count, facts_per_page, summary_width),
+            selected_groups=base_groups,
+            adaptive_max_groups=max_groups,
+            adaptive_score_margin=1,
+        )
+        fanout_lut = train_wiki_memory_fanout_lut(
+            config=config,
+            policy=policy,
+            train_seeds=train_seeds,
+            base_groups=base_groups,
+            max_groups=max_groups,
+            target_route_coverage=target,
+        )
+        ca_point = _trial(
+            policy=policy,
+            config=config,
+            seed=seed,
+            route_mode="lut",
+            fanout_lut=fanout_lut,
+        )
+        points.append(
+            WikiMemoryFanoutPoint(
+                route_label=f"learned_lut_t{int(round(target * 100)):02d}",
+                selected_groups=base_groups,
+                adaptive_max_groups=max_groups,
+                adaptive_score_margin=1,
+                ca_overall_recall=ca_point.overall_recall,
+                flat_overall_recall=flat_point.overall_recall,
+                ca_cluster_consistency_rate=ca_point.cluster_consistency_rate,
+                ca_cells_read_per_query=ca_point.cells_read_per_query,
+                flat_cells_read_per_query=flat_point.cells_read_per_query,
+                exact_scan_cells_per_query=exact_scan,
+                ca_cells_written_per_update=ca_point.cells_written_per_update,
+                ca_read_reduction_vs_flat=(
+                    1.0 - ca_point.cells_read_per_query / flat_point.cells_read_per_query
+                    if flat_point.cells_read_per_query > 0.0
+                    else 0.0
+                ),
+                ca_read_reduction_vs_exact_scan=(
+                    1.0 - ca_point.cells_read_per_query / exact_scan
+                    if exact_scan > 0.0
+                    else 0.0
+                ),
+                target_route_coverage=target,
+                fanout_lut_state_bytes=fanout_lut.state_bytes,
+                fanout_training_examples=fanout_lut.training_examples,
             )
         )
 

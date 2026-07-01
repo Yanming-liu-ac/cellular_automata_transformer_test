@@ -427,8 +427,13 @@ at 32 facts/page, while flat scan stays near 99.8% but reads more than 4K
 summary cells/query. The first adaptive group-fanout version repairs the
 16 facts/page stress point: `g4_max32_margin1` reaches 99.80% recall at about
 1,991 cells/query, versus 2,445 for fixed 32-group routing and 4,237 for flat
-page-summary scan. The next step is a learned local fanout policy or stronger
-multi-feature summaries for dense pages.
+page-summary scan. The learned fanout LUT improves that to the same 99.80%
+recall at about 1,560 cells/query with 1.1KB of table state. The
+conservative `t100` table is the current default because it is more stable
+across checked seeds while still reading only about 1,566 cells/query on the
+default stress point. The next step is to test learned fanout across wider
+density/page-count sweeps and then add stronger multi-feature summaries for
+dense pages.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

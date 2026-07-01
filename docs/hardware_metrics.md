@@ -250,6 +250,13 @@ recall at about 1,991 cells/query, while the flat page-summary scan reads about
 it is a low-bit ambiguity detector that increases local group reads only when
 summary scores are tied or near-tied.
 
+The learned version of that detector is small enough for local SRAM. The first
+LUT uses 1,152 bytes of fanout-control state, trained from 32,737 minimal-route
+labels. Its conservative `t100` setting reaches 99.80% recall at about 1,566
+cells/query, cutting flat page-summary reads by 63.0% and hand adaptive reads by
+about 21.3%. This makes group fanout a concrete low-bit control table rather
+than a fixed architecture constant.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

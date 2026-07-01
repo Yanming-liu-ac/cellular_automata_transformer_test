@@ -245,6 +245,7 @@ from .wiki_memory import (
     WikiMemoryConfig,
     WikiMemoryDensityPoint,
     WikiMemoryDensityResult,
+    WikiMemoryFanoutLUT,
     WikiMemoryFanoutPoint,
     WikiMemoryFanoutResult,
     WikiMemoryRefreshPolicy,
@@ -256,6 +257,7 @@ from .wiki_memory import (
     run_wiki_memory_fanout_sweep,
     run_wiki_memory_scaling_sweep,
     run_wiki_memory_sweep,
+    train_wiki_memory_fanout_lut,
 )
 
 __all__ = [
@@ -392,6 +394,7 @@ __all__ = [
     "WikiMemoryConfig",
     "WikiMemoryDensityPoint",
     "WikiMemoryDensityResult",
+    "WikiMemoryFanoutLUT",
     "WikiMemoryFanoutPoint",
     "WikiMemoryFanoutResult",
     "WikiMemoryRefreshPolicy",
@@ -498,6 +501,7 @@ __all__ = [
     "train_trace_demand_content_gate_lut",
     "train_synthetic_lm_phased_demand_gate_lut",
     "train_hca_route_lut",
+    "train_wiki_memory_fanout_lut",
     "train_rare_directory_fanout_lut",
     "train_rare_directory_probe_lut",
 ]

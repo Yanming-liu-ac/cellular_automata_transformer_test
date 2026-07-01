@@ -361,6 +361,18 @@ recall at about 1,991 cells/query. This is still a hand rule, but it is the
 right hardware shape: a small local comparator spends extra reads only when
 summary evidence is ambiguous.
 
+The learned fanout LUT makes the same idea trainable. Features are local and
+low-bit: base group-summary score, top/base score gap, exact-tie group bucket,
+and near-tie group bucket. A 1.1KB table trained on 32,737 self-supervised route
+labels reaches 99.80% recall on the 16 facts/page stress point at about 1,566
+cells/query. This is better than both fixed 32-group routing and the first hand
+adaptive rule, so fanout control is now a real learned CA-chip primitive rather
+than only a heuristic. A smaller/less conservative target can under-route on
+some seeds, so the current default records the conservative `t100` table.
+Across checked evaluation seeds 91, 123, 211, 307, 401, 503, and 607, `t100`
+matches the hand adaptive recall while reading about 1,526-1,674 cells/query
+instead of the hand adaptive 1,991-2,309 cells/query range.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

@@ -117,8 +117,8 @@ The first experiments compare:
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as
   facts/page increases;
-- adaptive wiki-memory fanout sweeps that recover dense-page recall without
-  falling back to full flat page-summary scans;
+- adaptive and learned-LUT wiki-memory fanout sweeps that recover dense-page
+  recall without falling back to full flat page-summary scans;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

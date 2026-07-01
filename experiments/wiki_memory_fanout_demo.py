@@ -32,6 +32,9 @@ def print_fanout(result: WikiMemoryFanoutResult) -> None:
         "base_g",
         "max_g",
         "margin",
+        "target",
+        "lut_B",
+        "train",
         "ca_acc",
         "flat_acc",
         "ca_ok",
@@ -43,13 +46,27 @@ def print_fanout(result: WikiMemoryFanoutResult) -> None:
         "ca_wr/u",
     ]
     print(" | ".join(f"{header:>15}" for header in headers))
-    print("-" * 215)
+    print("-" * 265)
     for point in result.points:
+        target = f"{point.target_route_coverage:0.2f}" if point.target_route_coverage else "-"
+        lut_state = (
+            f"{point.fanout_lut_state_bytes:0.1f}"
+            if point.fanout_lut_state_bytes
+            else "-"
+        )
+        training = (
+            f"{point.fanout_training_examples}"
+            if point.fanout_training_examples
+            else "-"
+        )
         row = [
             point.route_label,
             f"{point.selected_groups}",
             f"{point.adaptive_max_groups}",
             f"{point.adaptive_score_margin}",
+            target,
+            lut_state,
+            training,
             fmt_pct(point.ca_overall_recall),
             fmt_pct(point.flat_overall_recall),
             fmt_pct(point.ca_cluster_consistency_rate),
@@ -65,6 +82,7 @@ def print_fanout(result: WikiMemoryFanoutResult) -> None:
     print()
     print("Interpretation:")
     print("- adaptive routes start from base_g groups and expand on low-margin summary ties.")
+    print("- learned_lut routes replace that hand margin with a small low-bit local table.")
     print("- max_g caps local fanout so dense pages do not degrade into flat page scans.")
     print("- cut_f compares CA reads with the flat page-summary scan on the same workload.")
 

@@ -177,6 +177,15 @@ That is 53.0% fewer reads than the flat page-summary scan and less traffic than
 fixed 32-group routing. The next step is to learn this fanout decision from
 local low-bit metadata rather than hand-setting the margin.
 
+The first learned fanout LUT now replaces that hand margin with a small local
+table. It trains from minimal-route self-supervision across 32,737 query states:
+for each low-bit feature bucket, choose the smallest group fanout that reaches
+the target route coverage. The conservative `learned_lut_t100` point uses about
+1.1KB of table state and reaches the same 99.80% recall as flat scan, but reads
+only about 1,566 cells/query. That is a 63.0% read reduction versus flat
+page-summary scan and a further reduction versus the hand adaptive 1,991
+cells/query point.
+
 ## Kill Criteria
 
 This track is not useful if:
