@@ -334,6 +334,12 @@ gain on the relevant path: 96.6% demanded exactness at about 0.134 channel
 writes/token/tick. This is the CA form of DeepSeek-style path specialization:
 move data on the active path, not everywhere.
 
+Using rare-directory query traces sharpens the lesson. When demand is produced
+by actual retrieval queries, the learned 16-byte gate reaches essentially exact
+demanded content with only about 0.03 channel writes/token/tick. The systems
+lesson is the same as CSA/HCA: compression and routing are useful only when the
+controller knows which path is active.
+
 ### 11. V4 Muon -> Optimizer Matters
 
 DeepSeek-V4 reports a custom optimizer stack. This matters for HARC-CA because

@@ -203,6 +203,19 @@ at about 0.139 writes. This is the first genuinely better content-gate result:
 the controller should not reconstruct the whole carrier; it should expose
 persistent content only where the route/query lane asks for it.
 
+The next sweep replaces random demand with real rare-directory query traces.
+For each rare-directory query token, the demanded cells are the token occurrence
+positions in the generated stress context, capped at six positions per query.
+Training the same 16-byte LUT on split-rare traces and evaluating on
+rare-burst, split-rare, and repeated-name traces gives the first workload-shaped
+content gate result. Fixed refresh16 spends 0.187 channel writes/token/tick and
+only reaches 10.3%-12.7% demanded exactness. The global `mismatch_ge8` gate
+spends 0.140-0.152 writes and reaches 10.7%-11.4%. The learned trace LUT spends
+only 0.028-0.034 writes and reaches 99.8%-100.0% demanded exactness. This is the
+right direction: once demand comes from actual retrieval queries, the gate can
+move content only at queried occurrence cells instead of reconstructing the
+whole carrier.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

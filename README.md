@@ -79,6 +79,8 @@ The first experiments compare:
 - an 8-byte learned content-gate LUT over mismatch, route, and envelope buckets;
 - a 16-byte demand-weighted content-gate LUT that writes persistent content only
   for route/query-demanded cells;
+- rare-directory query-trace demand gates that drive content exposure from
+  actual retrieval occurrence positions;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

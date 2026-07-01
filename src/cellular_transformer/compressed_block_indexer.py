@@ -15,6 +15,13 @@ from typing import Dict, Tuple
 import numpy as np
 
 from .dense_context import DenseContextConfig, LowBitDenseContext, exact_decayed_counts
+from .propagation import (
+    DemandContentGateLUT,
+    DemandContentGatePoint,
+    evaluate_lut_trace_demand_content_gate,
+    evaluate_trace_demand_content_gate,
+    train_trace_demand_content_gate_lut,
+)
 from .retrieval import keyed_hash
 
 
@@ -1300,6 +1307,45 @@ class CsaHcaRareDirectoryBloomProbationPromotionResult:
     route_lut: LowBitDirectoryAwareHcaRouteLUT
     fanout_lut: LowBitRareDirectoryFanoutLUT
     points: Tuple[CsaHcaRareDirectoryBloomProbationPromotionPoint, ...]
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryDemandGatePoint:
+    """Content-gate result on a rare-directory query demand trace."""
+
+    scenario: str
+    policy: str
+    demand_rate: float
+    demand_tokens_per_query: float
+    gate_channel_writes_per_token_tick: float
+    mean_gate_fraction: float
+    demand_exact_rate: float
+    demand_mean_abs_error: float
+    mean_carrier_exact_retention_rate: float
+    mean_carrier_mean_abs_error: float
+    carrier_final_entropy_bits: float
+    carrier_final_saturation_fraction: float
+
+
+@dataclass(frozen=True)
+class CsaHcaRareDirectoryDemandGateResult:
+    """Demand-gate diagnostic driven by rare-directory query traces."""
+
+    context_length: int
+    block_size: int
+    queries: int
+    hca_threshold: int
+    max_demands_per_query: int
+    bits: int
+    train_scenario: str
+    eval_scenarios: Tuple[str, ...]
+    write_cost: float
+    route_weight: float
+    envelope_weight: float
+    lut_state_bytes: float
+    lut_write_state_count: int
+    lut: DemandContentGateLUT
+    points: Tuple[CsaHcaRareDirectoryDemandGatePoint, ...]
 
 
 @dataclass(frozen=True)
@@ -5528,6 +5574,166 @@ def run_csa_hca_rare_directory_bloom_probation_promotion_sweep(
         training_samples=route_training_samples + fanout_training_samples,
         route_lut=route_lut,
         fanout_lut=fanout_lut,
+        points=tuple(points),
+    )
+
+
+def _make_query_occurrence_demand_trace(
+    stream: np.ndarray,
+    query_tokens: np.ndarray,
+    max_demands_per_query: int,
+) -> Tuple[np.ndarray, ...]:
+    if max_demands_per_query <= 0:
+        raise ValueError("max_demands_per_query must be positive")
+    positions_by_token: Dict[int, np.ndarray] = {}
+    for token in np.unique(query_tokens.astype(np.int32)):
+        positions_by_token[int(token)] = np.flatnonzero(stream == int(token)).astype(np.int32)
+
+    trace = []
+    for token in query_tokens:
+        positions = positions_by_token.get(int(token), np.empty(0, dtype=np.int32))
+        if len(positions) > max_demands_per_query:
+            positions = positions[-max_demands_per_query:]
+        trace.append(positions.astype(np.int32))
+    return tuple(trace)
+
+
+def _wrap_rare_directory_demand_gate_point(
+    scenario: str,
+    point: DemandContentGatePoint,
+) -> CsaHcaRareDirectoryDemandGatePoint:
+    demand_tokens_per_query = point.demand_token_count / max(1, point.ticks)
+    return CsaHcaRareDirectoryDemandGatePoint(
+        scenario=scenario,
+        policy=point.policy,
+        demand_rate=point.demand_rate,
+        demand_tokens_per_query=demand_tokens_per_query,
+        gate_channel_writes_per_token_tick=point.gate_channel_writes_per_token_tick,
+        mean_gate_fraction=point.gate_channel_writes_per_token_tick / 3.0,
+        demand_exact_rate=point.demand_exact_rate,
+        demand_mean_abs_error=point.demand_mean_abs_error,
+        mean_carrier_exact_retention_rate=point.mean_carrier_exact_retention_rate,
+        mean_carrier_mean_abs_error=point.mean_carrier_mean_abs_error,
+        carrier_final_entropy_bits=point.carrier_final_entropy_bits,
+        carrier_final_saturation_fraction=point.carrier_final_saturation_fraction,
+    )
+
+
+def run_csa_hca_rare_directory_demand_gate_sweep(
+    train_scenario: str = "split_rare",
+    eval_scenarios: Tuple[str, ...] = ("rare_burst", "split_rare", "repeated_name"),
+    policies: Tuple[str, ...] = (
+        "none",
+        "fixed_refresh16",
+        "mismatch_ge8",
+        "demand_mismatch_ge1",
+        "demand_mismatch_ge4",
+    ),
+    context_length: int = 512,
+    block_size: int = 16,
+    queries: int = 512,
+    vocab_size: int = 4096,
+    hot_tokens: int = 64,
+    hca_threshold: int = 15,
+    max_demands_per_query: int = 6,
+    bits: int = 4,
+    write_cost: float = 0.15,
+    route_weight: float = 0.50,
+    envelope_weight: float = 0.25,
+    train_seed: int = 71,
+    eval_seed: int = 79,
+) -> CsaHcaRareDirectoryDemandGateResult:
+    """Evaluate content gates on rare-directory query occurrence demand traces."""
+
+    if len(eval_scenarios) == 0:
+        raise ValueError("eval_scenarios must not be empty")
+    clean_scenarios = tuple(dict.fromkeys(str(scenario).lower() for scenario in eval_scenarios))
+    if context_length <= 0:
+        raise ValueError("context_length must be positive")
+    if queries <= 0:
+        raise ValueError("queries must be positive")
+    if bits not in (2, 4, 8):
+        raise ValueError("bits must be one of 2, 4, 8")
+
+    config = CompressedBlockIndexConfig(
+        context_length=context_length,
+        block_size=block_size,
+        selected_blocks=4,
+        tail_blocks=2,
+        summary_width=128,
+        vocab_size=vocab_size,
+        hot_tokens=hot_tokens,
+        queries=queries,
+    )
+    train_stream, train_queries, _ = _make_rare_directory_stress_case(
+        config=config,
+        scenario=str(train_scenario).lower(),
+        hca_threshold=hca_threshold,
+        seed=train_seed,
+    )
+    train_trace = _make_query_occurrence_demand_trace(
+        stream=train_stream,
+        query_tokens=train_queries,
+        max_demands_per_query=max_demands_per_query,
+    )
+    lut = train_trace_demand_content_gate_lut(
+        demand_trace=train_trace,
+        length=context_length,
+        bits=bits,
+        seed=train_seed + 8192,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+    )
+
+    points = []
+    for scenario_index, scenario in enumerate(clean_scenarios):
+        stream, query_tokens, _ = _make_rare_directory_stress_case(
+            config=config,
+            scenario=scenario,
+            hca_threshold=hca_threshold,
+            seed=eval_seed + scenario_index * 997,
+        )
+        trace = _make_query_occurrence_demand_trace(
+            stream=stream,
+            query_tokens=query_tokens,
+            max_demands_per_query=max_demands_per_query,
+        )
+        content_seed = eval_seed + scenario_index * 997 + 16384
+        for policy in policies:
+            point = evaluate_trace_demand_content_gate(
+                policy=policy,
+                demand_trace=trace,
+                length=context_length,
+                bits=bits,
+                seed=content_seed,
+            )
+            points.append(_wrap_rare_directory_demand_gate_point(scenario, point))
+        learned_point = evaluate_lut_trace_demand_content_gate(
+            lut=lut,
+            demand_trace=trace,
+            length=context_length,
+            bits=bits,
+            seed=content_seed,
+            policy=f"learned_trace_lut_c{write_cost:0.2f}",
+        )
+        points.append(_wrap_rare_directory_demand_gate_point(scenario, learned_point))
+
+    return CsaHcaRareDirectoryDemandGateResult(
+        context_length=context_length,
+        block_size=block_size,
+        queries=queries,
+        hca_threshold=hca_threshold,
+        max_demands_per_query=max_demands_per_query,
+        bits=bits,
+        train_scenario=str(train_scenario).lower(),
+        eval_scenarios=clean_scenarios,
+        write_cost=write_cost,
+        route_weight=route_weight,
+        envelope_weight=envelope_weight,
+        lut_state_bytes=lut.state_bytes,
+        lut_write_state_count=lut.write_state_count,
+        lut=lut,
         points=tuple(points),
     )
 

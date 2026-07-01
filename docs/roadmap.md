@@ -354,6 +354,8 @@ Implement:
 - replace synthetic random demand in the learned demand-gate sweep with real
   route/retrieval demand from the dual-path synthetic LM and rare-directory
   workloads.
+- extend the rare-directory trace-gate result into the dual-path synthetic LM,
+  where demand comes from exact-memory lookups and candidate output events.
 
 First trainable target:
 

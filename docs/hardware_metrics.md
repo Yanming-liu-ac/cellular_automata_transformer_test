@@ -121,6 +121,15 @@ error, about 33.1%, but that is now acceptable for this control objective: the
 chip should move persistent content into the carrier only where computation
 needs it, not refresh the full context field.
 
+On rare-directory query traces, the same controller shape is much stronger
+because demand is sparse and structured. With six demanded occurrence cells per
+query, a 16-byte trace-trained LUT spends about 0.033 channel
+writes/token/tick on rare-burst and split-rare, and about 0.028 on repeated-name.
+Demanded exact content is 99.8%-100.0%. Fixed refresh16 costs 0.187
+writes/token/tick and leaves demanded exactness around 10%-13%. This is the
+current best evidence that demand-routed content exposure can keep local write
+traffic low while preserving exact queried content.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

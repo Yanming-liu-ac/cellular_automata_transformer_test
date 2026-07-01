@@ -23,6 +23,7 @@ from cellular_transformer.compressed_block_indexer import (
     run_csa_hca_rare_directory_bloom_retirement_collision_sweep,
     run_csa_hca_rare_directory_bloom_retirement_compression_sweep,
     run_csa_hca_rare_directory_bloom_probation_promotion_sweep,
+    run_csa_hca_rare_directory_demand_gate_sweep,
     run_csa_hca_rare_directory_bloom_retirement_sweep,
     run_csa_hca_rare_directory_bloom_sidecar_sweep,
     run_csa_hca_rare_directory_bloom_salt_selection_sweep,
@@ -1225,6 +1226,50 @@ def main() -> None:
     print("- 2 bits/entry is too collision-prone for hot-token pollution.")
     print("- 4 bits/entry is the aggressive low-state target; 8 bits/entry is the cleaner robust target.")
     print("- The write saving is mostly independent of probation bits because first-hit writes still touch k low-bit cells.")
+    print()
+
+    demand_gate = run_csa_hca_rare_directory_demand_gate_sweep()
+    print("Rare-directory query-trace content gate")
+    print(
+        f"train={demand_gate.train_scenario}, "
+        f"lut={demand_gate.lut_state_bytes:0.1f}B, "
+        f"write_states={demand_gate.lut_write_state_count}/{len(demand_gate.lut.writes)}, "
+        f"context={demand_gate.context_length}, queries={demand_gate.queries}"
+    )
+    headers = [
+        "scenario",
+        "policy",
+        "dem/q",
+        "wr/tok/t",
+        "d_exact",
+        "d_err",
+        "carrierM",
+        "errM",
+        "k_ent",
+        "k_sat",
+    ]
+    print(" | ".join(f"{header:>18}" for header in headers))
+    print("-" * 198)
+    for point in demand_gate.points:
+        row = [
+            point.scenario,
+            point.policy,
+            f"{point.demand_tokens_per_query:0.1f}",
+            f"{point.gate_channel_writes_per_token_tick:0.4f}",
+            fmt_pct(point.demand_exact_rate),
+            fmt_pct(point.demand_mean_abs_error),
+            fmt_pct(point.mean_carrier_exact_retention_rate),
+            fmt_pct(point.mean_carrier_mean_abs_error),
+            f"{point.carrier_final_entropy_bits:0.2f}",
+            fmt_pct(point.carrier_final_saturation_fraction),
+        ]
+        print(" | ".join(f"{cell:>18}" for cell in row))
+
+    print()
+    print("Rare-directory demand-gate interpretation:")
+    print("- Demand is generated from actual query-token occurrence positions in the rare-directory stress streams.")
+    print("- Demand-specific gates should spend far fewer writes than fixed refresh while keeping demanded content exact.")
+    print("- The learned trace LUT is evaluated out-of-scenario, so matching demand_mismatch gates is a useful first target.")
     print()
 
     collision = run_csa_hca_rare_directory_bloom_retirement_collision_sweep()

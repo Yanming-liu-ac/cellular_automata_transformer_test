@@ -215,6 +215,14 @@ content exposure is demand-routed. The route/query lane should assert a local
 demand bit, and the content lane should write into the carrier only for cells
 that are about to participate in computation.
 
+Rare-directory traces make the demand bit less abstract. When each query token
+demands the context cells where that token actually appears, the same 16-byte
+LUT trained on split-rare traces generalizes to rare-burst and repeated-name
+traces. It writes only about 0.028-0.034 channels/token/tick and keeps demanded
+content essentially exact. This is much cheaper than fixed refresh16 and much
+more accurate than global mismatch gating. The route/retrieval lane therefore
+becomes a first-class controller input to the CA cell.
+
 ## Associative Retrieval
 
 Language modeling needs exact or near-exact recall for names, numbers, code
