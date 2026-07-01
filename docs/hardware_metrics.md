@@ -345,6 +345,14 @@ observed reliability gain comes from one additional low-bit comparison against
 the existing loss counter, not from a global controller or a high-precision
 score.
 
+The deterministic randomized-noise smoke audit covers four more update-rate
+samples: revision/cluster rates of 34%/50%, 33%/42%, 51%/42%, and 44%/20%.
+Both `loss=0` and `loss=1` pass this sample with 100.00% mean dense-on
+coverage, zero off-region enables, and 0.00% sparse false-enable. The sample
+does not contain a dense-loss failure for `loss=1` to repair, so its value is
+mainly a false-enable check: one extra loss-count tolerance did not increase
+measured spurious activation under these randomized update rates.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

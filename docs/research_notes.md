@@ -464,6 +464,15 @@ keeps off-region enables at zero, and keeps sparse shared false-enable at
 0.00%. This is still a deterministic audit, but it is stronger evidence that
 the tolerant guard is a robust local rule rather than a seed1501-only patch.
 
+A deterministic pseudo-random smoke audit adds four more update-rate samples.
+Seeds 1701, 1801, 1901, and 2001 use revision rates of 34%, 33%, 51%, and 44%,
+with cluster rates of 50%, 42%, 42%, and 20%. No dense-loss failure appears in
+that sample: strict `loss=0` and tolerant `loss=1` both get 100.00% mean
+dense-on coverage, zero off-region enables, and 0.00% sparse false-enable. This
+does not prove the tolerant rule is sufficient, but it is useful negative
+evidence against the main hardware risk, namely that tolerance would start
+opening sparse/off regions under varied update noise.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

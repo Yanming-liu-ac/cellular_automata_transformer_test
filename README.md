@@ -81,6 +81,7 @@ python experiments/wiki_memory_mixed_guard_noise_demo.py
 python experiments/wiki_memory_learned_guard_sharing_demo.py
 python experiments/wiki_memory_learned_guard_audit_demo.py
 python experiments/wiki_memory_learned_guard_noise_matrix_demo.py
+python experiments/wiki_memory_learned_guard_random_noise_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -144,6 +145,7 @@ The first experiments compare:
 - learned low-bit sharing-radius/loss-tolerance LUTs for mixed-stream guard counters;
 - held-out loss-tolerance audits for learned wiki-memory guard counters;
 - update-noise matrix audits for learned wiki-memory guard loss tolerance;
+- deterministic randomized-noise audits for learned wiki-memory guard tolerance;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

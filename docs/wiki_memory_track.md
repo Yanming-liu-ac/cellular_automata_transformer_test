@@ -289,6 +289,16 @@ keeps sparse shared false-enable at 0.00% for every audited row. The next audit
 should randomize more seeds and noise rates, but the current matrix supports
 the claim that a one-count loss tolerance is not merely overfitting one seed.
 
+A deterministic pseudo-random noise smoke test adds four more held-out cases:
+seeds 1701, 1801, 1901, and 2001 with revision rates from 33% to 51% and
+cluster rates from 20% to 50%. This sample did not reproduce the strict
+zero-loss dense-loss failure: both `loss=0` and `loss=1` reach 100.00% dense-on
+coverage, zero off-region enables, and 0.00% sparse shared false-enable. The
+value of this test is different from the seed1501 regression: it says the
+tolerant gate did not introduce measured false-enable on randomized update
+rates, while a larger randomized sweep is still needed to estimate rare failure
+probability.
+
 ## Kill Criteria
 
 This track is not useful if:

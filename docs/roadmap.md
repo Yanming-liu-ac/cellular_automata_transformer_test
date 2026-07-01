@@ -506,6 +506,15 @@ revision-80%/cluster-60% regimes. Strict `loss=0` has two dense-on failures and
 shared false-enable. The remaining roadmap item is to turn this fixed matrix
 into a broader randomized seed/noise sweep.
 
+A deterministic randomized-noise smoke test now covers four additional
+held-out cases: seeds 1701, 1801, 1901, and 2001, with pseudo-random revision
+rates between 33% and 51% and cluster rates between 20% and 50%. In that sample
+both `loss=0` and `loss=1` pass: zero dense-on failures, zero off-region
+enables, 100.00% mean dense-on coverage, and 0.00% sparse false-enable. This
+does not replace the fixed seed1501 regression because no dense-loss failure
+appears in this sample; it mainly checks that the tolerant guard is not causing
+false-enable under varied update rates.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
