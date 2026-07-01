@@ -224,6 +224,14 @@ cells/update, but stale misses climb to 49.61%. This makes stale miss rate,
 value-miss rate, error-probe recall, cluster consistency, and page-summary scan
 traffic the main safety metrics for any more aggressive write-saving policy.
 
+Scaling makes the read metric sharper. With the same 4x256x4-bit summaries and
+clusterbook repair, page counts 256, 512, 1,024, and 2,048 give hierarchical CA
+reads of about 357, 420, 548, and 804 cells/query. The flat page-summary scan
+costs about 1,061, 2,084, 4,132, and 8,228 cells/query. The CA route therefore
+cuts flat-scan reads by 66.3%, 79.9%, 86.7%, and 90.2%, respectively. Writes
+are the same under the same repair policy, so this sweep isolates routing
+traffic.
+
 ## Retrieval-Lane Metrics
 
 For associative recall, track:

@@ -419,8 +419,10 @@ recall to 97.66% and repeated failed-probe recall to 98.54% at about 14,739
 cells/update. Cluster repair reaches 100.0% checked multi-source consistency at
 about 14,914 cells/update. A flat/RAG-style all-page-summary scan matches those
 accuracy points but costs about 1,061 cells/query, while the CA hierarchical
-route costs about 356-357 cells/query. The next step is to scale page/fact
-counts and test whether that read advantage widens.
+route costs about 356-357 cells/query. Scaling to 2,048 pages widens the gap:
+CA costs about 804 cells/query while flat scan costs about 8,228, a 90.2%
+reduction. The next step is to increase facts/page and summary pressure, because
+the current sweep scales pages more than per-page content density.
 
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny

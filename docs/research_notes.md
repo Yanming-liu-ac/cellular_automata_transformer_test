@@ -332,6 +332,15 @@ mutable knowledge: local state can remain mostly stale, as long as dirty/version
 pressure, error-book probes, and cluster-local consolidation fire before route
 quality collapses; hierarchy then gives the read advantage over flat page scans.
 
+The follow-up scaling sweep checks that this is not a 256-page accident. Holding
+the `trigger16_age16_clusterbook` policy fixed, 256, 512, 1,024, and 2,048-page
+wikis produce CA reads/query of about 357, 420, 548, and 804 cells. The flat
+page-summary scan reads about 1,061, 2,084, 4,132, and 8,228 cells/query on the
+same workloads. CA read reduction versus flat scan grows from 66.3% to 90.2%,
+while recall remains matched by construction. This supports the architectural
+claim that wiki memory should be routed through local summaries rather than
+global page-summary scans.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

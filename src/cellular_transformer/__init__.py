@@ -244,8 +244,11 @@ from .synthetic_lm import (
 from .wiki_memory import (
     WikiMemoryConfig,
     WikiMemoryRefreshPolicy,
+    WikiMemoryScalingPoint,
+    WikiMemoryScalingResult,
     WikiMemorySweepResult,
     WikiMemoryTrialPoint,
+    run_wiki_memory_scaling_sweep,
     run_wiki_memory_sweep,
 )
 
@@ -382,6 +385,8 @@ __all__ = [
     "TileConfig",
     "WikiMemoryConfig",
     "WikiMemoryRefreshPolicy",
+    "WikiMemoryScalingPoint",
+    "WikiMemoryScalingResult",
     "WikiMemorySweepResult",
     "WikiMemoryTrialPoint",
     "harc_ca_edges",
@@ -466,6 +471,7 @@ __all__ = [
     "run_synthetic_lm_candidate_reducer_sweep",
     "run_synthetic_lm_candidate_demand_sparsity_sweep",
     "run_synthetic_lm_demand_gate_sweep",
+    "run_wiki_memory_scaling_sweep",
     "run_wiki_memory_sweep",
     "shortest_propagation_steps",
     "sweep_memory_tasks",

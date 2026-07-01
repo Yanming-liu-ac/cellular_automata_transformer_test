@@ -68,6 +68,7 @@ python experiments/synthetic_group_summary_update_demo.py
 python experiments/synthetic_lazy_group_summary_demo.py
 python experiments/synthetic_triggered_group_summary_demo.py
 python experiments/wiki_memory_demo.py
+python experiments/wiki_memory_scaling_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -110,6 +111,8 @@ The first experiments compare:
   intervals with local dirty-count and age rules;
 - CA wiki-memory diagnostics for mutable page/fact/link storage with triggered
   summary refresh and error-book repair;
+- wiki-memory scaling sweeps comparing hierarchical CA routing with flat
+  page-summary scans;
 - exact key/value recall through a hash-routed associative CA lane;
 - copy, induction, and key/value memory tasks;
 - overflow-tier associative memory for exact-recall reliability;

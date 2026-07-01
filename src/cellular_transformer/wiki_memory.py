@@ -203,6 +203,43 @@ class WikiMemorySweepResult:
 
 
 @dataclass(frozen=True)
+class WikiMemoryScalingPoint:
+    """One page-count scaling comparison between CA and flat retrieval."""
+
+    page_count: int
+    facts_per_page: int
+    group_size: int
+    selected_groups: int
+    selected_pages: int
+    contradiction_clusters: int
+    state_bytes: float
+    ca_overall_recall: float
+    flat_overall_recall: float
+    ca_cluster_consistency_rate: float
+    flat_cluster_consistency_rate: float
+    ca_cells_read_per_query: float
+    flat_cells_read_per_query: float
+    exact_scan_cells_per_query: float
+    ca_cells_written_per_update: float
+    flat_cells_written_per_update: float
+    ca_read_reduction_vs_flat: float
+    ca_read_reduction_vs_exact_scan: float
+
+
+@dataclass(frozen=True)
+class WikiMemoryScalingResult:
+    """Page-count scaling sweep for routed CA versus flat page-summary scan."""
+
+    policy: str
+    query_events: int
+    update_events: int
+    summary_banks: int
+    summary_width: int
+    summary_bits: int
+    points: Tuple[WikiMemoryScalingPoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -924,4 +961,102 @@ def run_wiki_memory_sweep(
         state_bytes=sweep_config.state_bytes,
         points=points,
         flat_points=flat_points,
+    )
+
+
+def _scaling_config(page_count: int) -> WikiMemoryConfig:
+    group_size = 16
+    cluster_sources = 3
+    contradiction_clusters = max(1, min(page_count // 8, page_count // cluster_sources))
+    return WikiMemoryConfig(
+        page_count=page_count,
+        facts_per_page=4,
+        topic_count=max(8, min(256, page_count // 4)),
+        links_per_page=4,
+        group_size=group_size,
+        selected_groups=4,
+        selected_pages=8,
+        summary_banks=4,
+        summary_width=256,
+        summary_bits=4,
+        query_events=512,
+        update_events=256,
+        contradiction_clusters=contradiction_clusters,
+        cluster_sources=cluster_sources,
+    )
+
+
+def run_wiki_memory_scaling_sweep(
+    page_counts: Tuple[int, ...] = (256, 512, 1024, 2048),
+    policy: WikiMemoryRefreshPolicy = WikiMemoryRefreshPolicy(
+        "trigger16_age16_clusterbook",
+        dirty_threshold=16,
+        max_age=16,
+        error_book_repair=True,
+        cluster_repair=True,
+    ),
+    seed: int = 91,
+) -> WikiMemoryScalingResult:
+    """Compare hierarchical CA routing with flat page-summary scans as wiki grows."""
+
+    clean_counts = tuple(dict.fromkeys(int(count) for count in page_counts))
+    if len(clean_counts) == 0:
+        raise ValueError("page_counts must not be empty")
+
+    points = []
+    for page_count in clean_counts:
+        config = _scaling_config(page_count)
+        ca_point = _trial(
+            policy=policy,
+            config=config,
+            seed=seed,
+            route_mode="hierarchical",
+        )
+        flat_point = _trial(
+            policy=policy,
+            config=config,
+            seed=seed,
+            route_mode="flat",
+        )
+        exact_scan = float(config.page_count * config.facts_per_page)
+        points.append(
+            WikiMemoryScalingPoint(
+                page_count=config.page_count,
+                facts_per_page=config.facts_per_page,
+                group_size=config.group_size,
+                selected_groups=config.selected_groups,
+                selected_pages=config.selected_pages,
+                contradiction_clusters=config.contradiction_clusters,
+                state_bytes=config.state_bytes,
+                ca_overall_recall=ca_point.overall_recall,
+                flat_overall_recall=flat_point.overall_recall,
+                ca_cluster_consistency_rate=ca_point.cluster_consistency_rate,
+                flat_cluster_consistency_rate=flat_point.cluster_consistency_rate,
+                ca_cells_read_per_query=ca_point.cells_read_per_query,
+                flat_cells_read_per_query=flat_point.cells_read_per_query,
+                exact_scan_cells_per_query=exact_scan,
+                ca_cells_written_per_update=ca_point.cells_written_per_update,
+                flat_cells_written_per_update=flat_point.cells_written_per_update,
+                ca_read_reduction_vs_flat=(
+                    1.0 - ca_point.cells_read_per_query / flat_point.cells_read_per_query
+                    if flat_point.cells_read_per_query > 0.0
+                    else 0.0
+                ),
+                ca_read_reduction_vs_exact_scan=(
+                    1.0 - ca_point.cells_read_per_query / exact_scan
+                    if exact_scan > 0.0
+                    else 0.0
+                ),
+            )
+        )
+
+    first_config = _scaling_config(clean_counts[0])
+    return WikiMemoryScalingResult(
+        policy=policy.name,
+        query_events=first_config.query_events,
+        update_events=first_config.update_events,
+        summary_banks=first_config.summary_banks,
+        summary_width=first_config.summary_width,
+        summary_bits=first_config.summary_bits,
+        points=tuple(points),
     )

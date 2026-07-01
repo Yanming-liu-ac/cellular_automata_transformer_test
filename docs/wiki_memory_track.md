@@ -144,9 +144,16 @@ This is not yet a learned memory system, but it establishes the first measurable
 wiki-memory claim: local dirty/age summary refresh can keep mutable facts mostly
 queryable while avoiding full-wiki scans. The error-book repair path now has a
 real workload: page repair improves answer recall, while cluster repair enforces
-multi-source consistency across replicated claims. The next step is to scale the
-page and fact counts and test whether the same hierarchy keeps its read
-advantage as the wiki grows.
+multi-source consistency across replicated claims.
+
+The scaling sweep then holds the clusterbook policy fixed and increases the wiki
+from 256 to 2,048 pages. Accuracy stays matched between hierarchical CA routing
+and flat page-summary scan because they use the same summaries and repair
+policy. Read cost diverges: at 256 pages CA reads about 357 cells/query versus
+1,061 for flat scan; at 2,048 pages CA reads about 804 cells/query versus 8,228
+for flat scan. The CA read reduction versus flat scan grows from 66.3% to
+90.2%, while exact fact scan grows to 8,192 cells/query. This is the first
+evidence that the wiki-memory route has the scaling shape we want.
 
 ## Kill Criteria
 
