@@ -1292,6 +1292,18 @@ The answer path remains fixed through the claim summary, so the metric is now
 source freshness per local maintenance byte. That is the right chip-facing
 objective for provenance lanes.
 
+The learned source-subtile controller stores one policy id per importance mode:
+three modes and six candidates need 1.125B. Checked evaluation:
+
+```text
+loose  target <=46% stale: subtile_error_repair, 6.81-7.03 touch/event, 0/4 failures
+normal target <=31% stale: subtile_probe2_repair, 9.21-9.68 touch/event, 0/4 failures
+strict target <=15% stale: claim_error_repair, 9.85-10.19 touch/event, 0/4 failures
+```
+
+This separates hardware policy state from wiki content state: a small metadata
+mode bit steers provenance freshness without touching the summary answer path.
+
 ## Unified Event Profile
 
 The project now includes a unified per-event proxy that combines:

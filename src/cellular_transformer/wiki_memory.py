@@ -1044,6 +1044,54 @@ class CAWikiCellSubtileSweepResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellSubtileLUTEntry:
+    """Learned provenance repair choice for one importance target."""
+
+    importance: str
+    max_stale_source_rate: float
+    chosen_policy: str
+    chosen_policy_index: int
+    chosen_repair_scope: str
+    chosen_subtile_size: int
+    chosen_read_sources: int
+    chosen_update_repair_ticks: int
+    chosen_update_repair_period: int
+    chosen_error_repair_ticks: int
+    training_points: int
+    training_cost: float
+
+
+@dataclass(frozen=True)
+class CAWikiCellLearnedSubtilePoint:
+    """Evaluation point for the learned source-subtile repair controller."""
+
+    importance: str
+    eval_seed: int
+    chosen_policy: str
+    recall: float
+    stale_source_rate: float
+    fresh_subtile_rate: float
+    consistent_claim_rate: float
+    cells_read_per_query: float
+    cells_touched_per_event: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellLearnedSubtileResult:
+    """Tiny LUT selecting provenance repair scope/probe count."""
+
+    config: CAWikiCellConfig
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_targets: Tuple[Tuple[str, float], ...]
+    candidate_count: int
+    lut_state_bytes: float
+    entries: Tuple[CAWikiCellSubtileLUTEntry, ...]
+    points: Tuple[CAWikiCellLearnedSubtilePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -5473,4 +5521,190 @@ def run_ca_wiki_cell_subtile_repair_sweep(
         seed=seed,
         summary_state_bytes=summary_state_bytes,
         points=tuple(points),
+    )
+
+
+def run_ca_wiki_cell_learned_subtile_repair_sweep(
+    config: CAWikiCellConfig | None = None,
+    importance_targets: Tuple[Tuple[str, float], ...] = (
+        ("loose", 0.46),
+        ("normal", 0.31),
+        ("strict", 0.15),
+    ),
+    train_seeds: Tuple[int, ...] = (2601, 2701),
+    eval_seeds: Tuple[int, ...] = (2801, 2901),
+    stale_penalty_weight: float = 100.0,
+    query_read_weight: float = 0.25,
+) -> CAWikiCellLearnedSubtileResult:
+    """Learn a tiny LUT selecting source-subtile provenance repair policies."""
+
+    cfg = config if config is not None else CAWikiCellConfig(sources_per_claim=16)
+    clean_targets = tuple((str(name), float(target)) for name, target in importance_targets)
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_targets) == 0:
+        raise ValueError("importance_targets must not be empty")
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if any(not 0.0 <= target <= 1.0 for _, target in clean_targets):
+        raise ValueError("all stale-source targets must be in [0, 1]")
+    if stale_penalty_weight < 0.0:
+        raise ValueError("stale_penalty_weight must be non-negative")
+    if query_read_weight < 0.0:
+        raise ValueError("query_read_weight must be non-negative")
+
+    candidates = (
+        CAWikiCellSubtilePolicy(
+            name="claim_error_repair",
+            subtile_size=cfg.sources_per_claim,
+            read_sources=1,
+            repair_scope="claim",
+            error_repair_ticks=1,
+        ),
+        CAWikiCellSubtilePolicy(
+            name="subtile_error_repair",
+            subtile_size=4,
+            read_sources=1,
+            repair_scope="subtile",
+            error_repair_ticks=1,
+        ),
+        CAWikiCellSubtilePolicy(
+            name="subtile_probe2_repair",
+            subtile_size=4,
+            read_sources=2,
+            repair_scope="subtile",
+            error_repair_ticks=1,
+        ),
+        CAWikiCellSubtilePolicy(
+            name="subtile_probe4_repair",
+            subtile_size=4,
+            read_sources=4,
+            repair_scope="subtile",
+            error_repair_ticks=1,
+        ),
+        CAWikiCellSubtilePolicy(
+            name="subtile_period4_repair",
+            subtile_size=4,
+            read_sources=1,
+            repair_scope="subtile",
+            update_repair_ticks=1,
+            update_repair_period=4,
+            error_repair_ticks=1,
+        ),
+        CAWikiCellSubtilePolicy(
+            name="subtile_update_repair",
+            subtile_size=4,
+            read_sources=1,
+            repair_scope="subtile",
+            update_repair_ticks=1,
+            update_repair_period=1,
+            error_repair_ticks=0,
+        ),
+    )
+
+    training_by_policy: dict[str, list[CAWikiCellSubtilePoint]] = {
+        policy.name: [] for policy in candidates
+    }
+    for seed in clean_train_seeds:
+        sweep = run_ca_wiki_cell_subtile_repair_sweep(cfg, candidates, seed=seed)
+        for point in sweep.points:
+            training_by_policy[point.policy].append(point)
+
+    entries: List[CAWikiCellSubtileLUTEntry] = []
+    chosen_by_importance: dict[str, tuple[int, CAWikiCellSubtilePolicy]] = {}
+    for importance, max_stale_source_rate in clean_targets:
+        best_index = 0
+        best_cost = float("inf")
+        best_touch = float("inf")
+        best_stale = float("inf")
+        best_qread = float("inf")
+        best_point_count = 0
+        for index, policy in enumerate(candidates):
+            points = training_by_policy[policy.name]
+            point_count = len(points)
+            mean_touch = (
+                sum(point.cells_touched_per_event for point in points) / point_count
+                if point_count
+                else float("inf")
+            )
+            mean_stale = (
+                sum(point.stale_source_rate for point in points) / point_count
+                if point_count
+                else float("inf")
+            )
+            mean_qread = (
+                sum(point.cells_read_per_query for point in points) / point_count
+                if point_count
+                else float("inf")
+            )
+            stale_gap = max(0.0, mean_stale - max_stale_source_rate)
+            cost = (
+                mean_touch
+                + query_read_weight * mean_qread
+                + stale_penalty_weight * stale_gap
+            )
+            if (cost, mean_touch, mean_stale, mean_qread) < (
+                best_cost,
+                best_touch,
+                best_stale,
+                best_qread,
+            ):
+                best_index = index
+                best_cost = cost
+                best_touch = mean_touch
+                best_stale = mean_stale
+                best_qread = mean_qread
+                best_point_count = point_count
+        chosen = candidates[best_index]
+        chosen_by_importance[importance] = (best_index, chosen)
+        entries.append(
+            CAWikiCellSubtileLUTEntry(
+                importance=importance,
+                max_stale_source_rate=max_stale_source_rate,
+                chosen_policy=chosen.name,
+                chosen_policy_index=best_index,
+                chosen_repair_scope=chosen.repair_scope,
+                chosen_subtile_size=chosen.subtile_size,
+                chosen_read_sources=chosen.read_sources,
+                chosen_update_repair_ticks=chosen.update_repair_ticks,
+                chosen_update_repair_period=chosen.update_repair_period,
+                chosen_error_repair_ticks=chosen.error_repair_ticks,
+                training_points=best_point_count,
+                training_cost=best_cost,
+            )
+        )
+
+    eval_points: List[CAWikiCellLearnedSubtilePoint] = []
+    all_eval_seeds = tuple(dict.fromkeys(clean_train_seeds + clean_eval_seeds))
+    for importance, max_stale_source_rate in clean_targets:
+        _, chosen = chosen_by_importance[importance]
+        for seed in all_eval_seeds:
+            sweep = run_ca_wiki_cell_subtile_repair_sweep(cfg, (chosen,), seed=seed)
+            point = sweep.points[0]
+            eval_points.append(
+                CAWikiCellLearnedSubtilePoint(
+                    importance=importance,
+                    eval_seed=seed,
+                    chosen_policy=chosen.name,
+                    recall=point.recall,
+                    stale_source_rate=point.stale_source_rate,
+                    fresh_subtile_rate=point.fresh_subtile_rate,
+                    consistent_claim_rate=point.consistent_claim_rate,
+                    cells_read_per_query=point.cells_read_per_query,
+                    cells_touched_per_event=point.cells_touched_per_event,
+                    target_met=point.stale_source_rate <= max_stale_source_rate,
+                )
+            )
+
+    policy_bits = max(1, int(np.ceil(np.log2(len(candidates)))))
+    lut_state_bytes = len(clean_targets) * policy_bits / 8.0
+    return CAWikiCellLearnedSubtileResult(
+        config=cfg,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_targets=clean_targets,
+        candidate_count=len(candidates),
+        lut_state_bytes=lut_state_bytes,
+        entries=tuple(entries),
+        points=tuple(eval_points),
     )

@@ -578,6 +578,13 @@ whole-claim error repair costs 10.19 cells/event and leaves 14.65%. The next
 roadmap item is to learn the probe count and repair scope from page importance,
 rather than fixing one provenance policy globally.
 
+That learned provenance controller now exists. A 1.125B LUT maps importance to
+repair scope/probe count: loose -> one-probe subtile repair, normal -> two-probe
+subtile repair, strict -> whole-claim repair. It hits all 12 checked
+source-freshness rows across train/eval seeds. The next roadmap step is to feed
+importance from real wiki metadata such as trust, citation density, recency, or
+query frequency instead of assigning the mode externally.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

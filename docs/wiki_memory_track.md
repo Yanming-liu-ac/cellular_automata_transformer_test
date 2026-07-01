@@ -392,6 +392,17 @@ provenance freshness: a local knob over probe count and tile repair scope,
 not a forced whole-claim repair. It also shows the limit: once provenance needs
 near-whole-claim freshness, claim-level repair is still competitive.
 
+The first learned provenance controller maps page importance to that knob. It
+uses a 1.125B LUT over three importance modes and six candidate policies.
+`loose` pages target at most 46.00% stale sources and choose
+`subtile_error_repair`; `normal` pages target 31.00% and choose
+`subtile_probe2_repair`; `strict` pages target 15.00% and choose
+`claim_error_repair`. Across train/eval seeds 2601, 2701, 2801, and 2901, all
+12 rows meet their source-freshness targets. Mean behavior follows the intended
+hardware mode split: loose costs about 6.8-7.0 touch/event, normal costs about
+9.2-9.7, and strict costs about 9.9-10.2. This turns provenance freshness into
+a small local policy output rather than a globally fixed repair rule.
+
 ## Kill Criteria
 
 This track is not useful if:

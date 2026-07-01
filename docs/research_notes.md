@@ -549,6 +549,15 @@ The result is not "subtiles dominate." It is more precise: subtile repair gives
 a local provenance-freshness knob for ordinary pages, while near-complete
 freshness still needs either whole-claim repair or a stronger learned probe.
 
+The learned subtile controller is the first version of that stronger probe
+policy. It maps page importance to a repair policy id with a 1.125B LUT. Loose
+pages choose one-probe subtile repair and meet a 46% stale-source target.
+Normal pages choose two-probe subtile repair and meet a 31% target. Strict
+pages choose whole-claim repair and meet a 15% target. Across four seeds the
+controller has zero target failures. This is a concrete CA-chip control surface:
+importance metadata can directly select provenance freshness without changing
+the answer path.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
