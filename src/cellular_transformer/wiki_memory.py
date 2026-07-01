@@ -1430,6 +1430,72 @@ class CAWikiCellTextTraceGuardResult:
 
 
 @dataclass(frozen=True)
+class CAWikiCellMultiFieldTraceLUTEntry:
+    """Multi-field text audit buckets mapped to importance."""
+
+    weighted_error_bucket: int
+    core_conflict_bucket: int
+    weighted_stale_bucket: int
+    parser_miss_bucket: int
+    chosen_importance: str
+    training_count: int
+
+
+@dataclass(frozen=True)
+class CAWikiCellMultiFieldTracePoint:
+    """Evaluation point for multi-field text-source wiki traces."""
+
+    eval_seed: int
+    claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    parser_misread_rate: float
+    parser_drop_rate: float
+    local_signal_bits_per_claim: int
+    accuracy: float
+    strict_precision: float
+    strict_recall: float
+    over_strict_rate: float
+    under_strict_rate: float
+    loose_rate: float
+    normal_rate: float
+    strict_rate: float
+    mean_source_text_edits_per_claim: float
+    mean_clean_weighted_error_per_claim: float
+    mean_observed_weighted_error_per_claim: float
+    mean_observed_core_conflicts_per_claim: float
+    mean_observed_weighted_stale_per_claim: float
+    mean_parser_misses_per_claim: float
+    estimated_touch_per_event: float
+    target_met: bool
+
+
+@dataclass(frozen=True)
+class CAWikiCellMultiFieldTraceResult:
+    """Multi-field text-source compiled wiki trace -> importance."""
+
+    claim_count: int
+    train_claim_count: int
+    query_events: int
+    update_events: int
+    compile_events: int
+    parser_misread_rate: float
+    parser_drop_rate: float
+    local_signal_bits_per_claim: int
+    field_count: int
+    classifier_lut_bytes: float
+    repair_lut_bytes: float
+    under_importance_weight: float
+    over_importance_weight: float
+    train_seeds: Tuple[int, ...]
+    eval_seeds: Tuple[int, ...]
+    importance_modes: Tuple[str, ...]
+    entries: Tuple[CAWikiCellMultiFieldTraceLUTEntry, ...]
+    points: Tuple[CAWikiCellMultiFieldTracePoint, ...]
+
+
+@dataclass(frozen=True)
 class _RouteResult:
     found: bool
     cells_read: int
@@ -6190,6 +6256,14 @@ def _ca_wiki_majority_value(values: np.ndarray) -> int:
 
 
 _CA_WIKI_STATUS_TERMS = ("draft", "reviewed", "active", "deprecated")
+_CA_WIKI_MULTI_FIELD_NAMES = ("status", "priority", "region", "owner")
+_CA_WIKI_MULTI_FIELD_TERMS = (
+    _CA_WIKI_STATUS_TERMS,
+    ("low", "normal", "high", "critical"),
+    ("na", "eu", "apac", "latam"),
+    ("alpha", "beta", "gamma", "delta"),
+)
+_CA_WIKI_MULTI_FIELD_WEIGHTS = np.array([3.0, 2.0, 0.75, 0.5], dtype=np.float64)
 
 
 def _ca_wiki_source_status_text(claim: int, source: int, value: int, revision: int) -> str:
@@ -6232,6 +6306,106 @@ def _ca_wiki_parse_status_text_noisy(
         ]
         return int(rng.choice(alternatives)), 0
     return clean_value, 0
+
+
+def _ca_wiki_source_multifield_text(
+    claim: int,
+    source: int,
+    values: np.ndarray,
+    revision: int,
+) -> str:
+    fields = [
+        f"{name}={terms[int(values[index])]}"
+        for index, (name, terms) in enumerate(
+            zip(_CA_WIKI_MULTI_FIELD_NAMES, _CA_WIKI_MULTI_FIELD_TERMS)
+        )
+    ]
+    return (
+        f"claim-{claim:04d} source-{source:02d} "
+        + " ".join(fields)
+        + f"; revision={revision}"
+    )
+
+
+def _ca_wiki_summary_multifield_text(
+    claim: int,
+    values: np.ndarray,
+    revision: int,
+) -> str:
+    fields = [
+        f"{name} is {terms[int(values[index])]}"
+        for index, (name, terms) in enumerate(
+            zip(_CA_WIKI_MULTI_FIELD_NAMES, _CA_WIKI_MULTI_FIELD_TERMS)
+        )
+    ]
+    return f"- claim-{claim:04d}: " + "; ".join(fields) + f" (compiled rev {revision})"
+
+
+def _ca_wiki_parse_multifield_text(text: str) -> np.ndarray:
+    values = []
+    for name, terms in zip(_CA_WIKI_MULTI_FIELD_NAMES, _CA_WIKI_MULTI_FIELD_TERMS):
+        parsed = -1
+        for index, term in enumerate(terms):
+            if f"{name}={term}" in text or f"{name} is {term}" in text:
+                parsed = index
+                break
+        values.append(parsed)
+    return np.array(values, dtype=np.int64)
+
+
+def _ca_wiki_parse_multifield_text_noisy(
+    text: str,
+    rng: np.random.Generator,
+    parser_misread_rate: float,
+    parser_drop_rate: float,
+) -> Tuple[np.ndarray, int]:
+    clean_values = _ca_wiki_parse_multifield_text(text)
+    observed = clean_values.copy()
+    miss_count = 0
+    for field_index, terms in enumerate(_CA_WIKI_MULTI_FIELD_TERMS):
+        if clean_values[field_index] < 0 or rng.random() < parser_drop_rate:
+            observed[field_index] = -1
+            miss_count += 1
+        elif rng.random() < parser_misread_rate:
+            alternatives = [
+                value
+                for value in range(len(terms))
+                if value != clean_values[field_index]
+            ]
+            observed[field_index] = int(rng.choice(alternatives))
+    return observed, miss_count
+
+
+def _ca_wiki_multifield_majority(values: np.ndarray) -> np.ndarray:
+    majority_values = []
+    for field_index, terms in enumerate(_CA_WIKI_MULTI_FIELD_TERMS):
+        majority_values.append(
+            int(np.argmax(np.bincount(values[:, field_index], minlength=len(terms))))
+        )
+    return np.array(majority_values, dtype=np.int64)
+
+
+def _ca_wiki_multifield_weighted_diff(left: np.ndarray, right: np.ndarray) -> float:
+    mismatch = (left < 0) | (right < 0) | (left != right)
+    return float(np.sum(_CA_WIKI_MULTI_FIELD_WEIGHTS[mismatch]))
+
+
+def _ca_wiki_multifield_core_conflict(values: np.ndarray, truth: np.ndarray) -> int:
+    core_values = values[:, :2]
+    if np.any((core_values < 0) | (core_values != truth[:2])):
+        return 1
+    for field_index in range(2):
+        if len(set(int(value) for value in core_values[:, field_index])) > 1:
+            return 1
+    return 0
+
+
+def _ca_wiki_weighted_signal_bucket(values: np.ndarray) -> np.ndarray:
+    buckets = np.zeros(values.shape[0], dtype=np.int64)
+    buckets[values >= 2.0] = 1
+    buckets[values >= 6.0] = 2
+    buckets[values >= 12.0] = 3
+    return buckets
 
 
 def _ca_wiki_compiled_trace_labels(
@@ -6704,6 +6878,250 @@ def _ca_wiki_text_noisy_parser_trace_labels(
         observed_retrieval_error_count,
         observed_contradiction_probe_count,
         observed_stale_probe_count,
+        parser_miss_count,
+    )
+
+
+def _ca_wiki_multifield_text_trace_labels(
+    features: np.ndarray,
+    seed: int,
+    query_events: int,
+    update_events: int,
+    compile_events: int,
+    parser_misread_rate: float,
+    parser_drop_rate: float,
+    sources_per_claim: int = 16,
+    audit_probes: int = 2,
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """Multi-field text trace with weighted field errors and parser confidence."""
+
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    if not 0.0 <= parser_misread_rate <= 1.0:
+        raise ValueError("parser_misread_rate must be in [0, 1]")
+    if not 0.0 <= parser_drop_rate <= 1.0:
+        raise ValueError("parser_drop_rate must be in [0, 1]")
+    if sources_per_claim <= 0:
+        raise ValueError("sources_per_claim must be positive")
+    if audit_probes <= 0:
+        raise ValueError("audit_probes must be positive")
+    claim_count = int(features.shape[0])
+    if claim_count <= 0:
+        raise ValueError("features must contain at least one claim")
+
+    rng = np.random.default_rng(seed)
+    trust = features[:, 0].astype(np.float64)
+    citations = features[:, 1].astype(np.float64)
+    recency = features[:, 2].astype(np.float64)
+    query_bucket = features[:, 3].astype(np.float64)
+    query_weights = 1.0 + 2.0 * query_bucket + 0.75 * recency + 0.35 * citations
+    query_weights /= float(np.sum(query_weights))
+    update_weights = 0.5 + 1.8 * recency + 0.35 * query_bucket
+    update_weights /= float(np.sum(update_weights))
+
+    field_count = len(_CA_WIKI_MULTI_FIELD_TERMS)
+    truth_values = np.stack(
+        [
+            rng.integers(0, len(terms), size=claim_count)
+            for terms in _CA_WIKI_MULTI_FIELD_TERMS
+        ],
+        axis=1,
+    ).astype(np.int64)
+    claim_revision = np.zeros(claim_count, dtype=np.int64)
+    source_revision = np.zeros((claim_count, sources_per_claim), dtype=np.int64)
+    source_text = np.empty((claim_count, sources_per_claim), dtype=object)
+    summary_text = np.empty(claim_count, dtype=object)
+    for claim in range(claim_count):
+        for source in range(sources_per_claim):
+            source_text[claim, source] = _ca_wiki_source_multifield_text(
+                claim,
+                source,
+                truth_values[claim],
+                0,
+            )
+        summary_text[claim] = _ca_wiki_summary_multifield_text(
+            claim,
+            truth_values[claim],
+            0,
+        )
+
+    dirty_count = np.zeros(claim_count, dtype=np.int64)
+    query_count = np.zeros(claim_count, dtype=np.int64)
+    update_count = np.zeros(claim_count, dtype=np.int64)
+    compile_count = np.zeros(claim_count, dtype=np.int64)
+    text_edit_count = np.zeros(claim_count, dtype=np.int64)
+    clean_weighted_error = np.zeros(claim_count, dtype=np.float64)
+    clean_core_conflict = np.zeros(claim_count, dtype=np.int64)
+    clean_weighted_stale = np.zeros(claim_count, dtype=np.float64)
+    observed_weighted_error = np.zeros(claim_count, dtype=np.float64)
+    observed_core_conflict = np.zeros(claim_count, dtype=np.int64)
+    observed_weighted_stale = np.zeros(claim_count, dtype=np.float64)
+    parser_miss_count = np.zeros(claim_count, dtype=np.int64)
+
+    events = np.concatenate(
+        (
+            np.zeros(int(query_events), dtype=np.int8),
+            np.ones(int(update_events), dtype=np.int8),
+            np.full(int(compile_events), 2, dtype=np.int8),
+        )
+    )
+    rng.shuffle(events)
+    probe_count = min(audit_probes, sources_per_claim)
+    for event in events:
+        if event == 1:
+            claim = int(rng.choice(claim_count, p=update_weights))
+            update_count[claim] += 1
+            dirty_count[claim] += 1
+            changed = False
+            for field_index, probability in enumerate((0.42, 0.34, 0.16, 0.10)):
+                if rng.random() < probability:
+                    terms = _CA_WIKI_MULTI_FIELD_TERMS[field_index]
+                    truth_values[claim, field_index] = int(
+                        (truth_values[claim, field_index] + rng.integers(1, len(terms)))
+                        % len(terms)
+                    )
+                    changed = True
+            if not changed:
+                field_index = int(rng.choice(field_count, p=[0.38, 0.32, 0.18, 0.12]))
+                terms = _CA_WIKI_MULTI_FIELD_TERMS[field_index]
+                truth_values[claim, field_index] = int(
+                    (truth_values[claim, field_index] + rng.integers(1, len(terms)))
+                    % len(terms)
+                )
+            claim_revision[claim] += 1
+            fanout = int(rng.integers(1, min(4, sources_per_claim) + 1))
+            sources = rng.choice(sources_per_claim, size=fanout, replace=False)
+            for source in sources:
+                values = truth_values[claim].copy()
+                for field_index, terms in enumerate(_CA_WIKI_MULTI_FIELD_TERMS):
+                    corrupt_prob = 0.08 + 0.08 * (3.0 - trust[claim]) / 3.0 + 0.02 * field_index
+                    if rng.random() < corrupt_prob:
+                        alternatives = [
+                            value
+                            for value in range(len(terms))
+                            if value != truth_values[claim, field_index]
+                        ]
+                        values[field_index] = int(rng.choice(alternatives))
+                source_revision[claim, source] += 1
+                source_text[claim, source] = _ca_wiki_source_multifield_text(
+                    claim,
+                    int(source),
+                    values,
+                    int(source_revision[claim, source]),
+                )
+                text_edit_count[claim] += 1
+        elif event == 2:
+            compile_weights = dirty_count.astype(np.float64) + 0.1 + 0.2 * recency + 0.1 * query_bucket
+            compile_weights /= float(np.sum(compile_weights))
+            claim = int(rng.choice(claim_count, p=compile_weights))
+            values = np.array(
+                [_ca_wiki_parse_multifield_text(text) for text in source_text[claim]],
+                dtype=np.int64,
+            )
+            summary_values = _ca_wiki_multifield_majority(values)
+            summary_text[claim] = _ca_wiki_summary_multifield_text(
+                claim,
+                summary_values,
+                int(claim_revision[claim]),
+            )
+            dirty_count[claim] = 0
+            compile_count[claim] += 1
+        else:
+            claim = int(rng.choice(claim_count, p=query_weights))
+            query_count[claim] += 1
+            clean_summary = _ca_wiki_parse_multifield_text(str(summary_text[claim]))
+            clean_weighted_error[claim] += _ca_wiki_multifield_weighted_diff(
+                clean_summary,
+                truth_values[claim],
+            )
+            sources = rng.choice(sources_per_claim, size=probe_count, replace=False)
+            clean_values = np.array(
+                [
+                    _ca_wiki_parse_multifield_text(str(source_text[claim, source]))
+                    for source in sources
+                ],
+                dtype=np.int64,
+            )
+            clean_weighted_stale[claim] += sum(
+                _ca_wiki_multifield_weighted_diff(values, clean_summary)
+                for values in clean_values
+            )
+            clean_core_conflict[claim] += _ca_wiki_multifield_core_conflict(
+                clean_values,
+                truth_values[claim],
+            )
+
+            observed_summary, miss = _ca_wiki_parse_multifield_text_noisy(
+                str(summary_text[claim]),
+                rng,
+                parser_misread_rate,
+                parser_drop_rate,
+            )
+            parser_miss_count[claim] += miss
+            observed_weighted_error[claim] += _ca_wiki_multifield_weighted_diff(
+                observed_summary,
+                truth_values[claim],
+            )
+            observed_values = []
+            for source in sources:
+                observed_value, miss = _ca_wiki_parse_multifield_text_noisy(
+                    str(source_text[claim, source]),
+                    rng,
+                    parser_misread_rate,
+                    parser_drop_rate,
+                )
+                parser_miss_count[claim] += miss
+                observed_values.append(observed_value)
+            observed_values_array = np.array(observed_values, dtype=np.int64)
+            observed_weighted_stale[claim] += sum(
+                _ca_wiki_multifield_weighted_diff(values, observed_summary)
+                for values in observed_values_array
+            )
+            observed_core_conflict[claim] += _ca_wiki_multifield_core_conflict(
+                observed_values_array,
+                truth_values[claim],
+            )
+
+    risk = (
+        2.2 * clean_weighted_error
+        + 1.6 * clean_core_conflict.astype(np.float64)
+        + 0.7 * clean_weighted_stale
+        + 0.45 * update_count.astype(np.float64)
+        + 1.4 * trust
+        + 0.7 * citations
+    )
+    labels = np.zeros(claim_count, dtype=np.int64)
+    labels[risk >= 8.0] = 1
+    labels[risk >= 18.0] = 2
+    return (
+        labels,
+        query_count,
+        update_count,
+        compile_count,
+        text_edit_count,
+        clean_weighted_error,
+        clean_core_conflict,
+        clean_weighted_stale,
+        observed_weighted_error,
+        observed_core_conflict,
+        observed_weighted_stale,
         parser_miss_count,
     )
 
@@ -8286,5 +8704,270 @@ def run_ca_wiki_cell_text_trace_guard_sweep(
         eval_seeds=clean_eval_seeds,
         importance_modes=modes,
         variants=("baseline_3d", "safe_miss_guard", "miss_lut4d"),
+        points=tuple(eval_points),
+    )
+
+
+def run_ca_wiki_cell_multifield_trace_sweep(
+    *,
+    claim_count: int = 1024,
+    train_claim_count: int = 4096,
+    query_events: int = 4096,
+    update_events: int = 2048,
+    compile_events: int = 512,
+    parser_misread_rate: float = 0.06,
+    parser_drop_rate: float = 0.03,
+    train_seeds: Tuple[int, ...] = (5701, 5801, 5901),
+    eval_seeds: Tuple[int, ...] = (6001, 6101, 6201, 6301),
+    under_importance_weight: float = 5.0,
+    over_importance_weight: float = 0.75,
+    min_accuracy: float = 0.78,
+    min_strict_recall: float = 0.97,
+    max_under_strict_rate: float = 0.025,
+) -> CAWikiCellMultiFieldTraceResult:
+    """Learn importance from multi-field text snippets and parser confidence."""
+
+    if claim_count <= 0:
+        raise ValueError("claim_count must be positive")
+    if train_claim_count <= 0:
+        raise ValueError("train_claim_count must be positive")
+    if query_events < 0:
+        raise ValueError("query_events must be non-negative")
+    if update_events < 0:
+        raise ValueError("update_events must be non-negative")
+    if compile_events < 0:
+        raise ValueError("compile_events must be non-negative")
+    if not 0.0 <= parser_misread_rate <= 1.0:
+        raise ValueError("parser_misread_rate must be in [0, 1]")
+    if not 0.0 <= parser_drop_rate <= 1.0:
+        raise ValueError("parser_drop_rate must be in [0, 1]")
+    if under_importance_weight < 0.0:
+        raise ValueError("under_importance_weight must be non-negative")
+    if over_importance_weight < 0.0:
+        raise ValueError("over_importance_weight must be non-negative")
+    if not 0.0 <= min_accuracy <= 1.0:
+        raise ValueError("min_accuracy must be in [0, 1]")
+    if not 0.0 <= min_strict_recall <= 1.0:
+        raise ValueError("min_strict_recall must be in [0, 1]")
+    if not 0.0 <= max_under_strict_rate <= 1.0:
+        raise ValueError("max_under_strict_rate must be in [0, 1]")
+    clean_train_seeds = tuple(dict.fromkeys(int(value) for value in train_seeds))
+    clean_eval_seeds = tuple(dict.fromkeys(int(value) for value in eval_seeds))
+    if len(clean_train_seeds) == 0:
+        raise ValueError("train_seeds must not be empty")
+    if len(clean_eval_seeds) == 0:
+        raise ValueError("eval_seeds must not be empty")
+
+    modes = ("loose", "normal", "strict")
+    mode_count = len(modes)
+    bucket_count = 4
+    counts = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, mode_count),
+        dtype=np.int64,
+    )
+    train_event_scale = train_claim_count / float(claim_count)
+    train_query_events = int(round(query_events * train_event_scale))
+    train_update_events = int(round(update_events * train_event_scale))
+    train_compile_events = int(round(compile_events * train_event_scale))
+    for seed in clean_train_seeds:
+        features = _ca_wiki_metadata_features(train_claim_count, seed)
+        trace = _ca_wiki_multifield_text_trace_labels(
+            features,
+            seed + 83,
+            train_query_events,
+            train_update_events,
+            train_compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+        )
+        labels = trace[0]
+        weighted_error_bucket = _ca_wiki_weighted_signal_bucket(trace[8])
+        core_conflict_bucket = _ca_wiki_count_bucket(trace[9])
+        weighted_stale_bucket = _ca_wiki_weighted_signal_bucket(trace[10])
+        parser_miss_bucket = _ca_wiki_count_bucket(trace[11])
+        for buckets, label in zip(
+            zip(
+                weighted_error_bucket,
+                core_conflict_bucket,
+                weighted_stale_bucket,
+                parser_miss_bucket,
+            ),
+            labels,
+        ):
+            counts[
+                int(buckets[0]),
+                int(buckets[1]),
+                int(buckets[2]),
+                int(buckets[3]),
+                int(label),
+            ] += 1
+
+    lut = np.zeros((bucket_count, bucket_count, bucket_count, bucket_count), dtype=np.int64)
+    entries: List[CAWikiCellMultiFieldTraceLUTEntry] = []
+    for weighted_error_bucket in range(bucket_count):
+        for core_conflict_bucket in range(bucket_count):
+            for weighted_stale_bucket in range(bucket_count):
+                for parser_miss_bucket in range(bucket_count):
+                    bucket_counts = counts[
+                        weighted_error_bucket,
+                        core_conflict_bucket,
+                        weighted_stale_bucket,
+                        parser_miss_bucket,
+                    ]
+                    training_count = int(np.sum(bucket_counts))
+                    losses = []
+                    for predicted in range(mode_count):
+                        loss = 0.0
+                        for actual, count in enumerate(bucket_counts):
+                            if predicted < actual:
+                                loss += (actual - predicted) * under_importance_weight * count
+                            elif predicted > actual:
+                                loss += (predicted - actual) * over_importance_weight * count
+                        losses.append(loss)
+                    if training_count:
+                        chosen_index = int(np.argmin(losses))
+                    else:
+                        fallback_score = (
+                            2 * weighted_error_bucket
+                            + core_conflict_bucket
+                            + weighted_stale_bucket
+                        )
+                        chosen_index = 2 if fallback_score >= 4 else 1 if fallback_score >= 2 else 0
+                    lut[
+                        weighted_error_bucket,
+                        core_conflict_bucket,
+                        weighted_stale_bucket,
+                        parser_miss_bucket,
+                    ] = chosen_index
+                    entries.append(
+                        CAWikiCellMultiFieldTraceLUTEntry(
+                            weighted_error_bucket=weighted_error_bucket,
+                            core_conflict_bucket=core_conflict_bucket,
+                            weighted_stale_bucket=weighted_stale_bucket,
+                            parser_miss_bucket=parser_miss_bucket,
+                            chosen_importance=modes[chosen_index],
+                            training_count=training_count,
+                        )
+                    )
+
+    provenance = run_ca_wiki_cell_learned_subtile_repair_sweep()
+    mode_touch = {}
+    for mode in modes:
+        points_for_mode = [point for point in provenance.points if point.importance == mode]
+        mode_touch[mode] = (
+            sum(point.cells_touched_per_event for point in points_for_mode)
+            / float(len(points_for_mode))
+            if points_for_mode
+            else 0.0
+        )
+
+    classifier_bits = bucket_count**4 * max(1, int(np.ceil(np.log2(mode_count))))
+    classifier_lut_bytes = classifier_bits / 8.0
+    eval_points: List[CAWikiCellMultiFieldTracePoint] = []
+    for seed in clean_eval_seeds:
+        features = _ca_wiki_metadata_features(claim_count, seed)
+        trace = _ca_wiki_multifield_text_trace_labels(
+            features,
+            seed + 83,
+            query_events,
+            update_events,
+            compile_events,
+            parser_misread_rate,
+            parser_drop_rate,
+        )
+        teacher = trace[0]
+        weighted_error_bucket = _ca_wiki_weighted_signal_bucket(trace[8])
+        core_conflict_bucket = _ca_wiki_count_bucket(trace[9])
+        weighted_stale_bucket = _ca_wiki_weighted_signal_bucket(trace[10])
+        parser_miss_bucket = _ca_wiki_count_bucket(trace[11])
+        predicted = np.array(
+            [
+                lut[
+                    int(error_bucket),
+                    int(conflict_bucket),
+                    int(stale_bucket),
+                    int(miss_bucket),
+                ]
+                for error_bucket, conflict_bucket, stale_bucket, miss_bucket in zip(
+                    weighted_error_bucket,
+                    core_conflict_bucket,
+                    weighted_stale_bucket,
+                    parser_miss_bucket,
+                )
+            ],
+            dtype=np.int64,
+        )
+        correct = int(np.sum(predicted == teacher))
+        strict_true = teacher == 2
+        strict_pred = predicted == 2
+        strict_tp = int(np.sum(strict_true & strict_pred))
+        strict_pred_count = int(np.sum(strict_pred))
+        strict_true_count = int(np.sum(strict_true))
+        strict_precision = (
+            strict_tp / float(strict_pred_count) if strict_pred_count else 1.0
+        )
+        strict_recall = strict_tp / float(strict_true_count) if strict_true_count else 1.0
+        over_strict = int(np.sum(predicted > teacher))
+        under_strict = int(np.sum(predicted < teacher))
+        mode_rates = [
+            int(np.sum(predicted == mode_index)) / float(claim_count)
+            for mode_index in range(mode_count)
+        ]
+        estimated_touch = sum(
+            mode_rates[index] * mode_touch[modes[index]] for index in range(mode_count)
+        )
+        accuracy = correct / float(claim_count)
+        under_strict_rate = under_strict / float(claim_count)
+        eval_points.append(
+            CAWikiCellMultiFieldTracePoint(
+                eval_seed=seed,
+                claim_count=claim_count,
+                query_events=query_events,
+                update_events=update_events,
+                compile_events=compile_events,
+                parser_misread_rate=parser_misread_rate,
+                parser_drop_rate=parser_drop_rate,
+                local_signal_bits_per_claim=8,
+                accuracy=accuracy,
+                strict_precision=strict_precision,
+                strict_recall=strict_recall,
+                over_strict_rate=over_strict / float(claim_count),
+                under_strict_rate=under_strict_rate,
+                loose_rate=mode_rates[0],
+                normal_rate=mode_rates[1],
+                strict_rate=mode_rates[2],
+                mean_source_text_edits_per_claim=float(np.mean(trace[4])),
+                mean_clean_weighted_error_per_claim=float(np.mean(trace[5])),
+                mean_observed_weighted_error_per_claim=float(np.mean(trace[8])),
+                mean_observed_core_conflicts_per_claim=float(np.mean(trace[9])),
+                mean_observed_weighted_stale_per_claim=float(np.mean(trace[10])),
+                mean_parser_misses_per_claim=float(np.mean(trace[11])),
+                estimated_touch_per_event=estimated_touch,
+                target_met=(
+                    accuracy >= min_accuracy
+                    and strict_recall >= min_strict_recall
+                    and under_strict_rate <= max_under_strict_rate
+                ),
+            )
+        )
+
+    return CAWikiCellMultiFieldTraceResult(
+        claim_count=claim_count,
+        train_claim_count=train_claim_count,
+        query_events=query_events,
+        update_events=update_events,
+        compile_events=compile_events,
+        parser_misread_rate=parser_misread_rate,
+        parser_drop_rate=parser_drop_rate,
+        local_signal_bits_per_claim=8,
+        field_count=len(_CA_WIKI_MULTI_FIELD_TERMS),
+        classifier_lut_bytes=classifier_lut_bytes,
+        repair_lut_bytes=provenance.lut_state_bytes,
+        under_importance_weight=under_importance_weight,
+        over_importance_weight=over_importance_weight,
+        train_seeds=clean_train_seeds,
+        eval_seeds=clean_eval_seeds,
+        importance_modes=modes,
+        entries=tuple(entries),
         points=tuple(eval_points),
     )

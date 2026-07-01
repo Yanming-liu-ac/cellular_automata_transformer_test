@@ -640,6 +640,13 @@ to test richer parser confidence on multi-field snippets or real markdown
 pages, then decide whether the extra feature should be a fourth LUT dimension,
 a separate confidence gate, or a compiler-side repair trigger.
 
+The multi-field snippet version now covers the first half of that item. It
+uses four fields, field-specific importance weights, source agreement, and
+parser-miss buckets. The held-out result keeps strict recall above 97.5% and
+under-strict below 2% with a 64B LUT. The remaining roadmap item is now
+text realism: generated multi-sentence snippets or real markdown pages with
+ambiguous field mentions, missing fields, and conflicting source paragraphs.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

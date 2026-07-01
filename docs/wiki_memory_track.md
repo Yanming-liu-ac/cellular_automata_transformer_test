@@ -489,6 +489,19 @@ to 8.84 cells/event, and mean strict recall remains 98.05%. Under-strict rises
 slightly from 4.10% to 4.49%, so this is not a free win; it is a useful
 state/quality knob for parser-noisy compiled wiki pages.
 
+The multi-field text trace is the next step toward real wiki snippets. Each
+source cell now carries four fields: status, priority, region, and owner. The
+teacher weights status and priority as core fields, while region and owner are
+weaker metadata. Under the same 6% misread and 3% drop parser noise, the CA
+controller uses four 2-bit local buckets: observed weighted error, core-field
+conflict, observed weighted stale/source disagreement, and parser misses. The
+classifier table is 64.00B and the provenance table remains 1.125B. On four
+held-out traces, accuracy is 79.10-79.69%, strict recall is 97.57-98.96%,
+under-strict rate is 1.27-1.95%, and estimated provenance touch is
+9.08-9.10 cells/event. This is a better abstraction than the single-status
+demo: the local state now distinguishes field importance and source agreement
+without adding a dense text model to the CA fabric.
+
 ## Kill Criteria
 
 This track is not useful if:

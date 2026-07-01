@@ -97,6 +97,7 @@ python experiments/ca_wiki_cell_compiled_trace_importance_demo.py
 python experiments/ca_wiki_cell_text_trace_importance_demo.py
 python experiments/ca_wiki_cell_text_trace_noise_demo.py
 python experiments/ca_wiki_cell_text_trace_guard_demo.py
+python experiments/ca_wiki_cell_multifield_trace_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -165,6 +166,8 @@ The first experiments compare:
   labels from noisy parser-observed local counters;
 - parser-miss guard tradeoff sweeps comparing the 16B baseline, a 32B guard,
   and a 64B miss-aware LUT under the same noisy text trace;
+- multi-field text trace controllers with status/priority/region/owner fields,
+  field-importance weights, source agreement, and parser confidence buckets;
 - wiki-memory scaling sweeps comparing hierarchical CA routing with flat
   page-summary scans;
 - wiki-memory density sweeps that expose summary collision pressure as

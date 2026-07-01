@@ -1497,6 +1497,22 @@ The hardware implication is simple: the first parser-confidence feature is
 worth at most tens of bytes of control SRAM in this toy setup, not a dense
 model path.
 
+The multi-field text controller keeps the control SRAM in the same range while
+making the input more realistic. Four 2-bit local buckets are used:
+
+- weighted observed retrieval error across status/priority/region/owner;
+- core-field conflict for status and priority;
+- weighted stale/source-disagreement score;
+- parser-miss count.
+
+This is a 64.00B classifier LUT plus the existing 1.125B provenance repair
+table. With 6% misread and 3% drop parser noise, held-out strict recall is
+97.57-98.96%, under-strict rate is 1.27-1.95%, and estimated provenance traffic
+is 9.08-9.10 touched cells/event. Compared with the single-field parser-noise
+controller, the multi-field signal spends more strict repair traffic because
+there are more ways for a source to be partially stale, but under-strict risk is
+lower and the controller has a clearer hardware interpretation.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

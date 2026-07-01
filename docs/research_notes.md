@@ -625,6 +625,15 @@ increase in under-strict rate, from 4.10% to 4.49%. This is the right kind of
 knob for hardware: spend 48 extra classifier bytes when parser noise is high,
 otherwise keep the 16B baseline.
 
+The multi-field trace makes the parser-confidence signal less artificial. Each
+snippet has status, priority, region, and owner. Status and priority carry most
+of the label weight, while region and owner behave more like weak metadata. A
+64B LUT over weighted observed error, core-field conflict, weighted stale
+source disagreement, and parser misses reaches 97.57-98.96% strict recall and
+1.27-1.95% under-strict rate. This is the clearest CA-wiki result so far:
+field-level compiler output can become low-bit local control state without
+requiring open-ended semantic inference inside the cell fabric.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed
