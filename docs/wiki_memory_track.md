@@ -108,32 +108,36 @@ Baselines:
 
 The first NumPy prototype is `experiments/wiki_memory_demo.py`. It builds a
 256-page synthetic wiki with four facts per page, four links per page, 16-page
-groups, and 4x256x4-bit page/group summaries. Queries mix single-hop fact reads
-and two-hop link reads. Updates now change the source-of-truth first, then mark
-only the local page and group dirty; refresh or error-book repair is required
-before the routed memory cells see the new key or revised value. Half of the
-updates are value revisions, and 25% of eligible queries replay an error-book
-probe.
+groups, and 4x256x4-bit page/group summaries. It now adds 32 contradiction
+clusters with three source pages each. Queries mix single-hop fact reads, two-hop
+link reads, and replicated-claim probes. Updates change the source-of-truth
+first, then mark local pages and groups dirty; refresh or error-book repair is
+required before routed memory cells see the new key, revised value, or
+multi-source claim update. Half of non-cluster updates are value revisions, 30%
+of updates hit contradiction clusters, and 25% of eligible queries replay an
+error-book probe.
 
 The exact-update baseline refreshes page and group summaries after every fact
-edit. It reaches 100.0% recall, but writes about 18,460 score-equivalent cells
+edit. It reaches 100.0% recall, but writes about 20,255 score-equivalent cells
 per update. The conservative triggered policy, `trigger16_age16`, refreshes
 when 16 pages are dirty or the summary is 16 update steps old. On the same
-event stream it reaches 96.48% overall recall, 93.81% recall on recently updated
-pages, and 3.52% stale misses while writing about 11,418 cells/update. Adding
-error-book repair raises recall to 97.66%, repeated failed-probe recall to
-99.21%, and reduces value-stale misses to 0.39%, at about 11,910 cells/update.
-Reads stay about 357 cells/query versus 1,024 for a flat exact page-fact scan, a
-65.1% read reduction. With no refresh, recall drops to 56.45% and stale misses
-rise to 43.55%.
+event stream it reaches 94.73% overall recall, 92.08% recent-update recall, and
+90.59% replicated-claim recall while writing about 14,466 cells/update. Adding
+page-local error-book repair raises overall recall to 97.66%, repeated
+failed-probe recall to 98.54%, and replicated-claim recall to 95.37%, at about
+14,739 cells/update. Adding cluster repair makes every checked source in the
+claim cluster consistent (`clu_ok=100.0%`) at about 14,914 cells/update, versus
+93.06% for page-local repair. Reads stay about 356-357 cells/query versus 1,024
+for a flat exact page-fact scan, a 65% read reduction. With no refresh, recall
+drops to 50.39% and stale misses rise to 49.61%.
 
 This is not yet a learned memory system, but it establishes the first measurable
 wiki-memory claim: local dirty/age summary refresh can keep mutable facts mostly
 queryable while avoiding full-wiki scans. The error-book repair path now has a
-real workload: it recovers all 12 repaired probes immediately and improves
-repeated-probe recall from 90.70% to 99.21%. The next step is to make
-contradiction clusters explicit instead of treating each value revision as an
-independent fact edit.
+real workload: page repair improves answer recall, while cluster repair enforces
+multi-source consistency across replicated claims. The next step is to compare
+this routed CA fabric with a flat vector/RAG-style retrieval proxy on the same
+synthetic wiki.
 
 ## Kill Criteria
 

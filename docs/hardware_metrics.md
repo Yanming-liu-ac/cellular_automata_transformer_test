@@ -207,19 +207,21 @@ counter rather than from a global scheduler.
 For the CA wiki-memory path, track separate read and update costs because the
 goal is not only retrieval speed. Mutable knowledge must be cheap to edit. The
 first prototype uses 256 pages, four facts per page, four links per page,
-16-page groups, and 4x256x4-bit summaries. It keeps about 146.5KB of page,
+16-page groups, and 4x256x4-bit summaries. It keeps about 146.7KB of page,
 group, fact, link, version, and dirty metadata.
 
-The exact-update policy reaches perfect recall but writes about 18,460
+The exact-update policy reaches perfect recall but writes about 20,255
 score-equivalent cells per fact edit. The `trigger16_age16` local policy keeps
-96.48% recall with 3.52% stale misses and writes about 11,418 cells/update.
-Adding error-book repair raises recall to 97.66%, repeated-probe recall to
-99.21%, and value-stale misses fall to 0.39% at about 11,910 cells/update.
-Reads stay about 357 cells/query, compared with 1,024 exact fact cells for a
-flat scan. The no-refresh control proves the failure mode: writes fall to four
-metadata cells/update, but stale misses climb to 43.55%. This makes stale miss
-rate, value-miss rate, and error-probe recall the main safety metrics for any
-more aggressive write-saving policy.
+94.73% recall with 5.27% stale misses and writes about 14,466 cells/update.
+Adding page-local error-book repair raises recall to 97.66% and repeated-probe
+recall to 98.54% at about 14,739 cells/update. Adding cluster repair costs about
+14,914 cells/update and raises checked multi-source cluster consistency to
+100.0%, versus 93.06% for page-local repair. Reads stay about 356-357
+cells/query, compared with 1,024 exact fact cells for a flat scan. The
+no-refresh control proves the failure mode: writes fall to about seven metadata
+cells/update, but stale misses climb to 49.61%. This makes stale miss rate,
+value-miss rate, error-probe recall, and cluster consistency the main safety
+metrics for any more aggressive write-saving policy.
 
 ## Retrieval-Lane Metrics
 

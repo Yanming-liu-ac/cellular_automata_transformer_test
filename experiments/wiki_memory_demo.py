@@ -28,6 +28,9 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
         f"events={result.query_events + result.update_events}, "
         f"revision_rate={result.revision_update_rate:0.2f}, "
         f"probe_rate={result.error_probe_query_rate:0.2f}, "
+        f"clusters={result.contradiction_clusters}x{result.cluster_sources}, "
+        f"cluster_update={result.cluster_update_rate:0.2f}, "
+        f"cluster_query={result.cluster_query_rate:0.2f}, "
         f"state={format_bytes(result.state_bytes)}"
     )
     headers = [
@@ -54,10 +57,15 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
         "errfix",
         "probe_q",
         "probe_r",
+        "clu_q",
+        "clu_r",
+        "clu_ok",
+        "clu_u",
+        "clu_fix",
         "prov",
     ]
-    print(" | ".join(f"{header:>11}" for header in headers))
-    print("-" * 260)
+    print(" | ".join(f"{header:>10}" for header in headers))
+    print("-" * 292)
     for point in result.points:
         row = [
             point.policy,
@@ -83,9 +91,14 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
             f"{point.error_book_recoveries}",
             f"{point.error_probe_queries}",
             fmt_pct(point.error_probe_recall),
+            f"{point.cluster_queries}",
+            fmt_pct(point.cluster_recall),
+            fmt_pct(point.cluster_consistency_rate),
+            f"{point.cluster_updates}",
+            f"{point.cluster_repair_events}",
             fmt_pct(point.provenance_precision),
         ]
-        print(" | ".join(f"{cell:>11}" for cell in row))
+        print(" | ".join(f"{cell:>10}" for cell in row))
 
     print()
     print("Interpretation:")
@@ -95,6 +108,8 @@ def print_wiki(result: WikiMemorySweepResult) -> None:
     print("- value_m catches routed pages whose stored fact value is stale.")
     print("- errfix counts failed probes that would succeed immediately after repair.")
     print("- probe_r is recall on repeated failed-query probes drawn from the error book.")
+    print("- clu_r measures replicated-claim queries across multi-source contradiction clusters.")
+    print("- clu_ok requires every source page in the claim cluster to hold the current value.")
 
 
 def main() -> None:

@@ -306,26 +306,29 @@ risk/reward optimization.
 
 The CA wiki-memory prototype turns the mutable-knowledge idea into a measured
 task. It builds a 256-page synthetic wiki with local facts, page links, 16-page
-groups, and low-bit page/group summaries. A query first scores group summaries,
-then page summaries, then reads exact facts from selected pages; a multi-hop
-query also follows page links. A fact update changes source-of-truth first,
-marks one page and group dirty, and relies on refresh or error-book repair to
-merge the new key or revised value into routable memory cells. Half of the
-updates are value revisions, so the benchmark now separates route misses from
-value-stale misses.
+groups, low-bit page/group summaries, and 32 three-source contradiction
+clusters. A query first scores group summaries, then page summaries, then reads
+exact facts from selected pages; a multi-hop query also follows page links. A
+fact update changes source-of-truth first, marks local page/group state dirty,
+and relies on refresh or error-book repair to merge the new key, revised value,
+or replicated claim value into routable memory cells. The benchmark now
+separates route misses, value-stale misses, and multi-source cluster
+consistency.
 
-The exact-update policy reaches 100.0% recall but writes about 18,460
+The exact-update policy reaches 100.0% recall but writes about 20,255
 score-equivalent cells/update because it refreshes summaries after every fact
-edit. The `trigger16_age16` policy reaches 96.48% overall recall and 93.81%
-recent-update recall with 3.52% stale misses, while cutting writes to about
-11,418 cells/update. Adding error-book repair raises overall recall to 97.66%,
-repeated failed-probe recall to 99.21%, and cuts value-stale misses to 0.39% at
-about 11,910 cells/update. Query work is about 357 cells/query versus 1,024 for
-a flat exact fact scan, a 65.1% read reduction. The no-refresh control reaches
-only 56.45% recall and 43.55% stale misses. This is the strongest evidence so
-far that CA is naturally aligned with external mutable knowledge: local state
-can remain mostly stale, as long as dirty/version pressure and error-book probes
-trigger local consolidation before route quality collapses.
+edit. The `trigger16_age16` policy reaches 94.73% overall recall and 92.08%
+recent-update recall, while cutting writes to about 14,466 cells/update. Adding
+page-local error-book repair raises overall recall to 97.66% and repeated
+failed-probe recall to 98.54% at about 14,739 cells/update. Adding cluster
+repair costs about 14,914 cells/update and forces 100.0% checked cluster
+consistency, versus 93.06% for page-local repair. Query work is about 356-357
+cells/query versus 1,024 for a flat exact fact scan, a 65% read reduction. The
+no-refresh control reaches only 50.39% recall and 49.61% stale misses. This is
+the strongest evidence so far that CA is naturally aligned with external mutable
+knowledge: local state can remain mostly stale, as long as dirty/version
+pressure, error-book probes, and cluster-local consolidation fire before route
+quality collapses.
 
 ## First Retrieval Prototype
 

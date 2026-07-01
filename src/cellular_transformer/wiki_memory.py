@@ -37,6 +37,10 @@ class WikiMemoryConfig:
     recent_update_query_rate: float = 0.45
     revision_update_rate: float = 0.50
     error_probe_query_rate: float = 0.25
+    contradiction_clusters: int = 32
+    cluster_sources: int = 3
+    cluster_update_rate: float = 0.30
+    cluster_query_rate: float = 0.25
 
     def __post_init__(self) -> None:
         if self.page_count <= 0:
@@ -73,6 +77,16 @@ class WikiMemoryConfig:
             raise ValueError("revision_update_rate must be in [0, 1]")
         if not 0.0 <= self.error_probe_query_rate <= 1.0:
             raise ValueError("error_probe_query_rate must be in [0, 1]")
+        if self.contradiction_clusters < 0:
+            raise ValueError("contradiction_clusters must be non-negative")
+        if self.cluster_sources <= 0:
+            raise ValueError("cluster_sources must be positive")
+        if self.contradiction_clusters * self.cluster_sources > self.page_count:
+            raise ValueError("cluster sources must fit in page_count")
+        if not 0.0 <= self.cluster_update_rate <= 1.0:
+            raise ValueError("cluster_update_rate must be in [0, 1]")
+        if not 0.0 <= self.cluster_query_rate <= 1.0:
+            raise ValueError("cluster_query_rate must be in [0, 1]")
 
     @property
     def group_count(self) -> int:
@@ -93,7 +107,8 @@ class WikiMemoryConfig:
         page_versions = self.page_count * 16
         links = self.page_count * self.links_per_page * 16
         fact_payload = self.page_count * self.facts_per_page * 64
-        return (dirty_bits + page_versions + links + fact_payload) / 8.0
+        cluster_links = self.contradiction_clusters * self.cluster_sources * 16
+        return (dirty_bits + page_versions + links + fact_payload + cluster_links) / 8.0
 
     @property
     def state_bytes(self) -> float:
@@ -109,6 +124,7 @@ class WikiMemoryRefreshPolicy:
     max_age: int
     refresh_on_update: bool = False
     error_book_repair: bool = False
+    cluster_repair: bool = False
 
     def __post_init__(self) -> None:
         if self.dirty_threshold <= 0:
@@ -126,6 +142,7 @@ class WikiMemoryTrialPoint:
     max_age: int
     refresh_on_update: bool
     error_book_repair: bool
+    cluster_repair: bool
     queries: int
     updates: int
     single_hop_recall: float
@@ -147,8 +164,13 @@ class WikiMemoryTrialPoint:
     error_book_recoveries: int
     error_probe_queries: int
     error_probe_recall: float
+    cluster_queries: int
+    cluster_recall: float
+    cluster_consistency_rate: float
     key_updates: int
     revision_updates: int
+    cluster_updates: int
+    cluster_repair_events: int
     dirty_pages_end: int
     state_bytes: float
 
@@ -170,6 +192,10 @@ class WikiMemorySweepResult:
     update_events: int
     revision_update_rate: float
     error_probe_query_rate: float
+    contradiction_clusters: int
+    cluster_sources: int
+    cluster_update_rate: float
+    cluster_query_rate: float
     state_bytes: float
     points: Tuple[WikiMemoryTrialPoint, ...]
 
@@ -192,6 +218,7 @@ class _WikiQuery:
     target_page: int
     target_slot: int
     recent: bool
+    cluster_id: int = -1
 
 
 @dataclass(frozen=True)
@@ -213,6 +240,16 @@ class _SyntheticWikiMemory:
         self.fact_values = np.zeros_like(self.fact_keys)
         self.truth_fact_keys = np.zeros_like(self.fact_keys)
         self.truth_fact_values = np.zeros_like(self.fact_values)
+        self.cluster_by_page_slot = np.full(
+            (config.page_count, config.facts_per_page),
+            -1,
+            dtype=np.int32,
+        )
+        self.cluster_pages = np.zeros(
+            (config.contradiction_clusters, config.cluster_sources),
+            dtype=np.int32,
+        )
+        self.cluster_slots = np.zeros_like(self.cluster_pages)
         self.page_versions = np.zeros(config.page_count, dtype=np.int32)
         self.page_topics = np.arange(config.page_count, dtype=np.int32) % config.topic_count
         self.links = np.zeros((config.page_count, config.links_per_page), dtype=np.int32)
@@ -229,6 +266,7 @@ class _SyntheticWikiMemory:
         self.summary_age = 0
         self.update_cursor = 0
         self.recent_pages: List[int] = []
+        self.recent_clusters: List[int] = []
         self._initialize_wiki()
         self._refresh_pages(np.arange(config.page_count, dtype=np.int32))
         self._refresh_groups(np.arange(config.group_count, dtype=np.int32))
@@ -241,6 +279,20 @@ class _SyntheticWikiMemory:
                 self.fact_values[page, slot] = self._value_for_key(key)
                 self.truth_fact_keys[page, slot] = self.fact_keys[page, slot]
                 self.truth_fact_values[page, slot] = self.fact_values[page, slot]
+
+        for cluster in range(self.config.contradiction_clusters):
+            key = int(keyed_hash(5_000_003 + cluster, 57) & ((1 << 31) - 1))
+            value = int(keyed_hash(6_000_003 + cluster, 59) & ((1 << 31) - 1))
+            for source in range(self.config.cluster_sources):
+                page = cluster * self.config.cluster_sources + source
+                slot = 0
+                self.cluster_pages[cluster, source] = page
+                self.cluster_slots[cluster, source] = slot
+                self.cluster_by_page_slot[page, slot] = cluster
+                self.fact_keys[page, slot] = key
+                self.fact_values[page, slot] = value
+                self.truth_fact_keys[page, slot] = key
+                self.truth_fact_values[page, slot] = value
 
         for page in range(self.config.page_count):
             same_topic = np.flatnonzero(self.page_topics == self.page_topics[page])
@@ -322,35 +374,76 @@ class _SyntheticWikiMemory:
             return cells, pages, groups, True
         return 0, 0, 0, False
 
-    def update_fact(self, policy: WikiMemoryRefreshPolicy) -> Tuple[int, int, int, bool, str]:
-        page = int(self.rng.integers(0, self.config.page_count))
-        slot = int(self.rng.integers(0, self.config.facts_per_page))
-        if self.rng.random() < self.config.revision_update_rate:
-            key = int(self.truth_fact_keys[page, slot])
-            new_value = int(
-                keyed_hash(2_000_003 + self.update_cursor * 65537 + key * 131, 43)
-                & ((1 << 31) - 1)
-            )
-            self.truth_fact_values[page, slot] = new_value
-            update_kind = "revision"
-        else:
-            new_key = int(
-                keyed_hash(1_000_003 + self.update_cursor * 65537 + page * 257 + slot, 29)
-            )
-            new_key &= (1 << 31) - 1
-            self.truth_fact_keys[page, slot] = new_key
-            self.truth_fact_values[page, slot] = self._value_for_key(new_key)
-            update_kind = "key"
+    def _mark_page_dirty(self, page: int) -> None:
         self.page_versions[page] += 1
         self.dirty_pages[page] = True
         self.dirty_groups[self._group_for_page(page)] = True
+        self.recent_pages.append(page)
+
+    def _sample_non_cluster_fact(self) -> Tuple[int, int]:
+        for _ in range(64):
+            page = int(self.rng.integers(0, self.config.page_count))
+            slot = int(self.rng.integers(0, self.config.facts_per_page))
+            if int(self.cluster_by_page_slot[page, slot]) < 0:
+                return page, slot
+        free_slots = np.argwhere(self.cluster_by_page_slot < 0)
+        if len(free_slots) == 0:
+            raise RuntimeError("no non-cluster fact slots available")
+        index = int(self.rng.integers(0, len(free_slots)))
+        return int(free_slots[index, 0]), int(free_slots[index, 1])
+
+    def _sample_non_cluster_slot_for_page(self, page: int) -> int:
+        slots = np.flatnonzero(self.cluster_by_page_slot[page] < 0)
+        if len(slots) == 0:
+            return int(self.rng.integers(0, self.config.facts_per_page))
+        return int(slots[int(self.rng.integers(0, len(slots)))])
+
+    def _update_cluster(self) -> Tuple[int, str]:
+        cluster = int(self.rng.integers(0, self.config.contradiction_clusters))
+        key = int(self.truth_fact_keys[self.cluster_pages[cluster, 0], self.cluster_slots[cluster, 0]])
+        new_value = int(
+            keyed_hash(7_000_003 + self.update_cursor * 65537 + key * 197, 61)
+            & ((1 << 31) - 1)
+        )
+        for page, slot in zip(self.cluster_pages[cluster], self.cluster_slots[cluster]):
+            self.truth_fact_values[int(page), int(slot)] = new_value
+            self._mark_page_dirty(int(page))
+        self.recent_clusters.append(cluster)
+        if len(self.recent_clusters) > 64:
+            self.recent_clusters = self.recent_clusters[-64:]
+        return self.config.cluster_sources * 4, "cluster"
+
+    def update_fact(self, policy: WikiMemoryRefreshPolicy) -> Tuple[int, int, int, bool, str]:
+        if (
+            self.config.contradiction_clusters > 0
+            and self.rng.random() < self.config.cluster_update_rate
+        ):
+            update_cells, update_kind = self._update_cluster()
+        else:
+            page, slot = self._sample_non_cluster_fact()
+            if self.rng.random() < self.config.revision_update_rate:
+                key = int(self.truth_fact_keys[page, slot])
+                new_value = int(
+                    keyed_hash(2_000_003 + self.update_cursor * 65537 + key * 131, 43)
+                    & ((1 << 31) - 1)
+                )
+                self.truth_fact_values[page, slot] = new_value
+                update_kind = "revision"
+            else:
+                new_key = int(
+                    keyed_hash(1_000_003 + self.update_cursor * 65537 + page * 257 + slot, 29)
+                )
+                new_key &= (1 << 31) - 1
+                self.truth_fact_keys[page, slot] = new_key
+                self.truth_fact_values[page, slot] = self._value_for_key(new_key)
+                update_kind = "key"
+            self._mark_page_dirty(page)
+            update_cells = 4
         self.summary_age += 1
         self.update_cursor += 1
-        self.recent_pages.append(page)
         if len(self.recent_pages) > 64:
             self.recent_pages = self.recent_pages[-64:]
 
-        update_cells = 4
         if policy.refresh_on_update:
             refresh_cells, pages, groups = self._refresh_dirty()
             return update_cells + refresh_cells, pages, groups, refresh_cells > 0, update_kind
@@ -408,7 +501,50 @@ class _SyntheticWikiMemory:
         group_cells = self._refresh_groups(np.array(groups, dtype=np.int32))
         return page_cells + group_cells, len(clean_pages), len(groups)
 
+    def repair_query_pages(
+        self, query: _WikiQuery, policy: WikiMemoryRefreshPolicy
+    ) -> Tuple[int, int, int, bool]:
+        if policy.cluster_repair and query.cluster_id >= 0:
+            pages = tuple(int(page) for page in self.cluster_pages[query.cluster_id])
+            cells, page_count, group_count = self.repair_pages(pages)
+            return cells, page_count, group_count, True
+        cells, page_count, group_count = self.repair_pages(
+            (query.source_page, query.target_page)
+        )
+        return cells, page_count, group_count, False
+
+    def _make_cluster_query(self, cluster: int, page: int | None = None) -> _WikiQuery:
+        source_index = int(self.rng.integers(0, self.config.cluster_sources))
+        if page is None:
+            page = int(self.cluster_pages[cluster, source_index])
+            slot = int(self.cluster_slots[cluster, source_index])
+        else:
+            matches = np.flatnonzero(self.cluster_pages[cluster] == int(page))
+            source_index = int(matches[0]) if len(matches) else source_index
+            slot = int(self.cluster_slots[cluster, source_index])
+        return _WikiQuery(
+            kind="single",
+            route_key=int(self.truth_fact_keys[int(page), slot]),
+            target=int(self.truth_fact_values[int(page), slot]),
+            source_page=int(page),
+            source_slot=slot,
+            target_page=int(page),
+            target_slot=slot,
+            recent=cluster in self.recent_clusters,
+            cluster_id=cluster,
+        )
+
     def sample_query(self) -> _WikiQuery:
+        if (
+            self.config.contradiction_clusters > 0
+            and self.rng.random() < self.config.cluster_query_rate
+        ):
+            if len(self.recent_clusters) > 0 and self.rng.random() < self.config.recent_update_query_rate:
+                cluster = int(self.recent_clusters[int(self.rng.integers(0, len(self.recent_clusters)))])
+            else:
+                cluster = int(self.rng.integers(0, self.config.contradiction_clusters))
+            return self._make_cluster_query(cluster)
+
         use_recent = (
             len(self.recent_pages) > 0
             and self.rng.random() < self.config.recent_update_query_rate
@@ -420,6 +556,7 @@ class _SyntheticWikiMemory:
         slot = int(self.rng.integers(0, self.config.facts_per_page))
 
         if self.rng.random() < self.config.multihop_query_rate:
+            slot = self._sample_non_cluster_slot_for_page(page)
             target_page = int(self.links[page, int(self.rng.integers(0, self.config.links_per_page))])
             target_slot = int(self.rng.integers(0, self.config.facts_per_page))
             return _WikiQuery(
@@ -432,6 +569,7 @@ class _SyntheticWikiMemory:
                 target_slot=target_slot,
                 recent=use_recent,
             )
+        cluster_id = int(self.cluster_by_page_slot[page, slot])
         return _WikiQuery(
             kind="single",
             route_key=int(self.truth_fact_keys[page, slot]),
@@ -441,6 +579,7 @@ class _SyntheticWikiMemory:
             target_page=page,
             target_slot=slot,
             recent=use_recent,
+            cluster_id=cluster_id,
         )
 
     def refresh_query_target(self, query: _WikiQuery) -> _WikiQuery:
@@ -457,21 +596,50 @@ class _SyntheticWikiMemory:
             target_page=query.target_page,
             target_slot=query.target_slot,
             recent=query.recent,
+            cluster_id=query.cluster_id,
         )
+
+    def refresh_error_probe_query(self, query: _WikiQuery) -> _WikiQuery:
+        if query.cluster_id >= 0:
+            return self._make_cluster_query(query.cluster_id)
+        return self.refresh_query_target(query)
+
+    def cluster_consistent(self, cluster: int) -> bool:
+        pages = self.cluster_pages[cluster]
+        slots = self.cluster_slots[cluster]
+        target = int(self.truth_fact_values[int(pages[0]), int(slots[0])])
+        for page, slot in zip(pages, slots):
+            if bool(self.dirty_pages[int(page)]):
+                return False
+            if int(self.fact_values[int(page), int(slot)]) != target:
+                return False
+        return True
+
+    def _query_stale(self, query: _WikiQuery) -> bool:
+        if query.cluster_id >= 0:
+            pages = self.cluster_pages[query.cluster_id]
+            return bool(np.any(self.dirty_pages[pages]))
+        return bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
 
     def answer_query(self, query: _WikiQuery) -> _AnswerResult:
         routed = self.route_key(query.route_key)
         cells_read = routed.cells_read
         if not routed.found:
-            stale = bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
-            return _AnswerResult(False, stale, False, cells_read, False)
+            return _AnswerResult(False, self._query_stale(query), False, cells_read, False)
 
         if query.kind == "single":
             page = int(routed.source_page) if routed.source_page is not None else -1
-            found = bool(
-                page == query.target_page and np.any(self.fact_values[page] == int(query.target))
-            )
-            stale = bool((not found) and self.dirty_pages[query.target_page])
+            if query.cluster_id >= 0:
+                pages = self.cluster_pages[query.cluster_id]
+                found = bool(
+                    page in set(int(item) for item in pages)
+                    and np.any(self.fact_values[page] == int(query.target))
+                )
+            else:
+                found = bool(
+                    page == query.target_page and np.any(self.fact_values[page] == int(query.target))
+                )
+            stale = bool((not found) and self._query_stale(query))
             return _AnswerResult(found, stale, found, cells_read, True)
 
         cells_read += self.config.links_per_page
@@ -482,8 +650,7 @@ class _SyntheticWikiMemory:
                 np.any(self.fact_keys[page] == int(query.target))
             ):
                 return _AnswerResult(True, False, True, cells_read, True)
-        stale = bool(self.dirty_pages[query.source_page] or self.dirty_pages[query.target_page])
-        return _AnswerResult(False, stale, False, cells_read, True)
+        return _AnswerResult(False, self._query_stale(query), False, cells_read, True)
 
 
 def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int) -> WikiMemoryTrialPoint:
@@ -495,8 +662,10 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
     updates = 0
     single_queries = 0
     multihop_queries = 0
+    cluster_queries = 0
     single_hits = 0
     multihop_hits = 0
+    cluster_hits = 0
     recent_queries = 0
     recent_hits = 0
     stale_misses = 0
@@ -513,8 +682,11 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
     error_recoveries = 0
     error_probe_queries = 0
     error_probe_hits = 0
+    cluster_consistency_hits = 0
     key_updates = 0
     revision_updates = 0
+    cluster_updates = 0
+    cluster_repair_events = 0
     error_book: List[_WikiQuery] = []
 
     for event_type in event_types:
@@ -524,6 +696,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
             updates += 1
             key_updates += int(update_kind == "key")
             revision_updates += int(update_kind == "revision")
+            cluster_updates += int(update_kind == "cluster")
             if refreshed:
                 refresh_events += 1
                 pages_refreshed += pages
@@ -542,7 +715,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
         )
         if is_error_probe:
             error_probe_queries += 1
-            query = wiki.refresh_query_target(
+            query = wiki.refresh_error_probe_query(
                 error_book[int(wiki.rng.integers(0, len(error_book)))]
             )
         else:
@@ -559,6 +732,8 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
             multihop_hits += int(answer.hit)
         recent_queries += int(query.recent)
         recent_hits += int(query.recent and answer.hit)
+        cluster_queries += int(query.cluster_id >= 0)
+        cluster_hits += int(query.cluster_id >= 0 and answer.hit)
         stale_misses += int((not answer.hit) and answer.stale)
         route_misses += int(not answer.route_found)
         value_misses += int(answer.route_found and not answer.hit)
@@ -567,17 +742,34 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
 
         recovered = False
         if (not answer.hit) and policy.error_book_repair:
-            repair_cells, repair_pages, repair_groups = wiki.repair_pages(
-                (query.source_page, query.target_page)
+            repair_cells, repair_pages, repair_groups, cluster_repair = wiki.repair_query_pages(
+                query,
+                policy,
             )
             total_cells_written += repair_cells
             refresh_events += 1
             pages_refreshed += repair_pages
             groups_refreshed += repair_groups
             error_repairs += 1
+            cluster_repair_events += int(cluster_repair)
             repaired = wiki.answer_query(query)
             recovered = repaired.hit
             error_recoveries += int(recovered)
+
+        if query.cluster_id >= 0 and policy.cluster_repair and not wiki.cluster_consistent(
+            query.cluster_id
+        ):
+            repair_cells, repair_pages, repair_groups = wiki.repair_pages(
+                tuple(int(page) for page in wiki.cluster_pages[query.cluster_id])
+            )
+            total_cells_written += repair_cells
+            refresh_events += 1
+            pages_refreshed += repair_pages
+            groups_refreshed += repair_groups
+            cluster_repair_events += 1
+
+        if query.cluster_id >= 0:
+            cluster_consistency_hits += int(wiki.cluster_consistent(query.cluster_id))
 
         if not answer.hit:
             error_book.append(query)
@@ -596,6 +788,7 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
         max_age=policy.max_age,
         refresh_on_update=policy.refresh_on_update,
         error_book_repair=policy.error_book_repair,
+        cluster_repair=policy.cluster_repair,
         queries=queries,
         updates=updates,
         single_hop_recall=single_hits / float(single_queries) if single_queries else 0.0,
@@ -619,8 +812,15 @@ def _trial(policy: WikiMemoryRefreshPolicy, config: WikiMemoryConfig, seed: int)
         error_probe_recall=(
             error_probe_hits / float(error_probe_queries) if error_probe_queries else 0.0
         ),
+        cluster_queries=cluster_queries,
+        cluster_recall=cluster_hits / float(cluster_queries) if cluster_queries else 0.0,
+        cluster_consistency_rate=(
+            cluster_consistency_hits / float(cluster_queries) if cluster_queries else 0.0
+        ),
         key_updates=key_updates,
         revision_updates=revision_updates,
+        cluster_updates=cluster_updates,
+        cluster_repair_events=cluster_repair_events,
         dirty_pages_end=int(np.count_nonzero(wiki.dirty_pages)),
         state_bytes=config.state_bytes,
     )
@@ -636,6 +836,13 @@ def run_wiki_memory_sweep(
             dirty_threshold=16,
             max_age=16,
             error_book_repair=True,
+        ),
+        WikiMemoryRefreshPolicy(
+            "trigger16_age16_clusterbook",
+            dirty_threshold=16,
+            max_age=16,
+            error_book_repair=True,
+            cluster_repair=True,
         ),
         WikiMemoryRefreshPolicy("trigger32_age64", dirty_threshold=32, max_age=64),
         WikiMemoryRefreshPolicy("stale_no_refresh", dirty_threshold=1_000_000, max_age=0),
@@ -660,6 +867,10 @@ def run_wiki_memory_sweep(
         update_events=sweep_config.update_events,
         revision_update_rate=sweep_config.revision_update_rate,
         error_probe_query_rate=sweep_config.error_probe_query_rate,
+        contradiction_clusters=sweep_config.contradiction_clusters,
+        cluster_sources=sweep_config.cluster_sources,
+        cluster_update_rate=sweep_config.cluster_update_rate,
+        cluster_query_rate=sweep_config.cluster_query_rate,
         state_bytes=sweep_config.state_bytes,
         points=points,
     )
