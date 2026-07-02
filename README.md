@@ -196,6 +196,9 @@ The first experiments compare:
 - local volatility-bit subtile diagnostics showing that a conservative
   short-window dynamics bit is safe but not yet worth the extra controller
   state;
+- directional subtile diagnostics showing that parser-vs-coverage trend
+  signals recover more repair traffic than a binary volatility bit, at higher
+  controller cost;
 - traffic-aware paragraph regime selector diagnostics showing that the current
   coarse counters collapse to a conservative policy under randomized safety
   gates and are not yet a better hardware baseline;

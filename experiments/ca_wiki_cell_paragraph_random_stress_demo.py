@@ -65,6 +65,9 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
         "- volatility_subtile_selector adds one conservative short-window dynamics bit."
     )
     print(
+        "- directional_subtile_selector separates parser-rising from coverage-rising subtiles."
+    )
+    print(
         "- traffic_regime_selector is a safety-tuned traffic diagnostic; under "
         "random stress it currently collapses back to the conservative branch."
     )

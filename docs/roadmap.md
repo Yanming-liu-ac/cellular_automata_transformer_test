@@ -765,6 +765,13 @@ item should use a directional local signal, for example coverage trend versus
 parser trend, or a neighbor-sharing counter, rather than another binary
 "changed/not changed" bit.
 
+That directional local signal now has a first diagnostic. It passes named and
+randomized stress and improves over-strict versus the four-subtile baseline,
+but costs 430B. Keep it as evidence for the next design, not as the default:
+the roadmap target is now to compress parser-rise versus coverage-rise control
+into less state, or to approximate it with a small hand-shaped comparator plus
+the existing 64B subtile table.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

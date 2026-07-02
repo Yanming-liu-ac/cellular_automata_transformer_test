@@ -11554,6 +11554,42 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             or spread[3] >= 0.20
         )
 
+    def regime_direction_code(bucket_rows: np.ndarray) -> int:
+        if bucket_rows.shape[0] < 4:
+            return 0
+        core_gap_buckets = np.minimum(
+            bucket_rows[:, 4] + bucket_rows[:, 5],
+            bucket_count - 1,
+        )
+        chunks = np.array_split(np.arange(bucket_rows.shape[0]), 2)
+        values = []
+        for chunk in chunks:
+            if len(chunk) == 0:
+                continue
+            values.append(
+                (
+                    float(np.mean(bucket_rows[chunk, 3] >= 2)),
+                    float(np.mean(core_gap_buckets[chunk] >= 2)),
+                    float(np.mean(bucket_rows[chunk, 6] >= 2)),
+                    float(np.mean(bucket_rows[chunk, 0])),
+                )
+            )
+        if len(values) < 2:
+            return 0
+        parser_delta = values[1][0] - values[0][0]
+        coverage_delta = values[1][1] - values[0][1]
+        agreement_delta = values[1][2] - values[0][2]
+        error_delta = values[1][3] - values[0][3]
+        parser_score = parser_delta + 0.5 * agreement_delta + 0.25 * error_delta
+        coverage_score = coverage_delta + 0.25 * agreement_delta
+        if coverage_score >= 0.08 and coverage_score >= parser_score + 0.04:
+            return 2
+        if parser_score >= 0.08 and parser_score >= coverage_score + 0.04:
+            return 1
+        if abs(parser_delta) >= 0.10 or abs(coverage_delta) >= 0.08:
+            return 3
+        return 0
+
     def regime_branch_loss(labels: np.ndarray, predicted: np.ndarray) -> float:
         claim_total = float(labels.shape[0])
         incorrect = float(np.sum(predicted != labels))
@@ -11659,6 +11695,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     )
     volatility_regime_seen = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
+        dtype=np.int64,
+    )
+    directional_regime_losses = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 4, 2),
+        dtype=np.float64,
+    )
+    directional_regime_seen = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 4),
         dtype=np.int64,
     )
     traffic_candidate_count = 4
@@ -11829,6 +11873,24 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                     * float(trace[0][subtile_slice].shape[0])
                 )
                 volatility_regime_seen[volatility_index] += 1
+                direction_index = subtile_index + (
+                    regime_direction_code(bucket_rows[subtile_slice]),
+                )
+                directional_regime_losses[direction_index + (0,)] += (
+                    regime_branch_loss(
+                        trace[0][subtile_slice],
+                        factor_modes[subtile_slice],
+                    )
+                )
+                directional_regime_losses[direction_index + (1,)] += (
+                    regime_branch_loss(
+                        trace[0][subtile_slice],
+                        repair_modes[subtile_slice],
+                    )
+                    - regime_counter_repair_bias_weight
+                    * float(trace[0][subtile_slice].shape[0])
+                )
+                directional_regime_seen[direction_index] += 1
             for candidate_index, candidate_modes in enumerate(
                 candidates[:traffic_candidate_count]
             ):
@@ -11925,6 +11987,53 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         )
     volatility_regime_lut_bytes = (
         float(np.prod(volatility_regime_selector.shape)) / 8.0
+    )
+
+    directional_regime_selector = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 4),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(directional_regime_selector.shape):
+        (
+            parser_bucket,
+            coverage_bucket,
+            agreement_bucket,
+            error_bucket,
+            _,
+            direction_code,
+        ) = (int(value) for value in index)
+        if coverage_bucket >= 3:
+            directional_regime_selector[index] = 1
+            continue
+        if direction_code == 2:
+            directional_regime_selector[index] = 1
+            continue
+        if (
+            direction_code == 1
+            and parser_bucket >= 2
+            and agreement_bucket >= 2
+            and error_bucket >= 1
+        ):
+            directional_regime_selector[index] = 0
+            continue
+        if (
+            parser_bucket >= 2
+            and coverage_bucket >= 2
+            and agreement_bucket >= 3
+            and error_bucket >= 2
+        ):
+            directional_regime_selector[index] = 0
+            continue
+        if int(directional_regime_seen[index]) > 0:
+            directional_regime_selector[index] = int(
+                np.argmin(directional_regime_losses[index])
+            )
+            continue
+        directional_regime_selector[index] = int(
+            subtile_regime_selector[index[:-1]]
+        )
+    directional_regime_lut_bytes = (
+        float(np.prod(directional_regime_selector.shape)) / 8.0
     )
 
     traffic_regime_selector = np.zeros(
@@ -12436,6 +12545,50 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 ),
             )
         )
+        directional_regime_predicted = (
+            two_branch_factor_predicted.copy()
+            if regime_counter_choose_repair
+            else factor80_predicted.copy()
+        )
+        if regime_counter_choose_repair and int(parent_regime_index[1]) < 3:
+            for subtile_slice in regime_subtile_slices(split_buckets.shape[0]):
+                subtile_index = regime_feature_index(
+                    split_buckets[subtile_slice],
+                    split_buckets.shape[0],
+                )
+                directional_choose_repair = bool(
+                    directional_regime_selector[
+                        subtile_index
+                        + (regime_direction_code(split_buckets[subtile_slice]),)
+                    ]
+                )
+                directional_regime_predicted[subtile_slice] = (
+                    two_branch_factor_predicted[subtile_slice]
+                    if directional_choose_repair
+                    else factor80_predicted[subtile_slice]
+                )
+        eval_points.append(
+            make_point(
+                "directional_subtile_selector",
+                seed,
+                teacher,
+                directional_regime_predicted,
+                trace,
+                classifier4_bytes,
+                (
+                    selector_guard_bytes
+                    + coverage_repair_lut_bytes
+                    + directional_regime_lut_bytes
+                ),
+                25,
+                int(
+                    np.sum(
+                        (base_predicted == 2)
+                        & (directional_regime_predicted < 2)
+                    )
+                ),
+            )
+        )
         traffic_candidates = (
             factor80_predicted,
             selector_predicted,
@@ -12532,6 +12685,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "regime_counter_selector",
             "subtile_regime_selector",
             "volatility_subtile_selector",
+            "directional_subtile_selector",
             "traffic_regime_selector",
             "split_lut7d",
         ),
@@ -12579,6 +12733,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "regime_counter_selector",
         "subtile_regime_selector",
         "volatility_subtile_selector",
+        "directional_subtile_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
@@ -12856,6 +13011,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
         "regime_counter_selector",
         "subtile_regime_selector",
         "volatility_subtile_selector",
+        "directional_subtile_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,

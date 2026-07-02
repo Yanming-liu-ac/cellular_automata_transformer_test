@@ -63,6 +63,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
     print("- regime_counter_selector adds a small rolling regime signal to choose the branch.")
     print("- subtile_regime_selector lets parent-approved local subtiles relax repair independently.")
     print("- volatility_subtile_selector tests a conservative local dynamics bit over those subtiles.")
+    print("- directional_subtile_selector tests local trend direction instead of only volatility.")
     print("- traffic_regime_selector tests whether the regime signal can optimize over-strict traffic.")
     print("- Eval shifts parser noise, omitted fields, distractors, and claim count.")
     print("- covsafe/shiftguard are hand-coded diagnostics, not solved robust gates.")

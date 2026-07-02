@@ -1556,6 +1556,7 @@ two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/
 regime_counter_selector: 238B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 subtile_regime_selector: 238B controller, 26.46% mean over-strict, 9.36 touch/event, 0/4 failures
 volatility_subtile_selector: 302B controller, 26.42% mean over-strict, 9.36 touch/event, 0/4 failures
+directional_subtile_selector: 430B controller, 25.76% mean over-strict, 9.35 touch/event, 0/4 failures
 traffic_regime_selector: 392B controller, 27.20% mean over-strict, 9.38 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
@@ -1612,6 +1613,11 @@ volatility_subtile_selector parser_x2:   66.60% accuracy, 98.47% strict recall, 
 volatility_subtile_selector omit_x2:     74.07% accuracy, 99.23% strict recall, 1.03% under, 24.90% over, 2/2 pass
 volatility_subtile_selector distractor_x2: 71.34% accuracy, 99.16% strict recall, 0.88% under, 27.78% over, 2/2 pass
 volatility_subtile_selector large_2k:    71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
+directional_subtile_selector default_1k: 74.17% accuracy, 98.68% strict recall, 0.93% under, 24.90% over, 2/2 pass
+directional_subtile_selector parser_x2:  66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+directional_subtile_selector omit_x2:    74.71% accuracy, 99.04% strict recall, 1.12% under, 24.17% over, 2/2 pass
+directional_subtile_selector distractor_x2: 71.53% accuracy, 98.95% strict recall, 0.98% under, 27.49% over, 2/2 pass
+directional_subtile_selector large_2k:   71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
 traffic_regime_selector default_1k:      73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
 traffic_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
 traffic_regime_selector omit_x2:         72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
@@ -1689,6 +1695,16 @@ over-strict from 26.46% to 26.42%, slightly worsens named-stress mean
 over-strict from 27.60% to about 27.63%, and is identical to
 `subtile_regime_selector` on the randomized matrix. This makes volatility a
 diagnostic, not the hardware baseline.
+
+The directional local signal is stronger but still costs too much to become the
+default. `directional_subtile_selector` separates stable, parser-rising,
+coverage-rising, and mixed local trends. It passes the same named and
+randomized safety gates, lowers default four-seed over-strict to 25.76%, lowers
+named-stress mean over-strict to about 27.34%, and lowers randomized mean
+over-strict to about 29.71%. The price is 430B total controller state. This is
+good architectural evidence for directional local CA control, but the hardware
+baseline remains the 238B four-subtile selector until that direction logic is
+compressed.
 
 ## Tile/Floorplan Metrics
 

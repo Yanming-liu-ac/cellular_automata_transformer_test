@@ -821,6 +821,20 @@ short-window volatility alone is too weak; the next local state should encode a
 directional signal, such as coverage rising while parser pressure is flat, not
 just "this subtile changed."
 
+The directional version validates that narrower hypothesis, with a hardware
+cost caveat. `directional_subtile_selector` turns each local subtile into one
+of four trend states: stable, parser-rising, coverage-rising, or mixed. Coverage
+rise is treated conservatively, parser rise can relax toward the factor branch,
+and the remaining states are learned from the same regime loss. It passes the
+default four-seed run, the five named stress scenarios, and the four randomized
+scenarios. It also recovers more traffic than the binary volatility bit:
+default over-strict falls to 25.76%, named-stress mean over-strict falls to
+about 27.34%, and randomized mean over-strict falls to about 29.71%. The cost
+is state: total controller size is 430B, versus 238B for the four-subtile
+baseline. The result is therefore not a default replacement yet, but it is a
+positive architectural signal: local direction matters, and the next version
+should compress that direction logic rather than discard it.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

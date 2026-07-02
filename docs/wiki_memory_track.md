@@ -677,6 +677,14 @@ four-subtile selector, but default over-strict improves only 0.04 percentage
 points and named-stress mean over-strict is slightly worse. The next local
 state should encode direction, not just volatility.
 
+The directional follow-up is the useful version of that idea. It distinguishes
+stable, parser-rising, coverage-rising, and mixed local trends. This 430B
+`directional_subtile_selector` passes the named and randomized gates, lowers
+default over-strict to 25.76%, and lowers randomized mean over-strict to about
+29.71%. It is not the default because the state cost is much larger than the
+238B four-subtile selector, but it confirms the CA-memory direction: local
+trend direction is a better control signal than a generic volatility bit.
+
 ## Kill Criteria
 
 This track is not useful if:
