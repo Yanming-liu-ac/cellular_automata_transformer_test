@@ -806,6 +806,21 @@ aggressively in one omitted-field seed. Four subtiles is therefore the current
 safe geometry: it is not the lowest-over point on every slice, but it is the
 only audited setting that passes both the named and randomized matrices.
 
+The first short-window dynamics bit is safe but not useful enough to promote.
+`volatility_subtile_selector` adds one bit that fires when the two halves of a
+subtile disagree on parser, coverage, agreement, or error pressure. A naive
+learned use of that bit lowered default over-strict traffic but failed the
+named `distractor_x2` row by crossing the under-strict limit. A conservative
+veto rule repairs safety: high-volatility subtiles keep repair instead of
+relaxing. That version passes the named and randomized matrices, but its 302B
+controller is not better than the 238B four-subtile baseline. Default four-seed
+over-strict only moves from 26.46% to 26.42%, named-stress mean over-strict is
+slightly worse at about 27.63% versus 27.60%, and the randomized matrix is
+identical to `subtile_regime_selector`. The useful conclusion is negative:
+short-window volatility alone is too weak; the next local state should encode a
+directional signal, such as coverage rising while parser pressure is flat, not
+just "this subtile changed."
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

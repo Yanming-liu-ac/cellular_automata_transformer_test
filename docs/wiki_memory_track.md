@@ -669,6 +669,14 @@ The current four-subtile point is therefore a hardware compromise rather than
 an arbitrary constant: it is the only tested local granularity that survives
 both named shift and randomized mixed-shift gates.
 
+The first volatility-bit extension is not promoted. A 1-bit short-window
+volatility feature can be made safe by treating volatile subtiles as repair
+regions, but then it adds state without meaningful random-matrix gain. The
+302B `volatility_subtile_selector` passes the same gates as the 238B
+four-subtile selector, but default over-strict improves only 0.04 percentage
+points and named-stress mean over-strict is slightly worse. The next local
+state should encode direction, not just volatility.
+
 ## Kill Criteria
 
 This track is not useful if:

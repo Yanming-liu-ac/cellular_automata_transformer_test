@@ -758,6 +758,13 @@ eight subtiles are too fragmented and fail the named omitted-field row. Keep
 four subtiles as the baseline geometry, then test volatility or neighbor
 sharing on top of that fixed layout.
 
+The first volatility bit should stay diagnostic. A conservative high-volatility
+veto passes named and randomized stress, but the 302B controller gives no
+random-matrix improvement over the 238B four-subtile default. The next roadmap
+item should use a directional local signal, for example coverage trend versus
+parser trend, or a neighbor-sharing counter, rather than another binary
+"changed/not changed" bit.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

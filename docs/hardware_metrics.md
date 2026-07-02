@@ -1555,6 +1555,7 @@ two_branch_factor_selector: 174B controller, 26.81% mean over-strict, 9.37 touch
 two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/event, 1/4 failures
 regime_counter_selector: 238B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 subtile_regime_selector: 238B controller, 26.46% mean over-strict, 9.36 touch/event, 0/4 failures
+volatility_subtile_selector: 302B controller, 26.42% mean over-strict, 9.36 touch/event, 0/4 failures
 traffic_regime_selector: 392B controller, 27.20% mean over-strict, 9.38 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
@@ -1606,6 +1607,11 @@ subtile_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 
 subtile_regime_selector omit_x2:         74.07% accuracy, 99.23% strict recall, 1.03% under, 24.90% over, 2/2 pass
 subtile_regime_selector distractor_x2:   71.48% accuracy, 98.95% strict recall, 0.98% under, 27.54% over, 2/2 pass
 subtile_regime_selector large_2k:        71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
+volatility_subtile_selector default_1k:  73.83% accuracy, 98.79% strict recall, 0.88% under, 25.29% over, 2/2 pass
+volatility_subtile_selector parser_x2:   66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+volatility_subtile_selector omit_x2:     74.07% accuracy, 99.23% strict recall, 1.03% under, 24.90% over, 2/2 pass
+volatility_subtile_selector distractor_x2: 71.34% accuracy, 99.16% strict recall, 0.88% under, 27.78% over, 2/2 pass
+volatility_subtile_selector large_2k:    71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
 traffic_regime_selector default_1k:      73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
 traffic_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
 traffic_regime_selector omit_x2:         72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
@@ -1675,6 +1681,14 @@ randomized mixed-shift row. With eight subtiles, randomized stress passes and
 failure. The four-subtile default is the current robust point: it is not the
 lowest-over point in isolation, but it is the only audited granularity that
 passes both named and randomized safety gates.
+
+The local volatility bit is not yet worth its state. With a conservative
+high-volatility repair veto, `volatility_subtile_selector` passes the named and
+randomized gates, but its 302B controller only improves default four-seed
+over-strict from 26.46% to 26.42%, slightly worsens named-stress mean
+over-strict from 27.60% to about 27.63%, and is identical to
+`subtile_regime_selector` on the randomized matrix. This makes volatility a
+diagnostic, not the hardware baseline.
 
 ## Tile/Floorplan Metrics
 

@@ -112,6 +112,7 @@ def print_result(result: CAWikiCellParagraphSplitConfidenceResult) -> None:
     print("- two-branch variants test parser-tolerant factor routing plus learned coverage repair.")
     print("- regime_counter_selector uses a tile-level regime LUT to choose factor or coverage-repair routing.")
     print("- subtile_regime_selector applies the same regime idea to parent-gated local subtiles.")
+    print("- volatility_subtile_selector adds one conservative local dynamics bit to the subtile route.")
     print("- traffic_regime_selector is a higher-cost traffic diagnostic and is not promoted as baseline.")
     print("- split_lut7d is the direct 7D classifier; it is more aggressive and can miss the safety gate.")
 

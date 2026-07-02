@@ -11523,6 +11523,37 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             if int(edges[index]) < int(edges[index + 1])
         )
 
+    def regime_volatility_bit(bucket_rows: np.ndarray) -> int:
+        if bucket_rows.shape[0] < 4:
+            return 0
+        core_gap_buckets = np.minimum(
+            bucket_rows[:, 4] + bucket_rows[:, 5],
+            bucket_count - 1,
+        )
+        chunks = np.array_split(np.arange(bucket_rows.shape[0]), 2)
+        values = []
+        for chunk in chunks:
+            if len(chunk) == 0:
+                continue
+            values.append(
+                (
+                    float(np.mean(bucket_rows[chunk, 3] >= 2)),
+                    float(np.mean(core_gap_buckets[chunk] >= 2)),
+                    float(np.mean(bucket_rows[chunk, 6] >= 2)),
+                    float(np.mean(bucket_rows[chunk, 0])),
+                )
+            )
+        if len(values) < 2:
+            return 0
+        values_array = np.asarray(values, dtype=np.float64)
+        spread = np.max(values_array, axis=0) - np.min(values_array, axis=0)
+        return int(
+            spread[0] >= 0.10
+            or spread[1] >= 0.08
+            or spread[2] >= 0.10
+            or spread[3] >= 0.20
+        )
+
     def regime_branch_loss(labels: np.ndarray, predicted: np.ndarray) -> float:
         claim_total = float(labels.shape[0])
         incorrect = float(np.sum(predicted != labels))
@@ -11620,6 +11651,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     )
     subtile_regime_seen = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    volatility_regime_losses = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2, 2),
+        dtype=np.float64,
+    )
+    volatility_regime_seen = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
         dtype=np.int64,
     )
     traffic_candidate_count = 4
@@ -11772,6 +11811,24 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                     * float(trace[0][subtile_slice].shape[0])
                 )
                 subtile_regime_seen[subtile_index] += 1
+                volatility_index = subtile_index + (
+                    regime_volatility_bit(bucket_rows[subtile_slice]),
+                )
+                volatility_regime_losses[volatility_index + (0,)] += (
+                    regime_branch_loss(
+                        trace[0][subtile_slice],
+                        factor_modes[subtile_slice],
+                    )
+                )
+                volatility_regime_losses[volatility_index + (1,)] += (
+                    regime_branch_loss(
+                        trace[0][subtile_slice],
+                        repair_modes[subtile_slice],
+                    )
+                    - regime_counter_repair_bias_weight
+                    * float(trace[0][subtile_slice].shape[0])
+                )
+                volatility_regime_seen[volatility_index] += 1
             for candidate_index, candidate_modes in enumerate(
                 candidates[:traffic_candidate_count]
             ):
@@ -11830,6 +11887,45 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             continue
         subtile_regime_selector[index] = int(regime_counter_selector[index])
     subtile_regime_lut_bytes = float(np.prod(subtile_regime_selector.shape)) / 8.0
+
+    volatility_regime_selector = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(volatility_regime_selector.shape):
+        (
+            parser_bucket,
+            coverage_bucket,
+            agreement_bucket,
+            error_bucket,
+            _,
+            volatility_bit,
+        ) = (int(value) for value in index)
+        if (
+            parser_bucket >= 2
+            and coverage_bucket >= 2
+            and agreement_bucket >= 3
+            and error_bucket >= 2
+        ):
+            volatility_regime_selector[index] = 0
+            continue
+        if coverage_bucket >= 3:
+            volatility_regime_selector[index] = 1
+            continue
+        if volatility_bit:
+            volatility_regime_selector[index] = 1
+            continue
+        if int(volatility_regime_seen[index]) > 0:
+            volatility_regime_selector[index] = int(
+                np.argmin(volatility_regime_losses[index])
+            )
+            continue
+        volatility_regime_selector[index] = int(
+            subtile_regime_selector[index[:-1]]
+        )
+    volatility_regime_lut_bytes = (
+        float(np.prod(volatility_regime_selector.shape)) / 8.0
+    )
 
     traffic_regime_selector = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
@@ -12296,6 +12392,50 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum((base_predicted == 2) & (subtile_regime_predicted < 2))),
             )
         )
+        volatility_regime_predicted = (
+            two_branch_factor_predicted.copy()
+            if regime_counter_choose_repair
+            else factor80_predicted.copy()
+        )
+        if regime_counter_choose_repair and int(parent_regime_index[1]) < 3:
+            for subtile_slice in regime_subtile_slices(split_buckets.shape[0]):
+                subtile_index = regime_feature_index(
+                    split_buckets[subtile_slice],
+                    split_buckets.shape[0],
+                )
+                volatility_choose_repair = bool(
+                    volatility_regime_selector[
+                        subtile_index
+                        + (regime_volatility_bit(split_buckets[subtile_slice]),)
+                    ]
+                )
+                volatility_regime_predicted[subtile_slice] = (
+                    two_branch_factor_predicted[subtile_slice]
+                    if volatility_choose_repair
+                    else factor80_predicted[subtile_slice]
+                )
+        eval_points.append(
+            make_point(
+                "volatility_subtile_selector",
+                seed,
+                teacher,
+                volatility_regime_predicted,
+                trace,
+                classifier4_bytes,
+                (
+                    selector_guard_bytes
+                    + coverage_repair_lut_bytes
+                    + volatility_regime_lut_bytes
+                ),
+                24,
+                int(
+                    np.sum(
+                        (base_predicted == 2)
+                        & (volatility_regime_predicted < 2)
+                    )
+                ),
+            )
+        )
         traffic_candidates = (
             factor80_predicted,
             selector_predicted,
@@ -12391,6 +12531,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "two_branch_mixer_selector",
             "regime_counter_selector",
             "subtile_regime_selector",
+            "volatility_subtile_selector",
             "traffic_regime_selector",
             "split_lut7d",
         ),
@@ -12437,6 +12578,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "two_branch_mixer_selector",
         "regime_counter_selector",
         "subtile_regime_selector",
+        "volatility_subtile_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
@@ -12713,6 +12855,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
         "two_branch_factor_selector",
         "regime_counter_selector",
         "subtile_regime_selector",
+        "volatility_subtile_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,

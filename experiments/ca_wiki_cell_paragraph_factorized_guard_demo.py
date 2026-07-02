@@ -71,6 +71,7 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardResult) -> None:
     print("- two_branch_mixer_selector tests a small local arbiter between factor and learned branches.")
     print("- regime_counter_selector adds a 64B tile-level regime LUT before branch selection.")
     print("- subtile_regime_selector reuses that regime LUT inside parent-gated local subtiles.")
+    print("- volatility_subtile_selector adds a conservative short-window dynamics bit.")
     print("- traffic_regime_selector is a traffic-aware diagnostic, not the current baseline.")
     print("- all factorized variants reuse the 64B baseline classifier.")
 

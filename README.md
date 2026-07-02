@@ -193,6 +193,9 @@ The first experiments compare:
 - parent-gated subtile regime counters that reuse the same 64B regime LUT
   locally inside a tile to recover some over-repair traffic without adding
   controller state;
+- local volatility-bit subtile diagnostics showing that a conservative
+  short-window dynamics bit is safe but not yet worth the extra controller
+  state;
 - traffic-aware paragraph regime selector diagnostics showing that the current
   coarse counters collapse to a conservative policy under randomized safety
   gates and are not yet a better hardware baseline;
