@@ -1668,6 +1668,14 @@ falls from 26.81% to 26.46%, named-stress mean over-strict falls from about
 29.83%. The improvement is small but important: locality recovered traffic
 without increasing controller state.
 
+Subtile count is now an explicit hardware knob. With two subtiles, the default
+four-seed over-strict falls further to 25.51%, but the setting fails one
+randomized mixed-shift row. With eight subtiles, randomized stress passes and
+`random_01` over-strict reaches 28.65%, but the named `omit_x2` row has one
+failure. The four-subtile default is the current robust point: it is not the
+lowest-over point in isolation, but it is the only audited granularity that
+passes both named and randomized safety gates.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

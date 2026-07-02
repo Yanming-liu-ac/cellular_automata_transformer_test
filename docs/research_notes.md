@@ -795,6 +795,17 @@ only relaxable mixed scenario, cutting `random_01` over-strict from 30.53% to
 This is the first evidence that the traffic problem should be attacked by
 hierarchical local CA control, not by a wider global selector.
 
+The subtile granularity audit keeps that result grounded. With the same
+parent-gated rule, two subtiles look attractive on the default four-seed
+distribution: over-strict falls to 25.51%, lower than the four-subtile default.
+But the randomized matrix rejects it: `random_01` has one held-out failure
+because the coarser half-tile relaxation crosses a coverage-risk boundary.
+Eight subtiles pass the randomized matrix, but fail the named `omit_x2` stress
+row because the smaller chunks fragment the evidence and relax repair too
+aggressively in one omitted-field seed. Four subtiles is therefore the current
+safe geometry: it is not the lowest-over point on every slice, but it is the
+only audited setting that passes both the named and randomized matrices.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

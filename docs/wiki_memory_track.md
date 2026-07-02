@@ -662,6 +662,13 @@ to 29.83%. This is a better CA-memory lesson than the failed traffic selector:
 hierarchical local control can recover traffic without adding more global
 state.
 
+A first geometry audit keeps the subtile count at four. Two subtiles lowers
+default-distribution over-repair more, but fails one randomized held-out row.
+Eight subtiles passes randomized stress, but fails the named omitted-field row.
+The current four-subtile point is therefore a hardware compromise rather than
+an arbitrary constant: it is the only tested local granularity that survives
+both named shift and randomized mixed-shift gates.
+
 ## Kill Criteria
 
 This track is not useful if:

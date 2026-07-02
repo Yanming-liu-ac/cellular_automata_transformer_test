@@ -752,6 +752,12 @@ volatility bit per subtile or let adjacent subtiles share saturated
 coverage/parser counters, then check whether the random-matrix improvement
 survives more scenarios.
 
+A quick granularity audit rejects changing that default before adding new
+state. Two subtiles are too coarse and fail one randomized mixed-shift row;
+eight subtiles are too fragmented and fail the named omitted-field row. Keep
+four subtiles as the baseline geometry, then test volatility or neighbor
+sharing on top of that fixed layout.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.
