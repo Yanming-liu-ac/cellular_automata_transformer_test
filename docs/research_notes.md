@@ -780,6 +780,21 @@ The next version should not add another branch selector; it should add better
 CA-native state, such as short-window disagreement deltas, parser-confidence
 history, or source/summary coverage volatility.
 
+The next step validates that diagnosis in a smaller way than expected:
+localizing the same regime state helps more than adding a larger traffic LUT.
+`subtile_regime_selector` keeps the parent `regime_counter_selector` as a
+safety gate, then applies a second 64B regime table inside four local subtiles
+only when the parent tile chose the conservative repair branch and the parent
+coverage-risk bucket is not maximal. Because it reuses the same table shape,
+total controller state stays 238B. On the default four-seed evaluation it keeps
+4/4 passes and lowers over-strict from 26.81% to 26.46%. In the five named
+stress scenarios it passes every row and lowers mean over-strict from about
+28.07% to 27.60%. In the randomized matrix it also passes 8/8 and improves the
+only relaxable mixed scenario, cutting `random_01` over-strict from 30.53% to
+27.44%; overall random-matrix over-strict falls from about 30.60% to 29.83%.
+This is the first evidence that the traffic problem should be attacked by
+hierarchical local CA control, not by a wider global selector.
+
 ## First Retrieval Prototype
 
 The first non-neural retrieval component is a multi-route hash-routed

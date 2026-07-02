@@ -742,6 +742,16 @@ worse. The roadmap should pivot from "more branch arbitration" to "better
 local state": add short-window parser-confidence, coverage-volatility, or
 source/summary disagreement dynamics before trying another traffic policy.
 
+The first pivot result is `subtile_regime_selector`. It keeps the parent
+regime decision as a safety gate and lets four local subtiles reuse the same
+64B regime table only when the parent coverage-risk bucket is not maximal.
+This keeps total controller state at 238B, passes both named and randomized
+stress, and lowers randomized mean over-strict from about 30.60% to 29.83%.
+The next roadmap item should extend this hierarchy: add a small rolling
+volatility bit per subtile or let adjacent subtiles share saturated
+coverage/parser counters, then check whether the random-matrix improvement
+survives more scenarios.
+
 The first NumPy version of this target is the learned admission LUT. It is not a
 neural CA yet, but it proves the hand-set threshold can be replaced by a tiny
 trainable low-bit rule.

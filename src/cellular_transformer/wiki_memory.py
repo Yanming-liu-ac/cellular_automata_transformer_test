@@ -10479,6 +10479,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
     ),
     regime_counter_random_train_count: int = 4,
     regime_counter_random_seed: int = 8801,
+    subtile_regime_count: int = 4,
     traffic_regime_under_importance_weight: float = 24.0,
     traffic_regime_over_importance_weight: float = 0.75,
     traffic_regime_target_penalty_weight: float = 32.0,
@@ -10663,6 +10664,9 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         raise ValueError("regime_counter_repair_bias_weight must be non-negative")
     if regime_counter_random_train_count < 0:
         raise ValueError("regime_counter_random_train_count must be non-negative")
+    clean_subtile_regime_count = int(subtile_regime_count)
+    if clean_subtile_regime_count <= 0:
+        raise ValueError("subtile_regime_count must be positive")
     if traffic_regime_under_importance_weight < 0.0:
         raise ValueError("traffic_regime_under_importance_weight must be non-negative")
     if traffic_regime_over_importance_weight < 0.0:
@@ -11488,7 +11492,10 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             return 1
         return 0
 
-    def regime_feature_index(bucket_rows: np.ndarray) -> Tuple[int, int, int, int, int]:
+    def regime_feature_index(
+        bucket_rows: np.ndarray,
+        scale_count: int = 0,
+    ) -> Tuple[int, int, int, int, int]:
         core_gap_buckets = np.minimum(
             bucket_rows[:, 4] + bucket_rows[:, 5],
             bucket_count - 1,
@@ -11497,13 +11504,23 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         coverage_high = float(np.mean(core_gap_buckets >= 2))
         agreement_high = float(np.mean(bucket_rows[:, 6] >= 2))
         error_mean = float(np.mean(bucket_rows[:, 0]))
-        scale_bucket = 1 if bucket_rows.shape[0] >= 1536 else 0
+        scale_source = int(scale_count) if scale_count > 0 else int(bucket_rows.shape[0])
+        scale_bucket = 1 if scale_source >= 1536 else 0
         return (
             regime_rate_bucket(parser_high, (0.50, 0.70, 0.75)),
             regime_rate_bucket(coverage_high, (0.30, 0.40, 0.45)),
             regime_rate_bucket(agreement_high, (0.45, 0.51, 0.60)),
             regime_rate_bucket(error_mean, (1.50, 1.60, 1.70)),
             scale_bucket,
+        )
+
+    def regime_subtile_slices(row_count: int) -> Tuple[slice, ...]:
+        chunk_count = min(clean_subtile_regime_count, int(row_count))
+        edges = np.linspace(0, int(row_count), chunk_count + 1, dtype=np.int64)
+        return tuple(
+            slice(int(edges[index]), int(edges[index + 1]))
+            for index in range(chunk_count)
+            if int(edges[index]) < int(edges[index + 1])
         )
 
     def regime_branch_loss(labels: np.ndarray, predicted: np.ndarray) -> float:
@@ -11594,6 +11611,14 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
         dtype=np.float64,
     )
     regime_counter_seen = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    subtile_regime_losses = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2, 2),
+        dtype=np.float64,
+    )
+    subtile_regime_seen = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
         dtype=np.int64,
     )
@@ -11729,6 +11754,24 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 repair_modes,
             ) - regime_counter_repair_bias_weight * float(trace[0].shape[0])
             regime_counter_seen[feature_index] += 1
+            for subtile_slice in regime_subtile_slices(bucket_rows.shape[0]):
+                subtile_index = regime_feature_index(
+                    bucket_rows[subtile_slice],
+                    bucket_rows.shape[0],
+                )
+                subtile_regime_losses[subtile_index + (0,)] += regime_branch_loss(
+                    trace[0][subtile_slice],
+                    factor_modes[subtile_slice],
+                )
+                subtile_regime_losses[subtile_index + (1,)] += (
+                    regime_branch_loss(
+                        trace[0][subtile_slice],
+                        repair_modes[subtile_slice],
+                    )
+                    - regime_counter_repair_bias_weight
+                    * float(trace[0][subtile_slice].shape[0])
+                )
+                subtile_regime_seen[subtile_index] += 1
             for candidate_index, candidate_modes in enumerate(
                 candidates[:traffic_candidate_count]
             ):
@@ -11760,6 +11803,33 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             and scale_bucket == 0
         ) else 1
     regime_counter_lut_bytes = float(np.prod(regime_counter_selector.shape)) / 8.0
+
+    subtile_regime_selector = np.zeros(
+        (bucket_count, bucket_count, bucket_count, bucket_count, 2),
+        dtype=np.int64,
+    )
+    for index in np.ndindex(subtile_regime_selector.shape):
+        parser_bucket, coverage_bucket, agreement_bucket, error_bucket, _ = (
+            int(value) for value in index
+        )
+        if (
+            parser_bucket >= 2
+            and coverage_bucket >= 2
+            and agreement_bucket >= 3
+            and error_bucket >= 2
+        ):
+            subtile_regime_selector[index] = 0
+            continue
+        if coverage_bucket >= 3:
+            subtile_regime_selector[index] = 1
+            continue
+        if int(subtile_regime_seen[index]) > 0:
+            subtile_regime_selector[index] = int(
+                np.argmin(subtile_regime_losses[index])
+            )
+            continue
+        subtile_regime_selector[index] = int(regime_counter_selector[index])
+    subtile_regime_lut_bytes = float(np.prod(subtile_regime_selector.shape)) / 8.0
 
     traffic_regime_selector = np.zeros(
         (bucket_count, bucket_count, bucket_count, bucket_count, 2),
@@ -12165,9 +12235,8 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 int(np.sum((base_predicted == 2) & (branch_mixer_predicted < 2))),
             )
         )
-        regime_counter_choose_repair = bool(
-            regime_counter_selector[regime_feature_index(split_buckets)]
-        )
+        parent_regime_index = regime_feature_index(split_buckets)
+        regime_counter_choose_repair = bool(regime_counter_selector[parent_regime_index])
         regime_counter_predicted = (
             two_branch_factor_predicted
             if regime_counter_choose_repair
@@ -12188,6 +12257,43 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
                 ),
                 23,
                 int(np.sum((base_predicted == 2) & (regime_counter_predicted < 2))),
+            )
+        )
+        subtile_regime_predicted = (
+            two_branch_factor_predicted.copy()
+            if regime_counter_choose_repair
+            else factor80_predicted.copy()
+        )
+        if regime_counter_choose_repair and int(parent_regime_index[1]) < 3:
+            for subtile_slice in regime_subtile_slices(split_buckets.shape[0]):
+                subtile_choose_repair = bool(
+                    subtile_regime_selector[
+                        regime_feature_index(
+                            split_buckets[subtile_slice],
+                            split_buckets.shape[0],
+                        )
+                    ]
+                )
+                subtile_regime_predicted[subtile_slice] = (
+                    two_branch_factor_predicted[subtile_slice]
+                    if subtile_choose_repair
+                    else factor80_predicted[subtile_slice]
+                )
+        eval_points.append(
+            make_point(
+                "subtile_regime_selector",
+                seed,
+                teacher,
+                subtile_regime_predicted,
+                trace,
+                classifier4_bytes,
+                (
+                    selector_guard_bytes
+                    + coverage_repair_lut_bytes
+                    + subtile_regime_lut_bytes
+                ),
+                23,
+                int(np.sum((base_predicted == 2) & (subtile_regime_predicted < 2))),
             )
         )
         traffic_candidates = (
@@ -12284,6 +12390,7 @@ def run_ca_wiki_cell_paragraph_split_confidence_sweep(
             "two_branch_factor_selector",
             "two_branch_mixer_selector",
             "regime_counter_selector",
+            "subtile_regime_selector",
             "traffic_regime_selector",
             "split_lut7d",
         ),
@@ -12329,6 +12436,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
         "two_branch_factor_selector",
         "two_branch_mixer_selector",
         "regime_counter_selector",
+        "subtile_regime_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
@@ -12363,6 +12471,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
     ),
     regime_counter_random_train_count: int = 4,
     regime_counter_random_seed: int = 8801,
+    subtile_regime_count: int = 4,
     traffic_regime_under_importance_weight: float = 24.0,
     traffic_regime_over_importance_weight: float = 0.75,
     traffic_regime_target_penalty_weight: float = 32.0,
@@ -12506,6 +12615,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_stress_sweep(
             regime_counter_profiles=regime_counter_profiles,
             regime_counter_random_train_count=regime_counter_random_train_count,
             regime_counter_random_seed=regime_counter_random_seed,
+            subtile_regime_count=subtile_regime_count,
             traffic_regime_under_importance_weight=(
                 traffic_regime_under_importance_weight
             ),
@@ -12602,11 +12712,13 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
         "factor_vote80b",
         "two_branch_factor_selector",
         "regime_counter_selector",
+        "subtile_regime_selector",
         "traffic_regime_selector",
     ),
     min_accuracy: float = 0.66,
     min_strict_recall: float = 0.98,
     max_under_strict_rate: float = 0.015,
+    subtile_regime_count: int = 4,
     traffic_regime_under_importance_weight: float = 24.0,
     traffic_regime_over_importance_weight: float = 0.75,
     traffic_regime_target_penalty_weight: float = 32.0,
@@ -12684,6 +12796,7 @@ def run_ca_wiki_cell_paragraph_factorized_guard_random_stress_sweep(
             min_accuracy=min_accuracy,
             min_strict_recall=min_strict_recall,
             max_under_strict_rate=max_under_strict_rate,
+            subtile_regime_count=subtile_regime_count,
             traffic_regime_under_importance_weight=(
                 traffic_regime_under_importance_weight
             ),

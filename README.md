@@ -190,6 +190,9 @@ The first experiments compare:
   downgrades from coverage repair and expose the missing regime signal;
 - rolling-regime paragraph counters that choose between parser-tolerant and
   coverage-repair branches using tile-level low-bit statistics;
+- parent-gated subtile regime counters that reuse the same 64B regime LUT
+  locally inside a tile to recover some over-repair traffic without adding
+  controller state;
 - traffic-aware paragraph regime selector diagnostics showing that the current
   coarse counters collapse to a conservative policy under randomized safety
   gates and are not yet a better hardware baseline;

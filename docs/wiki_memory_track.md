@@ -651,6 +651,17 @@ four randomized scenarios, but mostly collapses back to the conservative
 LLM-Wiki/CA-memory direction is still right, but traffic optimization needs
 richer local state than five coarse tile counters.
 
+The follow-up result is more encouraging: make the regime state more local
+instead of wider. `subtile_regime_selector` keeps the parent tile's safety
+decision, refuses to relax repair when the parent coverage-risk bucket is
+maximal, and otherwise lets four local subtiles reuse the same 64B regime table.
+Total controller state remains 238B. It passes the five named stress scenarios
+and the four randomized scenarios, while lowering default four-seed over-strict
+from 26.81% to 26.46% and randomized-matrix mean over-strict from about 30.60%
+to 29.83%. This is a better CA-memory lesson than the failed traffic selector:
+hierarchical local control can recover traffic without adding more global
+state.
+
 ## Kill Criteria
 
 This track is not useful if:

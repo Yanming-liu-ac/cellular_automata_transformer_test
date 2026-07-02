@@ -1554,6 +1554,7 @@ two_branch_selector: 234B controller, 27.25% mean over-strict, 9.38 touch/event,
 two_branch_factor_selector: 174B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
 two_branch_mixer_selector: 294B controller, 24.56% mean over-strict, 9.33 touch/event, 1/4 failures
 regime_counter_selector: 238B controller, 26.81% mean over-strict, 9.37 touch/event, 0/4 failures
+subtile_regime_selector: 238B controller, 26.46% mean over-strict, 9.36 touch/event, 0/4 failures
 traffic_regime_selector: 392B controller, 27.20% mean over-strict, 9.38 touch/event, 0/4 failures
 split_lut7d:    4.00KB controller, 26.39% mean over-strict, 9.35 touch/event, 1/4 failures
 ```
@@ -1600,6 +1601,11 @@ regime_counter_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 
 regime_counter_selector omit_x2:         73.58% accuracy, 99.32% strict recall, 0.98% under, 25.44% over, 2/2 pass
 regime_counter_selector distractor_x2:   70.65% accuracy, 99.59% strict recall, 0.68% under, 28.66% over, 2/2 pass
 regime_counter_selector large_2k:        71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
+subtile_regime_selector default_1k:      73.73% accuracy, 98.79% strict recall, 0.88% under, 25.39% over, 2/2 pass
+subtile_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
+subtile_regime_selector omit_x2:         74.07% accuracy, 99.23% strict recall, 1.03% under, 24.90% over, 2/2 pass
+subtile_regime_selector distractor_x2:   71.48% accuracy, 98.95% strict recall, 0.98% under, 27.54% over, 2/2 pass
+subtile_regime_selector large_2k:        71.58% accuracy, 99.11% strict recall, 0.83% under, 27.59% over, 2/2 pass
 traffic_regime_selector default_1k:      73.34% accuracy, 99.40% strict recall, 0.59% under, 26.07% over, 2/2 pass
 traffic_regime_selector parser_x2:       66.60% accuracy, 98.47% strict recall, 0.83% under, 32.57% over, 2/2 pass
 traffic_regime_selector omit_x2:         72.80% accuracy, 98.46% strict recall, 0.93% under, 26.27% over, 2/2 pass
@@ -1651,6 +1657,16 @@ same 68.66% accuracy and 30.60% over-strict as `regime_counter_selector`, while
 named omit/distractor/large rows are worse. This rejects the current coarse
 traffic selector as a hardware baseline; the next metric should price richer
 local state rather than another selector over the same counters.
+
+The parent-gated subtile version is a better hardware point. It keeps total
+controller state at 238B by reusing the 64B regime table in four local subtiles,
+but only after the parent tile has chosen the repair branch and only when the
+parent coverage-risk bucket is below the maximum. It passes the same five named
+stress scenarios and four randomized scenarios. Default four-seed over-strict
+falls from 26.81% to 26.46%, named-stress mean over-strict falls from about
+28.07% to 27.60%, and randomized mean over-strict falls from about 30.60% to
+29.83%. The improvement is small but important: locality recovered traffic
+without increasing controller state.
 
 ## Tile/Floorplan Metrics
 

@@ -58,6 +58,10 @@ def print_result(result: CAWikiCellParagraphFactorizedGuardStressResult) -> None
         "- regime_counter_selector chooses between them from aggregate low-bit counters."
     )
     print(
+        "- subtile_regime_selector keeps the parent tile safety decision but "
+        "allows local subtiles to relax repair when coverage risk is not maximal."
+    )
+    print(
         "- traffic_regime_selector is a safety-tuned traffic diagnostic; under "
         "random stress it currently collapses back to the conservative branch."
     )
