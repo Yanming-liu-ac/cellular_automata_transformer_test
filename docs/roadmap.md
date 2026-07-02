@@ -411,6 +411,17 @@ attention-over-context baselines. This is a better first product-shaped target
 than replacing the entire Transformer stack, because mutable knowledge is where
 local CA storage, versioning, and sparse routing are naturally strong.
 
+The first real benchmark branch is AFAC task 4. Treat it as a CA financial
+memory engine, not a full Agent: parse the public long-document set into page
+provenance cells, inject question/option features as sparse 4-bit pulses,
+propagate only through local document neighborhoods, and produce evidence
+snippets plus answer drafts. The first public-A run answers 100 questions over
+68 referenced documents and 12,398 cells. The stable sparse configuration reads
+155.7 cells/question on average versus a 440.2-cell doc-id full-scan baseline,
+or 75.61% lower option-wise read traffic. Next milestone: get a leaderboard
+score or create a small hand-labeled audit set, then tune the entity/number
+guards from real errors rather than only proxy margins.
+
 The first synthetic wiki-memory benchmark now includes contradiction clusters.
 With truth/memory separated, `trigger16_age16` reaches 94.73% recall at about
 356 cells/query and 14,466 cells/update, versus 100.0% recall and about 20,255

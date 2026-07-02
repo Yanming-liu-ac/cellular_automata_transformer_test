@@ -48,6 +48,8 @@ low-bit controllers.
 
 ## Quick Check
 
+The AFAC task-4 demo additionally needs `pypdf` and `lxml`.
+
 ```powershell
 python experiments/propagation_demo.py
 python experiments/retrieval_demo.py
@@ -104,6 +106,7 @@ python experiments/ca_wiki_cell_paragraph_split_confidence_demo.py
 python experiments/ca_wiki_cell_paragraph_factorized_guard_demo.py
 python experiments/ca_wiki_cell_paragraph_factorized_guard_stress_demo.py
 python experiments/ca_wiki_cell_paragraph_random_stress_demo.py
+python experiments/afac4_ca_memory_demo.py
 python experiments/cellular_moe_demo.py
 python experiments/efficiency_profile_demo.py
 python experiments/chip_floorplan_demo.py
@@ -199,6 +202,9 @@ The first experiments compare:
 - directional subtile diagnostics showing that parser-vs-coverage trend
   signals recover more repair traffic than a binary volatility bit, at higher
   controller cost;
+- an AFAC task-4 local financial-document evidence memory prototype that turns
+  public long-document questions into sparse 4-bit CA activation traces and
+  answer drafts;
 - traffic-aware paragraph regime selector diagnostics showing that the current
   coarse counters collapse to a conservative policy under randomized safety
   gates and are not yet a better hardware baseline;

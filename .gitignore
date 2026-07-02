@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .venv/
 outputs/
+public_dataset_a/
+public_dataset_a.zip

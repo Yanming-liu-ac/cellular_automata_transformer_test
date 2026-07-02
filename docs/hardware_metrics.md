@@ -1706,6 +1706,17 @@ good architectural evidence for directional local CA control, but the hardware
 baseline remains the 238B four-subtile selector until that direction logic is
 compressed.
 
+The AFAC task-4 financial-document prototype adds a real workload traffic
+proxy. The current public-A evidence field has 12,398 cells across 68 referenced
+documents. With `rare_fanout_cap=32`, `max_seed_terms=48`, 4-bit activation,
+and two local propagation ticks, average touched cells per question are 155.7.
+The option-wise doc-id full scan baseline averages 440.2 cells/question before
+counting repeated option scans, and the measured read reduction under the same
+option-wise loop is 75.61%. Relative to the entire indexed public-A evidence
+field, the active region is about 1.26% of cells per question. This is the first
+hardware-relevant signal from a real finance benchmark: the CA fabric can stay
+mostly idle and wake only local evidence neighborhoods.
+
 ## Tile/Floorplan Metrics
 
 For chip mapping, track:

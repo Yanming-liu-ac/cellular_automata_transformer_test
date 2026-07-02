@@ -726,3 +726,22 @@ deterministic kernels. The CA-chip opportunity is therefore not "replace the
 whole LLM tomorrow"; it is a local, low-bit, update-native wiki fabric that
 serves a decoder faster and with less energy than repeatedly scanning or
 rewriting context.
+
+AFAC task 4 is now the first non-synthetic version of that story. The prototype
+does not ask the CA layer to generate prose. It asks the CA layer to be a
+financial evidence fabric:
+
+- PDF/HTML/TXT documents become local evidence cells with page provenance;
+- question and option terms inject sparse pulses through a rare-feature index;
+- organization names and numeric/date facts act as stronger local guards;
+- 4-bit activation propagates only to neighboring cells in the same document;
+- the downstream decoder would receive a few evidence cells, not a whole
+  document pack.
+
+The first public-A run covers 100 questions over 68 referenced documents and
+12,398 cells. The current stable sparse configuration touches 155.7 cells per
+question on average while the option-wise doc-id full scan baseline is 440.2
+cells per question before option repetition, or 75.61% more reads under the
+same option-wise scoring loop. This is not a final contest system, but it is a
+real workload that matches the hardware claim: CA memory is most promising as
+the always-on, low-power evidence selector behind a financial Agent.

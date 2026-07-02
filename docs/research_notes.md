@@ -1494,6 +1494,27 @@ needs overflow or learned routing before it can replace attention for facts
 that must be recalled exactly.
 ```
 
+The AFAC task-4 public data gives the first real long-finance-document contact
+point for the wiki-memory thesis. The local prototype in
+`experiments/afac4_ca_memory_demo.py` builds evidence cells from the public A
+set, including PDF, HTML, and TXT sources, then answers each option by sparse
+term/entity injection, 4-bit activation, and two ticks of document-neighbor CA
+propagation. On the public A set it sees 100 questions, 68 referenced
+documents, and 12,398 evidence cells. With the current conservative sparse
+settings (`rare_fanout_cap=32`, `max_seed_terms=48`, `propagation_ticks=2`),
+average question-local full scan is 440.2 cells while the CA path touches 155.7
+cells across option decisions, a 75.61% read reduction under the per-option
+doc-id scan baseline. Against the whole indexed public-A cell field, this is
+about 98.7% fewer cells touched per question.
+
+This does not yet prove answer accuracy because the public set has no labels in
+the local files. It does prove that the chip-shaped route is practical on a
+real finance workload: long organization names, dates, percentages, and clause
+phrases can be turned into local evidence pulses, and a small entity guard
+already fixed a visible failure where generic "trustee/issuer" terms activated
+the wrong institution. The next evidence gate is leaderboard feedback or a
+small hand-labeled audit set, not more synthetic stress alone.
+
 ## Primary References
 
 - Spitznagel and Keuper, "A New Kind of Network? Review and Reference
